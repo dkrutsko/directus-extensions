@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.1
+
+- Test release exercising the manual publish workflow. No functional changes.
+
 ## 1.0.0
 
 - Initial release. Wraps the built-in `list-m2a` interface and keeps items clickable when the field
