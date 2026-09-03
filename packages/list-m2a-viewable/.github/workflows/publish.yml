@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+    branches: ['main']
+  # Publishing is manual only: Actions tab, "CI", "Run workflow".
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish. Must equal "version" in package.json, e.g. 1.0.1'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - run: npm run validate
+
+  publish:
+    # Never runs on push or pull_request, only when a person presses "Run workflow".
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: build
+    environment: publishing
+    permissions:
+      contents: write # to push the release tag after a successful publish
+      id-token: write # for npm trusted publishing and provenance
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Verify requested version matches package.json
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "${{ inputs.version }}" != "$PKG_VERSION" ]; then
+            echo "Requested ${{ inputs.version }} but package.json says $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Verify tag does not already exist
+        run: |
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/v${{ inputs.version }}" >/dev/null; then
+            echo "Tag v${{ inputs.version }} already exists, bump the version first"
+            exit 1
+          fi
+
+      # `prepublishOnly` runs check, build and validate before the upload.
+      # No NPM_TOKEN needed: npm trusted publishing exchanges the OIDC token
+      # granted by `id-token: write` above. See the README for the one-time
+      # setup on npmjs.com.
+      - run: npm publish
+
+      - name: Tag the release
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git tag -a "v${{ inputs.version }}" -m "v${{ inputs.version }}"
+          git push origin "v${{ inputs.version }}"
