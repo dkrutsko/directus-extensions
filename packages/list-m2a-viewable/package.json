@@ -1,0 +1,64 @@
+{
+  "name": "directus-extension-list-m2a-viewable",
+  "description": "Builder (M2A) interface for Directus whose items stay clickable when the field is read-only",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "David Krutsko",
+    "email": "dave@krutsko.net",
+    "url": "https://krutsko.net"
+  },
+  "homepage": "https://github.com/dkrutsko/directus-extension-list-m2a-viewable#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dkrutsko/directus-extension-list-m2a-viewable.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dkrutsko/directus-extension-list-m2a-viewable/issues"
+  },
+  "icon": "note_add",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-interface",
+    "m2a",
+    "many-to-any",
+    "builder",
+    "read-only"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "interface",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^11.15.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link",
+    "validate": "directus-extension validate",
+    "check": "vue-tsc --noEmit",
+    "prepublishOnly": "npm run check && npm run build && npm run validate"
+  },
+  "engines": {
+    "node": ">= 22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "17.1.4",
+    "@directus/tsconfig": "^4.0",
+    "typescript": "^5.9.3",
+    "vue": "^3.5.24",
+    "vue-tsc": "^3.2"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  }
+}
