@@ -1,7 +1,7 @@
 # directus-extension-list-m2a-viewable
 
 ![npm](https://img.shields.io/npm/v/directus-extension-list-m2a-viewable)
-![build](https://img.shields.io/github/actions/workflow/status/dkrutsko/directus-extension-list-m2a-viewable/publish.yml)
+![build](https://img.shields.io/github/actions/workflow/status/dkrutsko/directus-extension-list-m2a-viewable/build.yml)
 
 A drop-in replacement for the built-in **Builder (M2A)** interface (`list-m2a`) in [Directus](https://directus.io) that keeps list items clickable when the field is read-only. Anyone who can _see_ the field can open each referenced item in the side drawer, in view-only mode.
 
@@ -54,7 +54,10 @@ npm run validate
 
 ## Releasing
 
-Releases are published manually. Bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit and push to `main`. Then open the **CI** workflow under the Actions tab, press **Run workflow**, enter the same version, and confirm. The job verifies the version matches `package.json`, publishes to npm with provenance, and creates the matching `v*` git tag only after the publish succeeds.
+Nothing runs automatically. Two workflows under the Actions tab are triggered by hand:
+
+- **Build** runs check, build and validate on Node 22, then attaches the exact `.tgz` that would be uploaded to npm as a downloadable artifact. Run it whenever you want to inspect what a release would contain.
+- **Publish** takes a version number. Bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit and push to `main`, then run the workflow with that version. It verifies the version matches `package.json`, publishes to npm with provenance via trusted publishing, and only after npm accepts the upload creates the `v*` tag and the GitHub Release using the changelog entry as notes. The job runs under the `publishing` environment, so it pauses for approval when that environment has required reviewers.
 
 ## License
 
