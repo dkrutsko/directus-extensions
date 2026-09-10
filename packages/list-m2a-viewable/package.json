@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-list-m2a-viewable",
   "description": "Builder (M2A) interface for Directus whose items stay clickable when the field is read-only",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",

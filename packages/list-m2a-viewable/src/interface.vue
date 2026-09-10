@@ -22,6 +22,20 @@ import { computed, useAttrs } from 'vue';
  * Side effect: the stock component also hides its pagination in `nonEditable`
  * mode, so while read-only we pass `viewLimit` (default -1, i.e. all items)
  * as the page size instead of the configured `limit`.
+ *
+ * Two timing rules follow from how the stock component is written. It reads
+ * its `limit` prop exactly once, at setup, to seed an internal page size and
+ * never looks at the prop again. And v-form marks every field `disabled`
+ * while the item is still loading. Mounting the stock component during that
+ * window would seed it with the view-only page size, which then sticks after
+ * the field turns editable and produces a negative page count (the stock
+ * pagination crashes on it). Hence:
+ *
+ *   1. nothing is mounted while the form is `loading`, only a placeholder so
+ *      the form's skeleton overlay keeps its height, and
+ *   2. the stock component is keyed on the view-only flag, so any later flip
+ *      (batch mode, a collaborator focusing the field, ...) remounts it with a
+ *      freshly seeded page size instead of a stale one.
  */
 
 defineOptions({ inheritAttrs: false });
@@ -30,12 +44,14 @@ const props = withDefaults(
 	defineProps<{
 		disabled?: boolean;
 		nonEditable?: boolean;
+		loading?: boolean;
 		limit?: number;
 		viewLimit?: number;
 	}>(),
 	{
 		disabled: false,
 		nonEditable: false,
+		loading: false,
 		limit: 15,
 		viewLimit: -1,
 	},
@@ -48,24 +64,44 @@ const attrs = useAttrs();
 
 const viewOnly = computed(() => props.disabled || props.nonEditable);
 
-function normalizeLimit(value: number | null | undefined): number {
-	const parsed = Number(value ?? -1);
+// Field options arrive from stored JSON and can be null, a string, zero or
+// negative. The stock component derives its page count from this number and
+// hands that to VPagination, which builds an array of that length, so
+// anything that is not a positive integer must be caught here. In edit mode
+// fall back to the stock default of 15. In view-only mode -1 means "all
+// items", which the API accepts and which is safe because the stock component
+// hides its pagination while non-editable.
+function toPageSize(value: unknown, fallback: number): number {
+	const parsed = typeof value === 'string' ? Number.parseInt(value, 10) : Number(value);
 
-	if (Number.isNaN(parsed) || parsed === 0) {
-		return -1;
+	if (!Number.isFinite(parsed) || parsed < 1) {
+		return fallback;
 	}
 
-	return parsed;
+	return Math.floor(parsed);
 }
 
 const forwarded = computed(() => ({
 	...attrs,
+	loading: props.loading,
 	disabled: props.disabled,
 	nonEditable: viewOnly.value,
-	limit: viewOnly.value ? normalizeLimit(props.viewLimit) : props.limit,
+	limit: viewOnly.value ? toPageSize(props.viewLimit, -1) : toPageSize(props.limit, 15),
 }));
 </script>
 
 <template>
-	<component :is="'interface-list-m2a'" v-bind="forwarded" />
+	<div v-if="loading" class="loading-placeholder" />
+	<component
+		:is="'interface-list-m2a'"
+		v-else
+		:key="viewOnly ? 'view' : 'edit'"
+		v-bind="forwarded"
+	/>
 </template>
+
+<style scoped>
+.loading-placeholder {
+	min-block-size: 3.5rem;
+}
+</style>
