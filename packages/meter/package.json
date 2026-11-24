@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-meter",
   "description": "Meter interface and display for Directus: a number drawn as a filled bar against a range, with its percentage, value or fraction as text, a caption and colours by threshold",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",

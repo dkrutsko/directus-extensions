@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-steps",
   "description": "Steps interface and display for Directus: a field with an ordered list of choices drawn as a clickable progress track, and a compact progress display for layouts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",

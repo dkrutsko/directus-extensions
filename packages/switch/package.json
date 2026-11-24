@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-switch",
   "description": "Switch interface for Directus boolean fields: an on/off switch with a label and a line of description, sized and styled like the stock inputs",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",
