@@ -70,6 +70,47 @@ for (const { folder, manifest } of packages) {
 }
 
 //----------------------------------------------------------------------------//
+// Lockfiles                                                                  //
+//----------------------------------------------------------------------------//
+
+// A lockfile has to hold the optional dependencies of every platform, or
+// `npm ci` refuses it on another system. npm leaves them out when it updates
+// a lockfile next to an existing node_modules (it then only records what is
+// installed there), so a lockfile which fails here is written afresh:
+// delete it and node_modules, then run `npm install`.
+for (const file of ['package-lock.json', 'sandbox/package-lock.json']) {
+	const entries = json(file).packages;
+	const missing = new Set();
+
+	for (const [location, entry] of Object.entries(entries)) {
+		if (entry.resolved && !entry.link && !entry.resolved.startsWith('https://registry.npmjs.org/')) {
+			problems.push(`${file}: ${location} does not come from the public npm registry`);
+		}
+
+		for (const [name, range] of Object.entries(entry.optionalDependencies ?? {})) {
+			// Looked up the way Node does: in the package's own node_modules, then in each folder above.
+			let folder = location;
+			let found;
+
+			while (!found) {
+				found = entries[`${folder ? `${folder}/` : ''}node_modules/${name}`];
+				if (folder === '') break;
+				folder = folder.includes('node_modules/') ? folder.slice(0, folder.lastIndexOf('node_modules/')).replace(/\/$/, '') : '';
+			}
+
+			// Packages with a build per platform ask for one exact version of each.
+			const exact = /^\d+\.\d+\.\d+/.test(range);
+			if (!found || (exact && found.version !== range)) missing.add(`${name}@${range} (for ${location.split('node_modules/').pop()})`);
+		}
+	}
+
+	if (missing.size > 0) {
+		const names = [...missing];
+		problems.push(`${file}: ${names.length} optional dependencies are missing, such as ${names.slice(0, 3).join(', ')}. Delete the lockfile and node_modules next to it, then run \`npm install\` there`);
+	}
+}
+
+//----------------------------------------------------------------------------//
 // Lists                                                                      //
 //----------------------------------------------------------------------------//
 

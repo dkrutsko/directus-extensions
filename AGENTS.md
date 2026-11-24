@@ -11,7 +11,7 @@ This file is the shared instruction file for coding agents (Codex, Cursor, Claud
 | `packages/<name>/` | One extension: `src`, `tests` (vitest unit tests, where it has any), `sandbox` (browser tests), `docs`, `examples`, and its own `README.md`, `CHANGELOG.md`, `LICENSE`, `AGENTS.md`. |
 | `template/` | The starting point of a new extension, with `__NAME__`, `__SNAKE__`, `__TITLE__` and `__DESCRIPTION__` where `npm run new` fills in the name. Not a workspace and never built as it is. |
 | `sandbox/` | A local Directus 11.17.4 (SQLite) which loads every package, the Playwright setup and the fixtures of the browser tests. Its own `package.json` and lockfile; not a workspace. `sandbox/README.md` explains it. |
-| `scripts/sync.mjs` | Writes the lists of packages (the table in `README.md`, the dropdowns of both workflows) and checks the rules below which a script can check. |
+| `scripts/sync.mjs` | Writes the lists of packages (the table in `README.md`, the dropdowns of both workflows) and checks the rules below which a script can check, and that both lockfiles are complete. |
 | `scripts/new.mjs` | Copies `template/` to `packages/<name>` and runs the sync. |
 | `.github/workflows/` | **Build** and **Publish**, both started by hand with the package as an input. |
 | `package.json` | The workspaces, the scripts which run across them, and `overrides`. |
@@ -45,6 +45,7 @@ Add `-w packages/<name>` to a script to run it for one package, or run it in the
    - Directus serves all app extensions as one bundle on every Data Studio page, and one broken app bundle disables every custom app extension on the instance. Watch size, and report size changes.
    - Keep `overrides.esbuild` in the root `package.json`: without it the SDK's two esbuild versions break the build on npm installs. npm reads overrides only from the root, so a package must not have its own.
    - `.npmrc` pins the public npm registry. Every `resolved` URL in both lockfiles must start with `https://registry.npmjs.org/`; the only other entries are the links to the workspaces.
+   - A lockfile must hold the optional dependencies of every platform, or `npm ci` fails on the runner. npm drops them when it updates a lockfile next to an existing `node_modules`. `npm run sync` checks both lockfiles for this; when it complains, delete that lockfile and the `node_modules` beside it and run `npm install` there (with Node 22 in `sandbox/`).
 6. **What is stored is public API.** The ids of interfaces, displays, hooks and other entries, the format of stored values and the keys of options live in the schemas and data of other people's projects. Never rename them; change formats only in ways which keep old values working.
 7. **Directus look.** Use only `--theme--*` tokens for colours, so light, dark and custom themes work, and Directus global components where one fits. Styles are scoped, or every rule sits under a root class of the package.
 8. **App-only where possible.** The Marketplace installs app-only extensions under the default `MARKETPLACE_TRUST`; an API entry which is not sandboxed takes that away. Add one only when the extension needs it.
