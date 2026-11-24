@@ -1,7 +1,7 @@
 # directus-extension-json-table
 
-![npm](https://img.shields.io/npm/v/directus-extension-json-table)
-![build](https://img.shields.io/github/actions/workflow/status/dkrutsko/directus-extension-json-table/build.yml)
+[![npm](https://img.shields.io/npm/v/directus-extension-json-table)](https://www.npmjs.com/package/directus-extension-json-table)
+[![license](https://img.shields.io/npm/l/directus-extension-json-table)](LICENSE)
 
 A read-only table interface for JSON fields in [Directus](https://directus.io). The field's value holds a table cell by cell (text, icons, colours, links) and the interface draws it: a header row, rows with headings between them, and a legend underneath. It is for tables which something else computes and writes, such as a flow, a hook or a script that talks to the API, and whose columns differ from item to item, which no relational interface can show.
 
