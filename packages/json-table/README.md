@@ -56,6 +56,8 @@ Choose one:
 
 Rows can only be sticky when the height is limited, because a table without a limit never scrolls up or down by itself: the page does. Sticky rows and columns together never cover more than two thirds of the table, so a setting which asks for more is cut back.
 
+A table narrower than the field is stretched to fill it. The first column and the sticky columns stay as wide as their content, and the columns between them share the extra width.
+
 ![A large table in the dark theme, scrolled to the middle: the column labels, the first column, the Total column and the Total row stay in view](docs/images/pinned-dark.png)
 
 ## The value

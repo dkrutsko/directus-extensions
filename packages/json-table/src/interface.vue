@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useStores } from '@directus/extensions-sdk';
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRaw, watch } from 'vue';
-import { fitPins, linkTarget, parseValue } from './table';
+import { fitPins, linkTarget, parseValue, snugColumns } from './table';
 import type { Cell, Link, ParseResult, Piece, Pins } from './table';
 
 /**
@@ -498,6 +498,14 @@ const linePins = computed(() =>
 	),
 );
 
+// Indexed by table column: whether the column stays as wide as its content
+// when the table is stretched. This follows what the options ask to pin and
+// not what `measure()` found room for, because the answer changes the widths
+// which `measure()` reads.
+const snug = computed(() =>
+	snugColumns(table.value?.span ?? 0, wanted.value?.left ?? 0, wanted.value?.right ?? 0),
+);
+
 // A label with a link opens the item in a drawer over the form, read-only,
 // the way a related item opens from a relational field. `drawer-item` is a
 // global component of the app (app/src/components/register.ts:158 in Directus
@@ -546,6 +554,7 @@ const placeholderText = computed(() => props.placeholder || DEFAULT_PLACEHOLDER)
 									class="jt-head"
 									:class="[
 										index === 0 ? 'jt-first' : 'jt-column',
+										{ 'jt-snug': snug[index] },
 										column.class,
 										columnPins[index]?.class,
 									]"
@@ -828,9 +837,9 @@ const placeholderText = computed(() => props.placeholder || DEFAULT_PLACEHOLDER)
 }
 
 /*
- * A narrow table is stretched to the width of the box, and the columns after
- * the first share the extra width. Sticky cells and collapsed borders do not
- * mix: the borders scroll away.
+ * A narrow table is stretched to the width of the box, and the columns which
+ * are not snug share the extra width. Sticky cells and collapsed borders do
+ * not mix: the borders scroll away.
  */
 .jt-grid {
 	min-inline-size: 100%;
@@ -922,12 +931,19 @@ const placeholderText = computed(() => props.placeholder || DEFAULT_PLACEHOLDER)
 }
 
 /*
- * First column. A width of 1% keeps it as wide as its labels when the table
- * is stretched.
+ * A width of 1% keeps a column as wide as its content when the table is
+ * stretched. The header cell of a column is enough to say so. The first
+ * column always is (see `snug` in the script for the others).
  */
 
-.jt-grid .jt-first {
+.jt-grid .jt-first,
+.jt-grid .jt-snug {
 	inline-size: 1%;
+}
+
+/* First column */
+
+.jt-grid .jt-first {
 	border-inline-end: 1px solid var(--jt-line);
 }
 

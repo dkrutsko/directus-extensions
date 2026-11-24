@@ -22,7 +22,7 @@ npm run validate   # directus-extension validate
 | Path | What |
 |---|---|
 | `src/index.ts` | `defineInterface` and the seven options. The id `json-table` is stored in users' schemas: never rename it. |
-| `src/table.ts` | The format: types, the validator (`parseValue`), unpacking of compressed values, and the pure helpers (`truncateText`, `linkTarget`, `fitPins`). No Vue, no DOM library, no Directus imports, so the tests run it in Node. |
+| `src/table.ts` | The format: types, the validator (`parseValue`), unpacking of compressed values, and the pure helpers (`truncateText`, `linkTarget`, `fitPins`, `snugColumns`). No Vue, no DOM library, no Directus imports, so the tests run it in Node. |
 | `src/interface.vue` | The component: view model, pinning and header measurement, template and all styles. |
 | `tests/` | Vitest unit tests of `table.ts`. `helpers.ts` has the builders, a generator of large tables (`accessReview`) and a table full of hostile text (`hostile`). |
 | `docs/format.md` | The format reference for people who write values. Keep it in sync with behaviour. |
@@ -40,6 +40,7 @@ npm run validate   # directus-extension validate
 - **Pinned rows and columns** are `position: sticky` cells in a real `<table>` inside `.jt-scroll`. `measure()` reads the sizes the options ask for and `fitPins` takes pins from both edges in turn while they fit in two thirds (`PIN_SHARE`) of the scroll area. A column gets its offset as an inline style on each of its cells, a row as `--jt-pin` on its `<tr>`. A `ResizeObserver` repeats the measurement. Rows can only be pinned with a maximum height: without one the page scrolls, not the table.
 - **Two header layouts.** Across: columns of 7.5rem. On their side: columns as narrow as their cells, labels in `writing-mode: vertical-rl` turned by `rotate(180deg)`, cut at 9rem. `auto` picks the second when the columns do not fit the field's width, which `measure()` works out; before the first measurement more than `ROTATE_ABOVE` (3) columns after the first counts as not fitting. The first column is equally wide in both layouts, so switching cannot loop.
 - **Links** become the `collection` and `primary-key` props of the app's own `drawer-item` (`app/src/components/register.ts:158`), always with `disabled` and `non-editable`. A link is offered only when the collection exists in the collections store and the user has read permission on it.
+- **Stretching.** A table narrower than its box fills it (`min-inline-size: 100%`), and the browser shares the extra width between the columns by the width of their content. A header cell with a width of 1% keeps its column as wide as its content: the first column (`.jt-first`) and the columns the options ask to pin (`.jt-snug`, from `snugColumns`), unless that would be every column. This follows the options and not the measured pins, since it changes the widths which `measure()` reads.
 - **Width.** `.json-table` is a size container (`container: json-table / inline-size`), which gives it no intrinsic width, so a wide table can never widen the form.
 
 ## Invariants: do not break

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { PIN_SHARE, fitPins, truncateText } from '../src/table';
+import { PIN_SHARE, fitPins, snugColumns, truncateText } from '../src/table';
 
 describe('truncateText', () => {
 	test('short text is kept', () => {
@@ -41,5 +41,30 @@ describe('fitPins', () => {
 
 	test('nothing is pinned without room', () => {
 		expect(fitPins([200], [60], 0)).toEqual({ start: [], end: [] });
+	});
+});
+
+describe('snugColumns', () => {
+	test('the first column is snug, whatever is pinned', () => {
+		expect(snugColumns(4, 0, 0)).toEqual([true, false, false, false]);
+		expect(snugColumns(4, 1, 0)).toEqual([true, false, false, false]);
+	});
+
+	test('pinned columns are snug at both edges', () => {
+		expect(snugColumns(6, 1, 1)).toEqual([true, false, false, false, false, true]);
+		expect(snugColumns(6, 2, 2)).toEqual([true, true, false, false, true, true]);
+		expect(snugColumns(6, 0, 1)).toEqual([true, false, false, false, false, true]);
+	});
+
+	test('a column is always left to take the extra width', () => {
+		expect(snugColumns(2, 1, 1)).toEqual([true, false]);
+		expect(snugColumns(2, 0, 1)).toEqual([true, false]);
+		expect(snugColumns(4, 2, 2)).toEqual([true, false, false, false]);
+		expect(snugColumns(3, 1, 1)).toEqual([true, false, true]);
+	});
+
+	test('a table without columns has none', () => {
+		expect(snugColumns(0, 1, 1)).toEqual([]);
+		expect(snugColumns(1, 1, 0)).toEqual([true]);
 	});
 });

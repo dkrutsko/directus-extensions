@@ -667,3 +667,20 @@ export function fitPins(start: number[], end: number[], available: number): Pins
 
 	return pins;
 }
+
+/**
+ * Says which columns stay as wide as their content when a table narrower than
+ * its box is stretched to fill it: the first column and those which the
+ * options ask to pin, `left` of them at the start and `right` at the end. They
+ * hold labels and totals, so the extra width goes to the columns in between.
+ * When no column would be left to take it, only the first column stays as it
+ * is and the rest share the extra width.
+ */
+export function snugColumns(count: number, left: number, right: number): boolean[] {
+	const snug = Array.from(
+		{ length: count },
+		(_, index) => index === 0 || index < left || index >= count - right,
+	);
+
+	return snug.every(Boolean) ? snug.map((_, index) => index === 0) : snug;
+}

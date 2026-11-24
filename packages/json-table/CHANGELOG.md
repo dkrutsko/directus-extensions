@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.2
+
+- Sticky columns now stay as wide as their content when a table narrower than the field is stretched to fill it, as the first column always did. The columns between them share the extra width. Before, a sticky column on the right, such as one which holds totals, took a larger share than the columns beside it, because the extra width is shared by the width of the content.
+
 ## 1.0.1
 
 - First release published by the manual Publish workflow through npm trusted publishing, which validates the trusted publisher configuration. No functional changes.
