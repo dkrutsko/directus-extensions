@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.1
 
 - The extension moved to the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, which now holds its source and issues. The package name and the extension itself are unchanged.
 

@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-json-table",
   "description": "Read-only table interface for Directus JSON fields: draws the field's value as a table with colours, icons, links, sticky rows and columns, and a legend",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",
