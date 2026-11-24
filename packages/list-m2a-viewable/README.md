@@ -1,7 +1,7 @@
 # directus-extension-list-m2a-viewable
 
-![npm](https://img.shields.io/npm/v/directus-extension-list-m2a-viewable)
-![build](https://img.shields.io/github/actions/workflow/status/dkrutsko/directus-extension-list-m2a-viewable/build.yml)
+[![npm](https://img.shields.io/npm/v/directus-extension-list-m2a-viewable)](https://www.npmjs.com/package/directus-extension-list-m2a-viewable)
+[![license](https://img.shields.io/npm/l/directus-extension-list-m2a-viewable)](https://opensource.org/licenses/MIT)
 
 A drop-in replacement for the built-in **Builder (M2A)** interface (`list-m2a`) in [Directus](https://directus.io) that keeps list items clickable when the field is read-only. Anyone who can _see_ the field can open each referenced item in the side drawer, in view-only mode.
 
