@@ -1,0 +1,154 @@
+{
+	"version": 1,
+	"data": {
+		"shared": {
+			"gains": { "icon": "add_circle", "color": "var(--theme--success)", "tip": "Gains" },
+			"loses": { "icon": "remove_circle", "color": "var(--theme--danger)", "tip": "Loses" },
+			"has": { "icon": "check_circle", "tip": "Already has" },
+			"none": {
+				"text": ".",
+				"color": "var(--theme--foreground-subdued)",
+				"tip": "Unaffected"
+			},
+			"total": { "weight": 600, "background": "var(--theme--background-subdued)" },
+			"stack": { "use": "total", "break": true },
+			"plus": { "use": "total", "color": "var(--theme--success)" },
+			"minus": { "use": "total", "color": "var(--theme--danger)" }
+		},
+		"columns": [
+			{ "text": "Policy" },
+			{
+				"text": "Priya Shah",
+				"tip": "priya.shah@example.com",
+				"link": { "collection": "people", "id": "1" }
+			},
+			{
+				"text": "Marco Bianchi",
+				"tip": "marco.bianchi@example.com",
+				"link": { "collection": "people", "id": "2" }
+			},
+			{
+				"text": "Lena Novak",
+				"tip": "lena.novak@example.com",
+				"link": { "collection": "people", "id": "3" }
+			},
+			{
+				"text": "Sam Okafor",
+				"tip": "sam.okafor@example.com",
+				"link": { "collection": "people", "id": "4" }
+			},
+			{ "text": "Total" }
+		],
+		"rows": [
+			[{ "text": "Issue tracker" }],
+			[
+				{
+					"text": "billing-project",
+					"link": { "collection": "policies", "id": "billing-project" }
+				},
+				"gains",
+				"gains",
+				"has",
+				"gains",
+				{ "use": "plus", "text": "+3" }
+			],
+			[{ "text": "Cloud" }],
+			[
+				{
+					"text": "BillingDeveloper @ production",
+					"link": { "collection": "policies", "id": "billingdeveloper-production" }
+				},
+				"gains",
+				"has",
+				"gains",
+				"gains",
+				{ "use": "plus", "text": "+3" }
+			],
+			[{ "text": "Source control" }],
+			[
+				{
+					"text": "billing-engineers",
+					"link": { "collection": "policies", "id": "billing-engineers" }
+				},
+				"gains",
+				"gains",
+				"gains",
+				"gains",
+				{ "use": "plus", "text": "+4" }
+			],
+			[
+				{
+					"text": "billing-legacy",
+					"link": { "collection": "policies", "id": "billing-legacy" }
+				},
+				"loses",
+				"loses",
+				"none",
+				"none",
+				{ "use": "minus", "text": "-2" }
+			],
+			[{ "text": "Directory" }],
+			[
+				{
+					"text": "billing-on-call",
+					"link": { "collection": "policies", "id": "billing-on-call" }
+				},
+				"gains",
+				"gains",
+				"gains",
+				"gains",
+				{ "use": "plus", "text": "+4" }
+			],
+			[{ "text": "Databases" }],
+			[
+				{
+					"text": "billing-production-read-only",
+					"link": { "collection": "policies", "id": "billing-production-read-only" }
+				},
+				"gains",
+				"gains",
+				"gains",
+				"has",
+				{ "use": "plus", "text": "+3" }
+			],
+			[
+				{
+					"text": "billing-workers-ssh",
+					"link": { "collection": "policies", "id": "billing-workers-ssh" }
+				},
+				"gains",
+				"gains",
+				"gains",
+				"gains",
+				{ "use": "plus", "text": "+4" }
+			],
+			[
+				{ "use": "total", "text": "Total" },
+				{
+					"use": "stack",
+					"text": [
+						{ "use": "plus", "text": "+6" },
+						{ "use": "minus", "text": "-1" }
+					]
+				},
+				{
+					"use": "stack",
+					"text": [
+						{ "use": "plus", "text": "+5" },
+						{ "use": "minus", "text": "-1" }
+					]
+				},
+				{ "use": "plus", "text": "+5" },
+				{ "use": "plus", "text": "+5" },
+				{
+					"use": "total",
+					"text": [
+						{ "use": "plus", "text": "+21" },
+						{ "use": "minus", "text": "-2" }
+					]
+				}
+			]
+		],
+		"legend": ["gains", "loses", "has", "none"]
+	}
+}

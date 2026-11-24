@@ -1,0 +1,90 @@
+{
+	"version": 1,
+	"data": {
+		"shared": {
+			"ok": { "icon": "check_circle", "color": "var(--theme--success)", "tip": "Healthy" },
+			"slow": { "icon": "schedule", "color": "var(--theme--warning)", "tip": "Degraded" },
+			"down": {
+				"icon": "error",
+				"color": "var(--theme--danger)",
+				"background": "#E3516926",
+				"tip": "Down"
+			},
+			"off": {
+				"text": "n/a",
+				"color": "var(--theme--foreground-subdued)",
+				"italic": true,
+				"tip": "Not deployed"
+			},
+			"note": { "color": "var(--theme--foreground-subdued)", "italic": true },
+			"version": { "weight": 600 }
+		},
+		"columns": [
+			{ "text": "Service" },
+			{ "text": "Production" },
+			{ "text": "Staging" },
+			{ "text": "Development" },
+			{ "text": "Version" },
+			{ "text": "Team" }
+		],
+		"rows": [
+			[{ "text": "Public", "icon": "public" }],
+			[
+				{ "text": "Website", "link": { "collection": "services", "id": "website" } },
+				"ok",
+				"ok",
+				"ok",
+				{ "use": "version", "text": "4.12.0" },
+				{ "text": "Web", "color": "var(--theme--foreground-subdued)" }
+			],
+			[
+				{ "text": "Checkout", "link": { "collection": "services", "id": "checkout" } },
+				"slow",
+				"ok",
+				"ok",
+				{
+					"text": [
+						{ "use": "version", "text": "3.8.1" },
+						{ "use": "note", "text": "3.9.0 on staging", "break": true }
+					]
+				},
+				{ "text": "Payments", "color": "var(--theme--foreground-subdued)" }
+			],
+			[
+				{ "text": "Search", "link": { "collection": "services", "id": "search" } },
+				"ok",
+				"down",
+				"ok",
+				{
+					"text": [
+						{ "use": "version", "text": "2.4.0" },
+						{ "text": "beta", "color": "#6644FF" }
+					]
+				},
+				{ "text": "Discovery", "color": "var(--theme--foreground-subdued)" }
+			],
+			[{ "text": "Internal", "icon": "lock" }],
+			[
+				{
+					"text": "Back office",
+					"link": { "collection": "services", "id": "back-office" }
+				},
+				"ok",
+				"ok",
+				"off",
+				{ "use": "version", "text": "1.19.3" },
+				{ "text": "Operations", "color": "var(--theme--foreground-subdued)" }
+			],
+			[
+				{ "text": "Reporting", "link": { "collection": "services", "id": "reporting" } },
+				"ok",
+				"off",
+				"off",
+				{ "use": "version", "text": "0.9.0" },
+				{ "text": "Data", "color": "var(--theme--foreground-subdued)" }
+			],
+			[{ "use": "note", "icon": "info", "text": "Checked every five minutes" }]
+		],
+		"legend": ["ok", "slow", "down", "off"]
+	}
+}

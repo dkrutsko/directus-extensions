@@ -1,0 +1,155 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://raw.githubusercontent.com/dkrutsko/directus-extension-json-table/main/docs/schema.json",
+	"title": "JSON Table value",
+	"description": "The value of a field which uses the JSON Table interface of directus-extension-json-table (format version 1). See docs/format.md. The schema checks the structure. The interface also checks what a schema cannot: that every row has as many cells as there are columns (or one), that every name is in `shared`, that no shared cell leads back to itself, and that a part does not use a shared cell which has parts.",
+	"oneOf": [
+		{ "type": "null" },
+		{ "$ref": "#/$defs/plainValue" },
+		{ "$ref": "#/$defs/compressedValue" }
+	],
+	"$defs": {
+		"plainValue": {
+			"title": "A table which is stored as it is",
+			"type": "object",
+			"required": ["version", "data"],
+			"properties": {
+				"version": { "const": 1 },
+				"encoding": { "type": "null" },
+				"data": { "$ref": "#/$defs/table" }
+			}
+		},
+		"compressedValue": {
+			"title": "A table which is stored compressed",
+			"type": "object",
+			"required": ["version", "encoding", "data"],
+			"properties": {
+				"version": { "const": 1 },
+				"encoding": { "const": "gzip" },
+				"data": {
+					"description": "The base64 of the gzip of the JSON of the table.",
+					"type": "string",
+					"contentEncoding": "base64",
+					"contentMediaType": "application/gzip"
+				}
+			}
+		},
+		"table": {
+			"type": "object",
+			"required": ["columns", "rows"],
+			"properties": {
+				"shared": {
+					"description": "Cells by name, which other cells start from with `use` or by being that name.",
+					"type": ["object", "null"],
+					"additionalProperties": { "$ref": "#/$defs/cellObject" }
+				},
+				"columns": {
+					"description": "The header row: one cell per table column.",
+					"type": "array",
+					"maxItems": 200,
+					"items": { "$ref": "#/$defs/cell" }
+				},
+				"rows": {
+					"description": "Each row has one cell per column, or a single cell, which makes it a heading.",
+					"type": "array",
+					"maxItems": 1000,
+					"items": {
+						"type": "array",
+						"maxItems": 200,
+						"items": { "$ref": "#/$defs/cell" }
+					}
+				},
+				"legend": {
+					"description": "Cells drawn under the table, each followed by its `tip`.",
+					"type": ["array", "null"],
+					"items": { "$ref": "#/$defs/cell" }
+				}
+			}
+		},
+		"cell": {
+			"description": "An object, or the name of a cell in `shared`.",
+			"oneOf": [{ "type": "string" }, { "$ref": "#/$defs/cellObject" }]
+		},
+		"cellObject": {
+			"type": "object",
+			"properties": {
+				"use": {
+					"description": "The name of a cell in `shared` to start from.",
+					"type": ["string", "null"]
+				},
+				"text": {
+					"description": "The text, or a list of parts.",
+					"oneOf": [
+						{ "type": ["string", "number", "null"] },
+						{ "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/part" } }
+					]
+				},
+				"icon": {
+					"description": "The name of a Material Symbols icon, drawn in front of the text.",
+					"type": ["string", "null"]
+				},
+				"color": { "$ref": "#/$defs/color" },
+				"background": { "$ref": "#/$defs/color" },
+				"weight": {
+					"description": "The font weight. 400 is normal and 700 is bold.",
+					"type": ["number", "null"],
+					"minimum": 1,
+					"maximum": 1000
+				},
+				"italic": { "type": ["boolean", "null"] },
+				"tip": {
+					"description": "The tooltip, and the label of the cell in the legend.",
+					"type": ["string", "null"]
+				},
+				"link": { "$ref": "#/$defs/link" },
+				"break": {
+					"description": "On a part, true starts a new line with it. On a cell, it does so for every part.",
+					"type": ["boolean", "null"]
+				}
+			}
+		},
+		"part": {
+			"description": "Text, a number, or an object with the fields of a cell except `background`.",
+			"oneOf": [{ "type": ["string", "number"] }, { "$ref": "#/$defs/partObject" }]
+		},
+		"partObject": {
+			"type": "object",
+			"properties": {
+				"use": { "type": ["string", "null"] },
+				"text": { "type": ["string", "number", "null"] },
+				"icon": { "type": ["string", "null"] },
+				"color": { "$ref": "#/$defs/color" },
+				"weight": { "type": ["number", "null"], "minimum": 1, "maximum": 1000 },
+				"italic": { "type": ["boolean", "null"] },
+				"tip": { "type": ["string", "null"] },
+				"link": { "$ref": "#/$defs/link" },
+				"break": { "type": ["boolean", "null"] }
+			}
+		},
+		"color": {
+			"description": "A hex colour (#RGB, #RGBA, #RRGGBB or #RRGGBBAA) or a theme variable of the app, such as var(--theme--success).",
+			"oneOf": [
+				{ "type": "null" },
+				{
+					"type": "string",
+					"maxLength": 80,
+					"pattern": "^(#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|var\\(--theme(--?[a-z0-9]+)+\\))$"
+				}
+			]
+		},
+		"link": {
+			"description": "An item which the text opens in a drawer.",
+			"oneOf": [
+				{ "type": "null" },
+				{
+					"type": "object",
+					"required": ["collection", "id"],
+					"properties": {
+						"collection": { "type": "string", "minLength": 1 },
+						"id": { "type": "string", "minLength": 1 }
+					}
+				}
+			]
+		}
+	}
+}
