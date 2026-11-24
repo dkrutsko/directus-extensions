@@ -1,0 +1,28 @@
+{
+	// Type-checks the tests together with the framework-free code they import
+	// (src/meter.ts, src/options.ts). `npm run check` runs it after vue-tsc.
+	// There is no DOM library here on purpose: the tests run that code in
+	// Node, so any accidental use of a browser-only global fails this check.
+	"extends": "@directus/tsconfig/base",
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2023"],
+		"module": "ES2022",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"verbatimModuleSyntax": true,
+		"noEmit": true,
+		"declaration": false,
+		"types": ["node"]
+	},
+	"include": [
+		"./src/meter.ts",
+		"./src/options.ts",
+		"./tests/**/*.ts",
+		"./vitest.config.ts"
+	],
+	"exclude": [
+		"./node_modules/**",
+		"./dist/**"
+	]
+}

@@ -17,7 +17,10 @@ on:
           # packages:start (the lines up to packages:end are written by `npm run sync`)
           - json-table
           - list-m2a-viewable
+          - meter
           - node-graph
+          - steps
+          - switch
           # packages:end
       version:
         description: 'Version to publish. Must equal "version" in its package.json, e.g. 1.0.1'

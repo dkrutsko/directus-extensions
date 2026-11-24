@@ -1,0 +1,66 @@
+{
+  "name": "directus-extension-switch",
+  "description": "Switch interface for Directus boolean fields: an on/off switch with a label and a line of description, sized and styled like the stock inputs",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": {
+    "name": "David Krutsko",
+    "email": "dave@krutsko.net",
+    "url": "https://krutsko.net"
+  },
+  "homepage": "https://github.com/dkrutsko/directus-extensions/tree/main/packages/switch#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dkrutsko/directus-extensions.git",
+    "directory": "packages/switch"
+  },
+  "bugs": {
+    "url": "https://github.com/dkrutsko/directus-extensions/issues"
+  },
+  "icon": "toggle_on",
+  "keywords": [
+    "directus",
+    "directus-extension",
+    "directus-extension-interface",
+    "switch",
+    "toggle",
+    "boolean",
+    "checkbox"
+  ],
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "directus:extension": {
+    "type": "interface",
+    "path": "dist/index.js",
+    "source": "src/index.ts",
+    "host": "^11.15.0"
+  },
+  "scripts": {
+    "build": "directus-extension build",
+    "dev": "directus-extension build -w --no-minify",
+    "link": "directus-extension link",
+    "validate": "directus-extension validate",
+    "check": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
+    "test": "vitest run",
+    "prepublishOnly": "npm run check && npm test && npm run build && npm run validate"
+  },
+  "engines": {
+    "node": ">= 22.0.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "@directus/extensions-sdk": "17.1.4",
+    "@directus/tsconfig": "^4.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "3.2.4",
+    "vue": "^3.5.24",
+    "vue-tsc": "^3.2"
+  }
+}

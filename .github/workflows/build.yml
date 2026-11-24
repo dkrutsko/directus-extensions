@@ -22,7 +22,10 @@ on:
           # packages:start (the lines up to packages:end are written by `npm run sync`)
           - json-table
           - list-m2a-viewable
+          - meter
           - node-graph
+          - steps
+          - switch
           # packages:end
       browser:
         description: 'Also run the browser tests in a real Directus'
