@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+dist/
+.cache/
+*.tgz
+
+# The test Directus: its database, uploads and bundle, and Playwright's output
+sandbox/data/
+sandbox/test-results/
+sandbox/playwright-report/

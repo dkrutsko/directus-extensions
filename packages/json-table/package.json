@@ -8,13 +8,14 @@
     "email": "dave@krutsko.net",
     "url": "https://krutsko.net"
   },
-  "homepage": "https://github.com/dkrutsko/directus-extension-json-table#readme",
+  "homepage": "https://github.com/dkrutsko/directus-extensions/tree/main/packages/json-table#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dkrutsko/directus-extension-json-table.git"
+    "url": "git+https://github.com/dkrutsko/directus-extensions.git",
+    "directory": "packages/json-table"
   },
   "bugs": {
-    "url": "https://github.com/dkrutsko/directus-extension-json-table/issues"
+    "url": "https://github.com/dkrutsko/directus-extensions/issues"
   },
   "icon": "table_chart",
   "keywords": [
@@ -63,8 +64,5 @@
     "vitest": "3.2.4",
     "vue": "^3.5.24",
     "vue-tsc": "^3.2"
-  },
-  "overrides": {
-    "esbuild": "^0.28.2"
   }
 }

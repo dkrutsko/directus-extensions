@@ -1,0 +1,41 @@
+{
+  "name": "directus-extensions",
+  "description": "A collection of extensions for Directus: interfaces, displays and more",
+  "private": true,
+  "license": "MIT",
+  "author": {
+    "name": "David Krutsko",
+    "email": "dave@krutsko.net",
+    "url": "https://krutsko.net"
+  },
+  "homepage": "https://github.com/dkrutsko/directus-extensions#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dkrutsko/directus-extensions.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dkrutsko/directus-extensions/issues"
+  },
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "check": "npm run check --workspaces",
+    "test": "npm run test --workspaces --if-present",
+    "validate": "npm run validate --workspaces",
+    "sync": "node scripts/sync.mjs",
+    "new": "node scripts/new.mjs",
+    "sandbox:install": "npm --prefix sandbox ci && npm --prefix sandbox run browsers",
+    "sandbox": "npm --prefix sandbox start",
+    "sandbox:test": "npm --prefix sandbox test",
+    "sandbox:reset": "npm --prefix sandbox run reset"
+  },
+  "engines": {
+    "node": ">= 22.0.0"
+  },
+  "overrides": {
+    "esbuild": "^0.28.2"
+  }
+}

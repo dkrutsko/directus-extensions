@@ -2,12 +2,13 @@
 
 A Directus 11 interface extension, published on npm as `directus-extension-json-table`. It adds the **JSON Table** interface (`json-table`) for `json` fields: a read-only table which the field's value holds cell by cell, with a legend under it. Something else writes the value (a flow, a hook, a script that talks to the API); the interface only draws it.
 
-This file is the shared instruction file for coding agents (Codex, Cursor, Claude Code and others); `CLAUDE.md` imports it. If the workspace notes one level up (`../CLAUDE.md`) are present, they describe the surrounding folders.
+The rules which hold for every extension of this repository (independence, bundle hygiene, code style, releasing, the sandbox) are in the root `AGENTS.md`. This file only holds what is specific to this package; `CLAUDE.md` imports it.
 
 ## Commands
 
+Run these in this folder, after `npm install` in the repository root:
+
 ```bash
-npm install
 npm run dev        # watch build, unminified
 npm run check      # vue-tsc, plus tsc over the tests (tsconfig.test.json)
 npm test           # vitest
@@ -15,7 +16,7 @@ npm run build      # dist/index.js
 npm run validate   # directus-extension validate
 ```
 
-`prepublishOnly` runs check, test, build and validate. Never run `npm audit fix --force`: it moves the SDK pin (see invariant 7).
+`prepublishOnly` runs check, test, build and validate.
 
 ## Layout
 
@@ -25,6 +26,7 @@ npm run validate   # directus-extension validate
 | `src/table.ts` | The format: types, the validator (`parseValue`), unpacking of compressed values, and the pure helpers (`truncateText`, `linkTarget`, `fitPins`, `snugColumns`). No Vue, no DOM library, no Directus imports, so the tests run it in Node. |
 | `src/interface.vue` | The component: view model, pinning and header measurement, template and all styles. |
 | `tests/` | Vitest unit tests of `table.ts`. `helpers.ts` has the builders, a generator of large tables (`accessReview`) and a table full of hostile text (`hostile`). |
+| `sandbox/` | Browser tests which run against the sandbox Directus of the repository: the examples, an empty field and an invalid value. |
 | `docs/format.md` | The format reference for people who write values. Keep it in sync with behaviour. |
 | `docs/schema.json` | JSON Schema of the format. `tests/schema.test.ts` checks it against the validator. |
 | `examples/` | Complete values. `tests/table.test.ts` pins their shape, and `tests/docs.test.ts` parses the examples written out in the README and `docs/format.md`. |
@@ -58,36 +60,22 @@ npm run validate   # directus-extension validate
 5. **Nothing is left out without a word.** A table over a limit (`MAX_COLUMNS`, `MAX_ROWS`, `MAX_PARTS`) is rejected, never cut. Only text is cut, and it then ends in three dots.
 6. **`table.ts` stays free of Vue, the DOM library and Node-only APIs.** It runs in the browser and in the tests. `tsconfig.test.json` type-checks it without the DOM library, so it may only use globals which both have (`DecompressionStream`, `Blob`, `TextDecoder`, `atob`).
 7. **Bundle hygiene.**
-   - `dist/index.js` imports only `vue` and `@directus/extensions-sdk`. There are no runtime dependencies; do not add any.
-   - `@directus/extensions-sdk` is pinned to exactly `17.1.4`, because its Vue compiler must match the host's Vue (3.5.24 in Directus 11.17.4).
-   - Keep `overrides.esbuild`: without it the SDK's two esbuild versions break the build on npm installs.
-   - Directus serves all app extensions as one bundle on every Data Studio page, and one broken app bundle disables every custom app extension on the instance. Watch size (about 31 KB), and report size changes.
+   - The root `AGENTS.md` has the rules. Here nothing but the extension's own code is bundled: there are no dependencies to bundle, and none should be added.
+   - `dist/index.js` is about 31 KB. Report size changes.
 8. **It is an app-only extension,** so the Marketplace can install it under the default `MARKETPLACE_TRUST`. Don't add API entries casually.
 9. **Directus look.** Use only `--theme--*` tokens for the table's own colours, so light, dark and custom themes work, and Directus global components (`v-notice`, `drawer-item`). Styles are scoped; class names start with `jt-`.
 
 ## Code style
 
-- TypeScript, tabs (4 wide) and single quotes. `package.json` and YAML use 2 spaces (see `.editorconfig`).
-- Comments explain *why*. When relying on Directus internals, cite them as `path:line` in the Directus 11.17.4 source (`app/src/...`, `packages/...`).
+The root `AGENTS.md` has the style of the repository. In this package also:
+
 - Invisible and bidirectional characters in source are written as `\u` escapes, never as the characters themselves.
-- UI text is plain English.
-- Markdown paragraphs are unwrapped, one line each (README, CHANGELOG, docs).
-- Add or update vitest tests with every behaviour change, and a line in the message table of `docs/format.md` with every new message people are likely to meet. `npm run check` also type-checks the tests.
-
-## Workflow rules
-
-- **Ask before you bump the version, commit, push, tag or publish.** Only do them when explicitly asked. Record user-visible changes under `## Unreleased` at the top of `CHANGELOG.md`.
-- **Releasing, only when asked:**
-  1. Run `npm version X.Y.Z --no-git-tag-version`.
-  2. Rename `## Unreleased` to `## X.Y.Z`.
-  3. Commit and push to `main`.
-  4. The maintainer then runs **Actions → Publish** with `X.Y.Z`. That workflow uses npm trusted publishing with provenance, then creates the `vX.Y.Z` tag and the GitHub Release from that CHANGELOG section.
-  Both workflows stay `workflow_dispatch`-only; there is no automatic CI.
-- **Verify UI changes in a real Directus 11.17.4 in a browser, in light and dark,** before handing them back; unit tests cover only `table.ts`. Say plainly what was and wasn't tested.
+- Add a line to the message table of `docs/format.md` with every new message people are likely to meet.
+- The unit tests cover only `table.ts`. Everything in `interface.vue` has to be checked in a browser.
 
 ## Testing in a browser
 
-There are no browser tests in this repo. Version 1.0.0 was verified against a disposable Directus 11.17.4 (SQLite) with Playwright in Chrome, Firefox and WebKit, 97 checks each. To repeat it, seed a collection with a read-only `json` field on this interface and one item per case, and cover at least:
+`sandbox/json-table.spec.ts` checks in the sandbox Directus, in Chromium, that the built bundle loads and draws the examples, the placeholder of an empty field and the notice of an invalid value. Nothing else is automated. Version 1.0.0 was verified against a disposable Directus 11.17.4 (SQLite) with Playwright scripts in Chrome, Firefox and WebKit, 97 checks each, which are not part of the repository. To repeat that, seed a collection with a read-only `json` field on this interface and one item per case, and cover at least:
 
 - every value in `examples/`, the generated tables of `tests/helpers.ts` up to 200 by 1,000 (compressed), `hostile()` (no markup, no dialog, no request to another origin), an empty field and invalid values;
 - cells: colours, weights, italics, icons, backgrounds, parts side by side and with `break`, tooltips, the legend;
@@ -98,8 +86,6 @@ There are no browser tests in this repo. Version 1.0.0 was verified against a di
 
 Things which are easy to trip over:
 
-- **Directus bundles app extensions when it starts** (unless `EXTENSIONS_AUTO_RELOAD` is on). After a build, restart it and reload the browser tab.
-- **Two instances started from the same folder share one bundle.** Directus writes the bundle of app extensions to `TEMP_PATH`, which defaults to `./node_modules/.directus`. Give a second instance its own `TEMP_PATH`.
 - **The API drops a `__proto__` key** when a value is saved, and the form hands interfaces a function for `hasOwnProperty`, so those two cannot be names in `shared` (`tests/cells.test.ts`).
 - **Firefox resolves automatic margins to nothing** for a block whose writing mode differs from its parent's, so the label on its side is an inline block which its cell centres like text.
 - **WebKit reports the app's own cancelled requests as errors** when a page is left quickly ("due to access control checks", "AxiosError: Network Error"). They also appear on pages without this interface.

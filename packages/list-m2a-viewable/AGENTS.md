@@ -2,7 +2,7 @@
 
 A Directus 11 interface extension, published on npm as `directus-extension-list-m2a-viewable`. It is a drop-in replacement for the built-in **Builder (M2A)** interface (`list-m2a`) that keeps list items clickable when the field is read-only, so anyone who can see the field can open each referenced item in the side drawer, in view-only mode.
 
-This file is the shared instruction file for coding agents (Codex, Cursor, Claude Code and others); `CLAUDE.md` imports it. If the workspace notes one level up (`../CLAUDE.md`) are present, they describe the surrounding folders and the Galactus instance this extension was built for.
+The rules which hold for every extension of this repository (independence, bundle hygiene, code style, releasing, the sandbox) are in the root `AGENTS.md`. This file only holds what is specific to this package; `CLAUDE.md` imports it.
 
 ## Why it exists
 
@@ -31,24 +31,22 @@ Everything is in `src/index.ts` (the `defineInterface`) and `src/interface.vue` 
 3. **Validate page sizes** (`toPageSize`). Option values come from stored JSON and can be null, strings, zero or negative. Edit mode falls back to 15, view-only mode to `-1`.
 4. **Keep options in sync with the stock interface of the host version.** When moving to a new Directus version, compare `src/index.ts` with `app/src/interfaces/list-m2a/index.ts` and re-check the `:disabled` row binding above.
 5. **Bundle hygiene.**
-   - `dist/index.js` imports only `vue` and `@directus/extensions-sdk`.
-   - `@directus/extensions-sdk` is pinned to exactly `17.1.4`, because its Vue compiler must match the host's Vue (3.5.24 in 11.17.4).
-   - Keep `overrides.esbuild`: without it the SDK's two esbuild versions break the build on npm installs.
-   - `host` is `^11.15.0`, the first release with the `nonEditable` prop this relies on.
-   - Directus loads all app extensions as one bundle, and one broken bundle disables every custom app extension on the instance.
+   - The root `AGENTS.md` has the rules. Here nothing but the wrapper is bundled, so `dist/index.js` stays at about 3 KB.
+   - The extension cannot work below Directus 11.15.0, the first release with the `nonEditable` prop it relies on. That is also where the host range of the repository starts.
 6. **It is an app-only extension,** so the Marketplace can install it under the default `MARKETPLACE_TRUST`. Don't add API entries casually.
 
 ## Commands
 
+Run these in this folder, after `npm install` in the repository root:
+
 ```bash
-npm install
 npm run dev        # watch build, unminified
 npm run check      # vue-tsc
 npm run build      # dist/index.js
 npm run validate   # directus-extension validate
 ```
 
-`prepublishOnly` runs check, build and validate. There are no unit tests. Verify changes in a real Directus 11.17.4 in a browser, and cover at least:
+`prepublishOnly` runs check, build and validate. There are no unit tests. `sandbox/list-m2a-viewable.spec.ts` checks in the sandbox Directus that the rows of a read-only field can be clicked as an admin and open a view-only drawer; with the stock interface on the same field that test fails. Verify changes in the sandbox in a browser, and cover at least:
 - a read-only M2A field as an admin;
 - a non-admin without update permission;
 - an editable field;
@@ -56,25 +54,6 @@ npm run validate   # directus-extension validate
 - batch mode;
 - the drawer opening read-only.
 
-Never run `npm audit fix --force`: it moves the SDK pin.
+## Release history
 
-## Code style
-
-- TypeScript, tabs (4 wide) and single quotes. `package.json` and YAML use 2 spaces (see `.editorconfig`).
-- Comments explain *why*. When relying on Directus internals, cite them as `path:line` in the Directus 11.17.4 source.
-- Markdown paragraphs are unwrapped, one line each (README, CHANGELOG).
-
-## Workflow rules
-
-- **Ask before you bump the version, commit, push, tag or publish.** Only do them when explicitly asked.
-- **Releasing, only when asked:**
-  1. Run `npm version X.Y.Z --no-git-tag-version`.
-  2. Add a `## X.Y.Z` section at the top of `CHANGELOG.md`.
-  3. Commit and push to `main`.
-  4. The maintainer then runs **Actions → Publish** with `X.Y.Z`. That workflow uses npm trusted publishing with provenance, then creates the `vX.Y.Z` tag and the GitHub Release from that CHANGELOG section.
-  **Actions → Build** packs the tarball for inspection without publishing. Both workflows stay `workflow_dispatch`-only; there is no automatic CI.
-- **Release history:** 1.0.0 was published by hand on 2026-09-03; 1.0.1, a test of the Publish workflow, on 2026-09-04; and 1.0.2, the RangeError fix, on 2026-09-10.
-
-## Known issues
-
-- **A latent bug in the Publish workflow's release-notes step** (`sed -n "/^## X$/,/^## /p" CHANGELOG.md | sed '1d;$d'`). It drops the last line of a section when that section is the last one in the file. New releases are added at the top, so it only bites when releasing the oldest or only section. The sister repo `directus-extension-node-graph` uses the fixed form, `sed -n "/^## X$/,/^## /{/^## /!p;}"`.
+1.0.0 was published by hand on 2026-09-03; 1.0.1, a test of the Publish workflow, on 2026-09-04; and 1.0.2, the RangeError fix, on 2026-09-10. All three came from the extension's first repository, `dkrutsko/directus-extension-list-m2a-viewable`.

@@ -5,7 +5,7 @@
 
 A read-only table interface for JSON fields in [Directus](https://directus.io). The field's value holds a table cell by cell (text, icons, colours, links) and the interface draws it: a header row, rows with headings between them, and a legend underneath. It is for tables which something else computes and writes, such as a flow, a hook or a script that talks to the API, and whose columns differ from item to item, which no relational interface can show.
 
-![A table of policies by people: icons for what each person gains, loses or already has, group headings, and a Total column and row in green and red](docs/images/access-review.png)
+![A table of policies by people: icons for what each person gains, loses or already has, group headings, and a Total column and row in green and red](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/json-table/docs/images/access-review.png)
 
 ## Features
 
@@ -25,14 +25,14 @@ Choose one:
 
 - **Marketplace.** In Directus go to Settings, Marketplace, search for `json-table` and install. App-only extensions such as this one are listed under the default `MARKETPLACE_TRUST` setting.
 - **npm.** In the project that runs Directus run `npm install directus-extension-json-table`. Directus discovers extensions listed in the root `package.json` on startup.
-- **Local folder.** Clone this repository into `<EXTENSIONS_PATH>/directus-extension-json-table` (`EXTENSIONS_PATH` defaults to `./extensions`), run `npm install && npm run build`, then restart Directus. Only `package.json` and `dist/` are needed at run time, so a folder with just those two works too.
+- **Local folder.** Run `npm pack directus-extension-json-table`, unpack the archive into `<EXTENSIONS_PATH>/directus-extension-json-table` (`EXTENSIONS_PATH` defaults to `./extensions`) with `tar -xzf directus-extension-json-table-*.tgz --strip-components 1 -C <that folder>`, then restart Directus. The archive holds `package.json` and `dist/`, which is all Directus needs at run time.
 
 ## Usage
 
 1. Restart Directus if you installed via npm or a local folder, and reload the Data Studio, which fetches extensions once when it starts.
 2. Settings, Extensions: confirm **directus-extension-json-table** is enabled.
 3. Settings, Data Model, open a collection and create a field of type JSON. Choose **JSON Table**, in the "Other" group, and turn on **Read-only** under Field, so the form never offers to edit the value.
-4. Write a value into the field. To try it, paste [`examples/status-board.json`](examples/status-board.json) into the field through the API, or switch the field to the stock Code interface for a moment and paste it there:
+4. Write a value into the field. To try it, paste [`examples/status-board.json`](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/examples/status-board.json) into the field through the API, or switch the field to the stock Code interface for a moment and paste it there:
 
 	```sh
 	curl -X PATCH "https://directus.example.com/items/<collection>/<id>" \
@@ -42,7 +42,7 @@ Choose one:
 
 5. Open the item. Links in the examples point at collections which your project does not have, so they are shown as plain text.
 
-![A status board: services by environment with status icons, a cell with a translucent red background, a version with a second line in italics, and a legend](docs/images/status-board.png)
+![A status board: services by environment with status icons, a cell with a translucent red background, a version with a second line in italics, and a legend](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/json-table/docs/images/status-board.png)
 
 | Option | Default | Description |
 |---|---|---|
@@ -58,7 +58,7 @@ Rows can only be sticky when the height is limited, because a table without a li
 
 A table narrower than the field is stretched to fill it. The first column and the sticky columns stay as wide as their content, and the columns between them share the extra width.
 
-![A large table in the dark theme, scrolled to the middle: the column labels, the first column, the Total column and the Total row stay in view](docs/images/pinned-dark.png)
+![A large table in the dark theme, scrolled to the middle: the column labels, the first column, the Total column and the Total row stay in view](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/json-table/docs/images/pinned-dark.png)
 
 ## The value
 
@@ -91,7 +91,7 @@ The field holds `null` or an object like this:
 - `legend` lists cells to explain under the table, each followed by its `tip`.
 - A large table can be stored as `{ "version": 1, "encoding": "gzip", "data": "<base64>" }`.
 
-[`docs/format.md`](docs/format.md) is the full reference, with the colours, the rules for shared cells and parts, compression in JavaScript, Go and Python, the limits and the error messages. [`docs/schema.json`](docs/schema.json) is a JSON Schema of the format, and [`examples/`](examples) has complete values.
+[`docs/format.md`](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/docs/format.md) is the full reference, with the colours, the rules for shared cells and parts, compression in JavaScript, Go and Python, the limits and the error messages. [`docs/schema.json`](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/docs/schema.json) is a JSON Schema of the format, and [`examples/`](examples) has complete values.
 
 ## Compatibility
 
@@ -114,8 +114,9 @@ Tested in Chrome, in Firefox and in WebKit, the engine of Safari, but not in Saf
 
 ## Development
 
+This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. After `npm install` in the repository root, run these in `packages/json-table`:
+
 ```bash
-npm install
 npm run dev       # watch build, unminified
 npm run check     # vue-tsc, then tsc over the tests
 npm test          # vitest
@@ -127,15 +128,8 @@ The code is laid out as follows:
 
 - `src/index.ts` declares the interface and its options, and `src/interface.vue` is the component with its template and styles.
 - `src/table.ts` is the format: the types, the validator, the unpacking of compressed values and the pure layout helpers. It uses no Vue, DOM or Directus APIs, so the tests run it in Node.
-- `tests` holds the unit tests of the format, `examples` the example values, and `docs` the [format reference](docs/format.md) and its [JSON Schema](docs/schema.json), which a test keeps in step with the validator.
-
-## Releasing
-
-Nothing runs automatically. Two workflows under the Actions tab are triggered by hand:
-
-- **Build** runs check, test, build and validate on Node 22, then attaches the exact `.tgz` that would be uploaded to npm as a downloadable artifact. Run it whenever you want to inspect what a release would contain.
-- **Publish** takes a version number. Bump `version` in `package.json`, add a `CHANGELOG.md` entry, commit and push to `main`, then run the workflow with that version. It verifies the version matches `package.json`, publishes to npm with provenance via trusted publishing, and only after npm accepts the upload creates the `v*` tag and the GitHub Release using the changelog entry as notes. The job runs under the `publishing` environment, so it pauses for approval when that environment has required reviewers.
+- `tests` holds the unit tests of the format, `sandbox` the browser tests which run in a real Directus, `examples` the example values, and `docs` the [format reference](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/docs/format.md) and its [JSON Schema](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/docs/schema.json), which a test keeps in step with the validator.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/dkrutsko/directus-extensions/blob/main/packages/json-table/LICENSE)

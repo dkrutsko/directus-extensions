@@ -1,0 +1,24 @@
+{
+	// Type-checks the Playwright setup and the browser tests of every package
+	// (`npm run check` in this folder). Playwright itself runs TypeScript
+	// without checking it.
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2023", "DOM"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"resolveJsonModule": true,
+		"verbatimModuleSyntax": true,
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"types": ["node"]
+	},
+	"include": [
+		"./playwright.config.ts",
+		"./support/**/*.ts",
+		"../packages/*/sandbox/**/*.ts"
+	]
+}

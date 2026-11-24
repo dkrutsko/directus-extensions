@@ -1,0 +1,104 @@
+name: Publish
+
+# Manual only. Builds one extension and publishes the given version to npm
+# via trusted publishing, then tags the commit it was published from as
+# <package name>@<version>. There are no GitHub Releases: the CHANGELOG.md
+# of each package is the record of what changed. The `publishing`
+# environment gates the job, so it waits for approval if the environment has
+# required reviewers.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Extension to publish'
+        required: true
+        type: choice
+        options:
+          # packages:start (the lines up to packages:end are written by `npm run sync`)
+          - json-table
+          - list-m2a-viewable
+          - node-graph
+          # packages:end
+      version:
+        description: 'Version to publish. Must equal "version" in its package.json, e.g. 1.0.1'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: publishing
+    permissions:
+      contents: write # to push the tag
+      id-token: write # for npm trusted publishing and provenance
+    env:
+      PACKAGE: ${{ inputs.package }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # No dependency cache in a job which can publish: a poisoned cache
+      # could reach the publishing token.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      # Trusted publishing (the OIDC token exchange) needs npm >= 11.5.1,
+      # which Node 24 bundles. With an older npm, `npm publish` is sent
+      # unauthenticated and the registry answers "404 Not Found - PUT".
+      - name: Verify npm can do trusted publishing
+        run: |
+          NPM_VERSION="$(npm -v)"
+          echo "npm $NPM_VERSION"
+          if [ "$(printf '%s\n' 11.5.1 "$NPM_VERSION" | sort -V | head -n 1)" != "11.5.1" ]; then
+            echo "npm >= 11.5.1 is needed for trusted publishing"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Check the package lists and rules
+        run: npm run sync -- --check
+
+      - name: Verify requested version matches package.json
+        run: |
+          NAME="$(node -p "require('./packages/$PACKAGE/package.json').name")"
+          PKG_VERSION="$(node -p "require('./packages/$PACKAGE/package.json').version")"
+          if [ "$VERSION" != "$PKG_VERSION" ]; then
+            echo "Requested $VERSION but packages/$PACKAGE/package.json says $PKG_VERSION"
+            exit 1
+          fi
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          echo "TAG=$NAME@$VERSION" >> "$GITHUB_ENV"
+
+      - name: Verify the changelog has this version
+        run: |
+          if ! grep -qFx "## $VERSION" "packages/$PACKAGE/CHANGELOG.md"; then
+            echo "packages/$PACKAGE/CHANGELOG.md has no \"## $VERSION\" section. Rename \"## Unreleased\" first"
+            exit 1
+          fi
+
+      - name: Verify this version was not published before
+        run: |
+          git fetch --tags --quiet
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists, bump the version first"
+            exit 1
+          fi
+          if [ -n "$(npm view "$NAME@$VERSION" version 2>/dev/null)" ]; then
+            echo "$NAME@$VERSION is already on npm, bump the version first"
+            exit 1
+          fi
+
+      # `prepublishOnly` of the package runs its check, tests, build and
+      # validate before the upload.
+      - run: npm publish --workspace "packages/$PACKAGE"
+
+      # Only reached after npm accepted the upload. The tag records which
+      # commit the version was built from.
+      - name: Tag the published commit
+        run: |
+          git tag "$TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$TAG"

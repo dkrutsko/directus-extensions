@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The extension moved to the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, which now holds its source and issues. The package name and the extension itself are unchanged.
+
 ## 1.0.2
 
 - Sticky columns now stay as wide as their content when a table narrower than the field is stretched to fill it, as the first column always did. The columns between them share the extra width. Before, a sticky column on the right, such as one which holds totals, took a larger share than the columns beside it, because the extra width is shared by the width of the content.

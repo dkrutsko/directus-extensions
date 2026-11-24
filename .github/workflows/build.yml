@@ -1,0 +1,114 @@
+name: Build
+
+# Manual only. Runs the same checks the publish workflow runs (type check,
+# unit tests, build, validate) for one extension or for all of them, then
+# packs the tarball that *would* be uploaded to npm and attaches it to the
+# run as an artifact so it can be downloaded and inspected. Nothing is
+# published.
+#
+# With "browser" ticked a second job builds every extension, starts the
+# sandbox Directus with all of them loaded and runs the browser tests: those
+# of the chosen extension, or all of them.
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Extension to build'
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          # packages:start (the lines up to packages:end are written by `npm run sync`)
+          - json-table
+          - list-m2a-viewable
+          - node-graph
+          # packages:end
+      browser:
+        description: 'Also run the browser tests in a real Directus'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  # What npm is told to work on: one workspace or all of them.
+  WORKSPACE: ${{ inputs.package == 'all' && '--workspaces' || format('--workspace packages/{0}', inputs.package) }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Check the package lists and rules
+        run: npm run sync -- --check
+
+      - run: npm run check $WORKSPACE
+      - run: npm run test --if-present $WORKSPACE
+      - run: npm run build $WORKSPACE
+      - run: npm run validate $WORKSPACE
+
+      - name: Pack tarball
+        run: npm pack $WORKSPACE
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.package }}
+          path: directus-extension-*.tgz
+          if-no-files-found: error
+
+  browser:
+    if: ${{ inputs.browser }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The extensions are built the way they are built for a release. All of
+      # them, because the sandbox loads every extension and refuses to start
+      # when one of them has no build.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.x'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run build
+
+      # Directus 11.17.4 cannot be installed with Node 24: its isolated-vm
+      # 5.0.3 has no build for it. So the sandbox itself runs on Node 22.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: sandbox/package-lock.json
+      - run: npm ci
+        working-directory: sandbox
+      - run: npx playwright install --with-deps chromium
+        working-directory: sandbox
+
+      - name: Type-check the browser tests
+        working-directory: sandbox
+        run: npm run check
+
+      - name: Run the browser tests
+        working-directory: sandbox
+        env:
+          FILTER: ${{ inputs.package != 'all' && format('{0}/', inputs.package) || '' }}
+        run: npx playwright test $FILTER
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: browser-tests
+          path: |
+            sandbox/playwright-report
+            sandbox/test-results
+          if-no-files-found: ignore

@@ -1,0 +1,5 @@
+{
+	"port": 8155,
+	"adminEmail": "admin@example.com",
+	"adminPassword": "sandbox"
+}

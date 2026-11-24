@@ -1,0 +1,25 @@
+{
+  "name": "directus-extensions-sandbox",
+  "description": "A local Directus which loads every extension in ../packages, and the browser tests which run against it",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/start.mjs",
+    "check": "tsc --noEmit",
+    "test": "playwright test",
+    "browsers": "playwright install chromium",
+    "reset": "node scripts/reset.mjs"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "directus": "11.17.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  }
+}
