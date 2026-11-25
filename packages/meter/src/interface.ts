@@ -9,7 +9,8 @@ import preview from './preview';
  * An interface for a numeric field which something else keeps up to date: the
  * value is drawn as a bar which is filled in proportion to where it stands
  * between a minimum and a maximum, with the value as text beside it and a
- * caption under it. It is a reading, not an input: it never writes the field.
+ * caption under it. In a field which can be edited the bar is a slider, set
+ * with the pointer and the keys; in a read-only field it is a reading.
  *
  * It sits in the group of the stock Slider, its counterpart for input
  * (app/src/interfaces/slider/index.ts:13 in Directus 11.17.4). The stock id
@@ -30,7 +31,7 @@ export default defineInterface({
 	recommendedDisplays: ['meter'],
 	options: ({ field }) => {
 		const stored: Record<string, unknown> = field?.meta?.options ?? {};
-		return optionFields({ minValue: stored['minValue'], maxValue: stored['maxValue'] }, false);
+		return optionFields({ minValue: stored['minValue'], maxValue: stored['maxValue'], stepInterval: stored['stepInterval'] }, false, stored, field?.type);
 	},
 	preview,
 });

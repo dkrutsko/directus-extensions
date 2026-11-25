@@ -29,5 +29,5 @@ export default defineDisplay({
 	types: ['integer', 'bigInteger', 'float', 'decimal'],
 	component: DisplayComponent,
 	handler: (value, options, context) => textHandler(value, options, context, pageLanguage()),
-	options: ({ field }) => optionFields(field?.meta?.options ?? {}, true),
+	options: ({ field }) => optionFields(field?.meta?.options ?? {}, true, field?.meta?.display_options),
 });

@@ -1,39 +1,46 @@
 <script setup lang="ts">
-import { computed, useId } from 'vue';
+import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
-import { readOptions, readingOf } from './meter';
+import { canEdit, changes, drawingOf, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, shareAt, snapValue, valueAtShare } from './meter';
+import type { Paint, Piece } from './meter';
 
 /**
  * The Meter interface.
  *
  * An area as high as a stock input, with the track across its width and,
  * on a line under the track, the caption at the start and the value as text
- * at the end. There is no box around it: it is not an input. It is a reading and not a control, so it emits nothing, is no tab
- * stop and reacts to no pointer.
+ * at the end. There is no box around it.
  *
- * The form passes `value`, `disabled`, `nonEditable` and `loading` to every
- * interface, the field's options as further props, and a good deal more
+ * In a field which can be edited the track is a slider: the pointer and the
+ * keys set the value. In a field which cannot (`disabled`, which is what
+ * read-only comes to, `nonEditable` or `loading`) it is the reading it was
+ * before there was any editing: the same elements with the role `meter`, no
+ * tab stop, no listener, no cursor, and nothing is ever emitted. It is not
+ * dimmed either: a field which a flow keeps up to date is normally read-only,
+ * and dimming it would dim nearly every meter.
+ *
+ * The form passes `value`, `disabled`, `nonEditable`, `loading` and the
+ * `type` of the field to every interface, the field's options as further
+ * props, and a good deal more
  * (app/src/components/v-form/components/form-field-interface.vue:60-85 in
  * Directus 11.17.4). Only what is declared here is used. Attributes do not
  * fall through, so the rest never ends up on the element.
  *
- * `disabled`, `nonEditable` and `loading` are left out on purpose. Nothing
- * here can be edited, so there is nothing to switch off, and a field which a
- * flow keeps up to date is normally read-only: dimming it would dim nearly
- * every meter and tell the user nothing they can act on. `direction` is left
- * out as well: it is the direction of the text which is typed into a field.
- * The form of an item hands over that of the user
+ * `direction` is left out: it is the direction of the text which is typed
+ * into a field. The form of an item hands over that of the user
  * (app/src/modules/content/routes/item.vue:888), a form inside the
  * translations interface that of its language
  * (app/src/interfaces/translations/translation-form.vue:213), and the stock
  * Input puts it on its element (app/src/interfaces/input/input.vue:88). The
  * meter holds no such text. Like the stock Slider it runs in the direction of
- * the page, which its styles follow on their own.
+ * the page, which its styles follow on their own and its pointer and keys by
+ * asking the element.
  *
  * The options are typed as `unknown`, not by what they should hold: they
  * arrive as the schema stores them, `readOptions` makes sense of them, and
  * a prop which Vue knows as a boolean would turn a missing `indicator` into
- * `false`.
+ * `false`. The three which say whether the field can be edited are booleans:
+ * a missing one is `false` there, which is what it means.
  */
 defineOptions({ inheritAttrs: false });
 
@@ -49,7 +56,22 @@ const props = defineProps<{
 	indicatorFormat?: unknown;
 	color?: unknown;
 	thresholds?: unknown;
+	visualization?: unknown;
+	subdivisions?: unknown;
+	dotsLayout?: unknown;
+	activeColoring?: unknown;
+	inactiveColoring?: unknown;
+	input?: unknown;
+	step?: unknown;
+	stepInterval?: unknown;
+	sensitivity?: unknown;
+	type?: unknown;
+	disabled?: boolean;
+	nonEditable?: boolean;
+	loading?: boolean;
 }>();
+
+const emit = defineEmits<{ input: [value: unknown] }>();
 
 const t = useAppText();
 const language = useLanguage();
@@ -57,6 +79,72 @@ const id = useId();
 
 const options = computed(() => readOptions(props));
 const reading = computed(() => readingOf(props.value, options.value, language()));
+
+// How many pieces the track is cut into depends on its width, which is that
+// of the element on the line of the track. The form gives that element its
+// width, never what is inside it, so the number of pieces cannot change what
+// is measured. It is measured when the component is mounted, before the first
+// frame is painted, and again whenever its size changes. A field which is not
+// shown, as in a tab or a group which is closed, has no width: it draws no
+// pieces and keeps its height, and is measured again when it is shown.
+const line = shallowRef<HTMLElement | null>(null);
+const width = shallowRef(0);
+let observer: ResizeObserver | null = null;
+
+onMounted(() => {
+	const element = line.value;
+	if (!element) return;
+
+	width.value = element.getBoundingClientRect().width;
+	if (typeof ResizeObserver === 'undefined') return;
+
+	observer = new ResizeObserver((entries) => {
+		const entry = entries[entries.length - 1];
+		if (entry) width.value = entry.borderBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+	});
+
+	observer.observe(element);
+});
+
+onBeforeUnmount(() => {
+	observer?.disconnect();
+	observer = null;
+});
+
+// The width is read here and nowhere else. A computed value which comes to
+// the same number does not wake what depends on it, so the meter is drawn
+// again only when the number of pieces changes, not with every pixel.
+const look = computed(() => readLook(props));
+const count = computed(() => pieceCount(look.value, options.value, 'form', width.value));
+const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value));
+
+// The colour stops of the scale are set once, on the root, for whichever
+// surfaces paint with them.
+const scales = computed(() => {
+	const { stops, weakStops } = drawing.value;
+	if (stops === null && weakStops === null) return undefined;
+
+	return { '--mt-stops': stops ?? undefined, '--mt-weak-stops': weakStops ?? undefined };
+});
+
+const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.scale === 'weak' ? 'mt-paint mt-weak' : 'mt-paint');
+
+// The element on the line of the track: the track of the one bar, or the row of pieces.
+const lineStyle = computed(() => {
+	const { pieces, track } = drawing.value;
+
+	if (pieces !== null) return { '--mt-n': pieces.length };
+	return track.color !== null ? { backgroundColor: track.color } : undefined;
+});
+
+// The fill of the one bar. Painted with the scale, it is the first part of an image as wide as the track.
+const fillStyle = computed(() => {
+	const { fill } = drawing.value;
+	const inlineSize = `${reading.value.fraction * 100}%`;
+
+	if (fill.scale !== null) return { inlineSize, '--mt-n': 1 / reading.value.fraction };
+	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
+});
 
 // The meter is named by its caption, which is on the page, or else by the
 // name of its field, which the form prints above it.
@@ -67,6 +155,257 @@ const name = computed(() => {
 
 // `no_value` is what the app says for an empty field elsewhere.
 const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') : reading.value.text));
+
+// Editing. Everything from here to the styles' notes is for a field which can
+// be edited, and none of it is reached in one which cannot: the template
+// binds the listeners, the tab stop and the role of a slider only while
+// `editable` holds, and `write` checks it once more.
+const editable = computed(() => canEdit(props));
+const editing = computed(() => readEditing(props, props.type));
+const method = computed(() => inputMethod(editing.value, count.value, options.value));
+
+// How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it.
+const hover = shallowRef(0);
+const dragging = shallowRef(false);
+
+/**
+ * Writes a value, which has to be one `snapValue` or `keyValue` made: on the
+ * grid, within the range, a finite number. Only where the field can be
+ * edited, and only where it differs from what the field holds.
+ */
+function write(value: number | null | undefined) {
+	if (!editable.value || typeof value !== 'number' || !Number.isFinite(value)) return;
+	if (!changes(props.value, value)) return;
+
+	emit('input', value);
+}
+
+// Where things are at the moment of an event: the track, the direction of the page, the pieces as they are laid
+// out, and the length along which a value is spread, which for packed dots is that of the row of dots.
+function frame(element: HTMLElement) {
+	const box = element.getBoundingClientRect();
+	const rtl = getComputedStyle(element).direction === 'rtl';
+	const visualization = look.value.visualization;
+	const pieces: Piece[] =
+		drawing.value.pieces !== null && visualization !== 'contiguous' ? pieceGeometry(visualization, 'form', drawing.value.pieces.length, box.width, look.value.dotsLayout) : [];
+	const length = pieces.length ? pieces[pieces.length - 1]!.end : box.width;
+
+	return { box, rtl, pieces, length };
+}
+
+// A point of the pointer in pixels from the start side of the track.
+const positionOf = (event: PointerEvent, at: ReturnType<typeof frame>) => (at.rtl ? at.box.right - event.clientX : event.clientX - at.box.left);
+
+// The value under the pointer, by the method of the meter.
+function valueUnder(event: PointerEvent, at: ReturnType<typeof frame>) {
+	const position = positionOf(event, at);
+	const share = method.value === 'segment' && at.pieces.length ? filledAt(position, at.pieces) / at.pieces.length : shareAt(position, at.length);
+
+	return snapValue(valueAtShare(share, options.value), options.value, editing.value);
+}
+
+// One press of the pointer, from the button going down to its release or to Escape. `before` is what the field
+// held, as it was, which Escape puts back. `raw` is the value of the relative method before it goes to the grid.
+interface Drag {
+	pointer: number;
+	before: unknown;
+	raw: number;
+	lastX: number;
+	locked: boolean;
+}
+
+let drag: Drag | null = null;
+let watching = false;
+
+function onPointerDown(event: PointerEvent) {
+	const element = line.value;
+	if (!editable.value || !element || !event.isPrimary || event.button !== 0) return;
+
+	// A press which never saw its release, should there be one, ends here.
+	finish(false);
+
+	const current = numberOf(props.value);
+	drag = { pointer: event.pointerId, before: props.value, raw: current ?? options.value.min, lastX: event.clientX, locked: false };
+	dragging.value = true;
+
+	// The drag goes on when the pointer leaves the field.
+	try {
+		element.setPointerCapture(event.pointerId);
+	} catch {
+		// A pointer which is gone already: the drag ends with the next event.
+	}
+
+	if (method.value !== 'relative') {
+		write(valueUnder(event, frame(element)));
+		return;
+	}
+
+	// The relative method changes nothing on the press. It asks for the pointer to be locked, so that the movement
+	// has no edge to run into; where that is refused or not to be had, and for a finger, the captured drag does.
+	if (event.pointerType === 'touch' || typeof element.requestPointerLock !== 'function') return;
+
+	if (!watching) {
+		document.addEventListener('pointerlockchange', onLockChange);
+		watching = true;
+	}
+
+	try {
+		const asked = element.requestPointerLock() as Promise<void> | undefined;
+		if (asked && typeof asked.catch === 'function') asked.catch(() => undefined);
+	} catch {
+		// Refused: the captured drag does.
+	}
+}
+
+function onPointerMove(event: PointerEvent) {
+	const element = line.value;
+	if (!editable.value || !element) return;
+
+	const at = frame(element);
+
+	if (drag === null) {
+		hover.value = method.value === 'segment' && event.pointerType !== 'touch' ? filledAt(positionOf(event, at), at.pieces) : 0;
+		return;
+	}
+
+	if (event.pointerId !== drag.pointer) return;
+
+	// A mouse which moves with no button held was released where the meter did not see it.
+	if (event.pointerType === 'mouse' && event.buttons === 0) {
+		finish(false);
+		return;
+	}
+
+	if (method.value !== 'relative') {
+		write(valueUnder(event, at));
+		return;
+	}
+
+	// A locked pointer does not move on the page; what it would have moved by is all it reports. The lock is
+	// asked of the document here and now: the event which announces it comes after the first movement under it.
+	const locked = document.pointerLockElement === element;
+	if (locked) drag.locked = true;
+
+	const moved = locked ? event.movementX : event.clientX - drag.lastX;
+	drag.lastX = event.clientX;
+	drag.raw = relativeMove(drag.raw, at.rtl ? -moved : moved, at.length, options.value, editing.value.sensitivity, event.shiftKey);
+	write(snapValue(drag.raw, options.value, editing.value));
+}
+
+// The end of a press. `restore` puts back what the field held before it.
+function finish(restore: boolean) {
+	const ended = drag;
+	const element = line.value;
+	if (ended === null) return;
+
+	drag = null;
+	dragging.value = false;
+
+	if (element) {
+		try {
+			if (element.hasPointerCapture(ended.pointer)) element.releasePointerCapture(ended.pointer);
+		} catch {
+			// The pointer is gone.
+		}
+
+		if (document.pointerLockElement === element) document.exitPointerLock();
+	}
+
+	if (restore && editable.value && props.value !== ended.before) emit('input', ended.before);
+}
+
+function onPointerUp(event: PointerEvent) {
+	if (drag !== null && event.pointerId === drag.pointer) finish(false);
+}
+
+// The browser took the pointer away, as it does when a finger starts to scroll the page: nothing was meant.
+function onPointerCancel(event: PointerEvent) {
+	if (drag !== null && event.pointerId === drag.pointer) finish(true);
+}
+
+function onPointerLeave() {
+	hover.value = 0;
+}
+
+// The lock comes and goes on its own time. One which ends while the button is still held was ended by the
+// browser, which does that on Escape, and counts as Escape. One which arrives after the press is over is given
+// back at once.
+function onLockChange() {
+	const element = line.value;
+	const locked = element !== null && document.pointerLockElement === element;
+
+	if (drag === null) {
+		if (locked) document.exitPointerLock();
+		return;
+	}
+
+	if (drag.locked && !locked) finish(true);
+	else drag.locked = locked;
+}
+
+function onKeyDown(event: KeyboardEvent) {
+	const element = line.value;
+	if (!editable.value || !element) return;
+
+	if (event.key === 'Escape') {
+		if (drag === null) return;
+
+		event.preventDefault();
+		event.stopPropagation();
+		finish(true);
+		return;
+	}
+
+	if (drag !== null || event.altKey || event.ctrlKey || event.metaKey) return;
+
+	const rtl = getComputedStyle(element).direction === 'rtl';
+	const value = keyValue(event.key, numberOf(props.value), options.value, editing.value, count.value, rtl);
+	if (value === undefined) return;
+
+	// The key is the meter's, whether or not it changes anything: the page does not scroll for it.
+	event.preventDefault();
+	write(value);
+}
+
+// A field which stops being one that can be edited while it is being dragged, as a condition can make it, lets
+// go of the pointer at once. What was written up to then stays: the form already has it.
+watch(editable, (now) => {
+	if (now) return;
+
+	hover.value = 0;
+	finish(false);
+});
+
+const listeners = computed(() =>
+	editable.value
+		? {
+				pointerdown: onPointerDown,
+				pointermove: onPointerMove,
+				pointerup: onPointerUp,
+				pointercancel: onPointerCancel,
+				pointerleave: onPointerLeave,
+				keydown: onKeyDown,
+			}
+		: {},
+);
+
+// The classes of the element on the line of the track. One which cannot be edited has those it always had.
+const lineClass = computed(() => {
+	const drawn =
+		drawing.value.pieces === null
+			? ['mt-track', paintClass(drawing.value.track)]
+			: ['mt-strip', `mt-${look.value.visualization}`, { 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread' }];
+
+	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
+});
+
+// A handle at the end of the fill of the one bar, inside the track, never past either end of it.
+const handleStyle = computed(() => ({ insetInlineStart: `clamp(0.125rem, calc(${reading.value.fraction * 100}% - 0.625rem), calc(100% - 0.625rem))` }));
+
+onBeforeUnmount(() => {
+	if (watching) document.removeEventListener('pointerlockchange', onLockChange);
+	finish(false);
+});
 
 // The styles carry no comments: the build keeps the comments of a style block
 // in the bundle, which every Data Studio page loads. What they rely on:
@@ -82,6 +421,49 @@ const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') :
 //   along the inline axis, so it needs nothing for right-to-left. It is never
 //   narrower than it is high: the smallest value above the minimum shows as a
 //   dot, not as a sliver of a rounded corner.
+// - A track which is cut up (`visualization`) is a row of pieces on the line
+//   of the track, at its height, and nothing else changes. The row is a flex
+//   container, so the first piece is at the start side in either direction.
+//   Pills, segments and bars share the width of the field equally: pills
+//   0.25rem apart with both ends round, segments 0.1875rem apart with only
+//   the two outer ends of the row round, bars 0.125rem apart and square. Dots
+//   are circles as high as the track, which do not stretch: 0.375rem apart
+//   from the start side, or spread from edge to edge. The gaps and the dot
+//   are those of `PIECE_SIZES` in meter.ts, by which the pieces are counted,
+//   with 16px to the rem. Without a value every piece is a dashed outline, as
+//   the track is.
+// - A surface which shows the colours of the scale (`mt-paint`) has a
+//   gradient across the whole track as its background, of which it shows its
+//   own part: the image is `--mt-n` times as wide as the surface, and placed
+//   by `--mt-at`, 0 for the first part and 1 for the last. A piece is one of
+//   `--mt-n` equal parts of the scale, the gaps between pieces not counted;
+//   the fill of the one bar is the first `1 / --mt-n` of it. A percentage as
+//   a background position moves the image by that share of what it is wider
+//   than its box, which is what makes this work without knowing a width. The
+//   stops are in `--mt-stops`, on the root; a faded surface (`mt-weak`) takes
+//   `--mt-weak-stops` instead, by a rule of its own and not by setting
+//   `--mt-stops` for itself: the fill is inside the track and would inherit
+//   that.
+// - A track which can be edited (`mt-live`) has a cursor, takes sideways
+//   drags of a finger for itself and leaves the up and down ones to the page
+//   (`touch-action: pan-y`), and lets no drag select text. Its focus ring is
+//   an outline in the colour of a focused input, which takes no room. The
+//   app has a focus ring of its own for every `div` which takes the focus,
+//   drawn inside the element and with square corners
+//   (`div:not([contenteditable=true]):focus-visible` in its global styles):
+//   the two rules of the ring are written with one class more than they
+//   would need, to come before that one, and the second gives the track its
+//   round ends back. None of the rules changes a size or a place: the area,
+//   the caption, the text and the note of the form stay where they are.
+// - The handle of the one bar is a dot inside the track at the end of the
+//   fill, never past either end, which shows while the pointer is over the
+//   track, while the track has the keyboard's focus and during a drag. It is
+//   shown and hidden at once, without a transition.
+// - The pieces which the pointer would fill (`mt-hint`) have a veil in the
+//   text colour over whatever they are painted with.
+// - A gradient has no logical direction, so a right-to-left page gets its own
+//   rule, by `:dir(rtl)`: the gradient runs to the left and the place is
+//   counted from the right. The app writes `dir` on the root element.
 // - A field without a value has a dashed outline in place of the track, so it
 //   does not look like a meter at its minimum, with or without the text. The
 //   outline is thin and in the subdued text colour: in the colour of the
@@ -111,21 +493,35 @@ const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') :
 </script>
 
 <template>
-	<div class="meter" :class="{ 'mt-empty': reading.empty }">
+	<div class="meter" :class="{ 'mt-empty': reading.empty }" :style="scales">
 		<div
-			class="mt-track"
-			role="meter"
+			ref="line"
+			:class="lineClass"
+			:style="lineStyle"
+			:role="editable ? 'slider' : 'meter'"
+			:tabindex="editable ? 0 : undefined"
+			:aria-orientation="editable ? 'horizontal' : undefined"
 			:aria-label="options.label === null ? name : undefined"
 			:aria-labelledby="options.label === null ? undefined : `${id}-caption`"
 			:aria-valuemin="options.min"
 			:aria-valuemax="options.max"
 			:aria-valuenow="reading.now ?? undefined"
 			:aria-valuetext="spoken"
+			v-on="listeners"
 		>
-			<div
-				v-if="reading.fraction > 0"
-				class="mt-fill"
-				:style="{ inlineSize: `${reading.fraction * 100}%`, backgroundColor: reading.color }"
+			<template v-if="drawing.pieces === null">
+				<div v-if="reading.fraction > 0" class="mt-fill" :class="paintClass(drawing.fill)" :style="fillStyle" />
+				<div v-if="editable" class="mt-handle" :style="handleStyle" />
+			</template>
+			<span
+				v-for="(piece, index) in drawing.pieces ?? []"
+				v-else
+				:key="index"
+				class="mt-part"
+				:class="[{ 'mt-on': piece.filled, 'mt-hint': index < hover }, paintClass(piece.paint)]"
+				:style="
+					piece.paint.color !== null ? { backgroundColor: piece.paint.color } : piece.paint.scale !== null ? { '--mt-at': piece.at } : undefined
+				"
 			/>
 		</div>
 
@@ -169,6 +565,139 @@ const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') :
 .mt-empty .mt-track {
 	background-color: transparent;
 	border: 1px dashed var(--theme--foreground-subdued);
+}
+
+.mt-strip {
+	display: flex;
+	flex: none;
+	gap: 0.25rem;
+	block-size: var(--mt-height);
+	overflow: hidden;
+}
+
+.mt-segments {
+	gap: 0.1875rem;
+}
+
+.mt-bars {
+	gap: 0.125rem;
+}
+
+.mt-dots {
+	gap: 0.375rem;
+}
+
+.mt-spread {
+	gap: 0;
+	justify-content: space-between;
+}
+
+.mt-part {
+	flex: 1 1 0;
+	box-sizing: border-box;
+	min-inline-size: 0;
+	background-color: var(--theme--form--field--input--border-color);
+}
+
+.mt-pills .mt-part {
+	border-radius: calc(var(--mt-height) / 2);
+}
+
+.mt-segments .mt-part:first-child {
+	border-start-start-radius: calc(var(--mt-height) / 2);
+	border-end-start-radius: calc(var(--mt-height) / 2);
+}
+
+.mt-segments .mt-part:last-child {
+	border-start-end-radius: calc(var(--mt-height) / 2);
+	border-end-end-radius: calc(var(--mt-height) / 2);
+}
+
+.mt-dots .mt-part {
+	flex: none;
+	inline-size: var(--mt-height);
+	border-radius: 50%;
+}
+
+.mt-paint {
+	background-image: linear-gradient(to right, var(--mt-stops));
+	background-repeat: no-repeat;
+	background-position: calc(var(--mt-at, 0) * 100%) 0;
+	background-size: calc(var(--mt-n, 1) * 100%) 100%;
+}
+
+.mt-weak {
+	background-image: linear-gradient(to right, var(--mt-weak-stops));
+}
+
+.mt-paint:dir(rtl) {
+	background-image: linear-gradient(to left, var(--mt-stops));
+	background-position: calc((1 - var(--mt-at, 0)) * 100%) 0;
+}
+
+.mt-weak:dir(rtl) {
+	background-image: linear-gradient(to left, var(--mt-weak-stops));
+}
+
+.mt-on {
+	background-color: var(--theme--primary);
+}
+
+.mt-empty .mt-part {
+	background-color: transparent;
+	border: 1px dashed var(--theme--foreground-subdued);
+}
+
+.mt-live {
+	position: relative;
+	cursor: pointer;
+	touch-action: pan-y;
+	user-select: none;
+}
+
+.mt-by-relative {
+	cursor: ew-resize;
+}
+
+.meter .mt-live:focus-visible {
+	outline: 2px solid var(--theme--form--field--input--border-color-focus);
+	outline-offset: 2px;
+}
+
+.meter .mt-track.mt-live:focus-visible {
+	border-radius: calc(var(--mt-height) / 2);
+}
+
+.mt-handle {
+	position: absolute;
+	inset-block-start: 0.125rem;
+	box-sizing: border-box;
+	inline-size: 0.5rem;
+	block-size: 0.5rem;
+	visibility: hidden;
+	pointer-events: none;
+	background-color: var(--theme--background);
+	border: 1px solid var(--theme--foreground-subdued);
+	border-radius: 50%;
+}
+
+.mt-live:hover .mt-handle,
+.mt-live:focus-visible .mt-handle,
+.mt-busy .mt-handle {
+	visibility: visible;
+}
+
+.mt-hint {
+	position: relative;
+}
+
+.mt-hint::after {
+	position: absolute;
+	inset: 0;
+	content: '';
+	background-color: var(--theme--foreground);
+	border-radius: inherit;
+	opacity: 0.25;
 }
 
 .mt-line {

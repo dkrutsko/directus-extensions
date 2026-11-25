@@ -6,6 +6,110 @@
 /** What the text beside the bar says. */
 export type IndicatorFormat = 'percent' | 'value' | 'fraction';
 
+/** How the track is drawn: as one bar, or cut into pieces which are each filled or not. */
+export type Visualization = 'contiguous' | 'pills' | 'segments' | 'bars' | 'dots';
+
+/** A visualization which cuts the track into pieces. */
+export type Shape = Exclude<Visualization, 'contiguous'>;
+
+/** Where dots stand: from the start side with a fixed gap, or from edge to edge with equal gaps. */
+export type DotsLayout = 'packed' | 'spread';
+
+/**
+ * Where a colour comes from. `value`: one colour, that of the current value.
+ * `steps`: every place on the scale has the colour a meter standing there
+ * would have. `gradient`: the same colours, blended from one to the next.
+ */
+export type Coloring = 'value' | 'steps' | 'gradient';
+
+/** The colouring of what is not filled: the plain track, that of what is filled, or one of its own. */
+export type InactiveColoring = 'plain' | 'automatic' | Coloring;
+
+/** Where a meter is drawn: the interface measures its width, the display has one fixed width. */
+export type Place = 'form' | 'display';
+
+/**
+ * How the pointer sets the value. `contiguous`: the value is where the
+ * pointer is along the track. `segment`: the pieces up to the one under the
+ * pointer are filled. `relative`: the value moves by as much as the pointer
+ * moves, from wherever it is pressed. `automatic` is one of the first two,
+ * whichever suits what is drawn (`inputMethod`).
+ */
+export type InputMethod = 'automatic' | 'contiguous' | 'segment' | 'relative';
+
+/** How a meter is edited, after `readEditing`. */
+export interface Editing {
+	input: InputMethod;
+	/** The distance between two values which can be written, counted from the minimum. Above 0, and whole for a whole type. */
+	step: number;
+	/** How much of the range one track width of movement covers with the `relative` method. Above 0. */
+	sensitivity: number;
+	/** Whether the type of the field holds whole numbers only. */
+	whole: boolean;
+}
+
+/** Which way a value goes to the grid of steps: to the nearest point, or to the next one below or above. */
+export type Rounding = 'nearest' | 'down' | 'up';
+
+/** How a meter is drawn, after `readLook`. */
+export interface Look {
+	visualization: Visualization;
+	/** How many pieces were asked for, 2 or more, or `null` when none were. */
+	subdivisions: number | null;
+	dotsLayout: DotsLayout;
+	activeColoring: Coloring;
+	inactiveColoring: InactiveColoring;
+}
+
+/** The smallest a piece may get along the track, and the gap to the next one, in pixels. */
+export interface PieceSize {
+	piece: number;
+	gap: number;
+}
+
+/** One piece of a track which is cut up: where it starts and ends, in pixels from the start side of the track. */
+export interface Piece {
+	start: number;
+	end: number;
+}
+
+/** A place on the scale, as a share of the range from the minimum, and the colour which starts there. */
+export interface Stop {
+	at: number;
+	color: string;
+}
+
+/**
+ * What a surface is painted with. `color`: that one colour. `scale`: its own
+ * part of the colours across the whole track, at full strength or faded.
+ * Neither: what the styles give it, the track colour or the primary colour.
+ */
+export interface Paint {
+	color: string | null;
+	scale: 'full' | 'weak' | null;
+}
+
+/** One piece as it is drawn. `at` is where it stands among the pieces, 0 for the first and 1 for the last. */
+export interface PieceDrawing {
+	filled: boolean;
+	at: number;
+	paint: Paint;
+}
+
+/** Everything about the colours and pieces of one meter, after `drawingOf`. */
+export interface Drawing {
+	/** The colour stops across the whole track for a surface painted `full`, as the arguments of a CSS gradient. */
+	stops: string | null;
+	/** The same for a surface painted `weak`. */
+	weakStops: string | null;
+	/** The track of the one bar, which shows where nothing is filled. */
+	track: Paint;
+	/** The fill of the one bar. */
+	fill: Paint;
+	/** The pieces from the start side, or `null` for the one bar. */
+	pieces: PieceDrawing[] | null;
+}
+
 /** From `value` upward the fill has `color`. */
 export interface Threshold {
 	value: number;
@@ -51,7 +155,70 @@ export const DEFAULT_COLOR = 'var(--theme--primary)';
 /** The text of a field without a value. */
 export const NO_VALUE = '—';
 
+export const DEFAULT_VISUALIZATION: Visualization = 'contiguous';
+export const DEFAULT_DOTS_LAYOUT: DotsLayout = 'packed';
+export const DEFAULT_ACTIVE_COLORING: Coloring = 'value';
+export const DEFAULT_INACTIVE_COLORING: InactiveColoring = 'plain';
+
+/** The fewest pieces a track is cut into. With room for fewer the meter is one bar. */
+export const MIN_SUBDIVISIONS = 2;
+
+/**
+ * The most pieces a track is ever cut into, whatever its width and whatever
+ * was asked for: every piece is an element of the page.
+ */
+export const MAX_PIECES = 200;
+
+/**
+ * How narrow a piece may get and how far it is from the next, for each
+ * visualization in each place. The width of the track divided by these is how
+ * many pieces fit (`fitCount`). The styles of the two components draw the
+ * same gaps, and dots of the same size.
+ */
+export const PIECE_SIZES: Record<Place, Record<Shape, PieceSize>> = {
+	form: {
+		pills: { piece: 20, gap: 4 },
+		segments: { piece: 14, gap: 3 },
+		bars: { piece: 3, gap: 2 },
+		dots: { piece: 12, gap: 6 },
+	},
+	display: {
+		pills: { piece: 8, gap: 2 },
+		segments: { piece: 6, gap: 2 },
+		bars: { piece: 2, gap: 1 },
+		dots: { piece: 6, gap: 1.5 },
+	},
+};
+
+/** The length of the display's bar, in pixels, which is the same in every row of a layout. */
+export const DISPLAY_WIDTH = 72;
+
+/** The colour of a track where nothing is filled. */
+export const TRACK_COLOR = 'var(--theme--form--field--input--border-color)';
+
+/**
+ * How much of the track's colour is mixed into a colour to fade it, in
+ * percent. One share for both themes: what is not filled stays clearly weaker
+ * than what is, and still shows which colour it would have.
+ */
+export const FADE = 70;
+
+export const DEFAULT_INPUT: InputMethod = 'automatic';
+export const DEFAULT_STEP = 1;
+export const DEFAULT_SENSITIVITY = 1;
+
+/** How many steps the Page keys move, and how much finer the `relative` method is while Shift is held. */
+export const PAGE_STEPS = 10;
+export const FINE = 0.1;
+
+const INPUTS: readonly unknown[] = ['automatic', 'contiguous', 'segment', 'relative'];
+const WHOLE_TYPES: readonly unknown[] = ['integer', 'bigInteger'];
+
 const FORMATS: readonly unknown[] = ['percent', 'value', 'fraction'];
+const VISUALIZATIONS: readonly unknown[] = ['contiguous', 'pills', 'segments', 'bars', 'dots'];
+const DOTS_LAYOUTS: readonly unknown[] = ['packed', 'spread'];
+const COLORINGS: readonly unknown[] = ['value', 'steps', 'gradient'];
+const INACTIVE_COLORINGS: readonly unknown[] = ['plain', 'automatic', 'value', 'steps', 'gradient'];
 
 // A number as the API writes it: digits with an optional sign, fraction and
 // exponent. Not hexadecimal, not "Infinity", not an empty text, each of which
@@ -215,6 +382,96 @@ export function readOptions(own?: unknown, inherited?: unknown): Options {
 	};
 }
 
+/**
+ * How many pieces an option asks for: a whole number, or the text of one, and
+ * 2 where it is less. Anything else (nothing, junk, 3.7) asks for none in
+ * particular, which is `null`. There is no largest number here: the width of
+ * the track is what holds it back (`drawnCount`).
+ */
+function subdivisionsOf(value: unknown): number | null {
+	const number = numberOf(value);
+	if (number === null || !Number.isInteger(number)) return null;
+
+	return Math.max(MIN_SUBDIVISIONS, number);
+}
+
+/**
+ * Works out how a meter is drawn, from the options `visualization`,
+ * `subdivisions`, `dotsLayout`, `activeColoring` and `inactiveColoring`, with
+ * the same two sources as `readOptions`. Every one of these keys falls
+ * through when it holds nothing usable, as the format and the limits do: a
+ * word which is not one of its choices, a number of subdivisions which is no
+ * whole number, and so an option which was emptied (`null`) as well. Without
+ * a usable one anywhere the meter is one bar in the colour of its value, on a
+ * plain track.
+ *
+ * The key is `visualization` and not `style`: the options of a field arrive
+ * as the props of a component, and `style` is not a prop like any other in
+ * Vue.
+ */
+export function readLook(own?: unknown, inherited?: unknown): Look {
+	const sources = [sourceOf(own), sourceOf(inherited)];
+	const oneOf = <T>(key: string, choices: readonly unknown[]) => first(sources, (source) => (choices.includes(source[key]) ? (source[key] as T) : null));
+
+	return {
+		visualization: oneOf<Visualization>('visualization', VISUALIZATIONS) ?? DEFAULT_VISUALIZATION,
+		subdivisions: first(sources, (source) => subdivisionsOf(source['subdivisions'])),
+		dotsLayout: oneOf<DotsLayout>('dotsLayout', DOTS_LAYOUTS) ?? DEFAULT_DOTS_LAYOUT,
+		activeColoring: oneOf<Coloring>('activeColoring', COLORINGS) ?? DEFAULT_ACTIVE_COLORING,
+		inactiveColoring: oneOf<InactiveColoring>('inactiveColoring', INACTIVE_COLORINGS) ?? DEFAULT_INACTIVE_COLORING,
+	};
+}
+
+/**
+ * Works out how a meter is edited, from the options `input`, `step` and
+ * `sensitivity` of the interface and the type of its field. All untrusted.
+ *
+ * The step is `step`. Where that is not set (missing, emptied or blank), it
+ * is `stepInterval`, the key of the stock Slider
+ * (app/src/interfaces/slider/index.ts in Directus 11.17.4), which a field
+ * keeps when its interface changes, as it keeps the Slider's limits. A step
+ * which is set and is not a number above zero is 1, and so is everything
+ * without either. A field of a whole type has a whole step of at least 1.
+ */
+export function readEditing(own?: unknown, type?: unknown): Editing {
+	const source = sourceOf(own);
+	const whole = WHOLE_TYPES.includes(type);
+	const positive = (value: unknown) => {
+		const number = numberOf(value);
+		return number !== null && number > 0 ? number : null;
+	};
+
+	const stepOf = (key: string) => (isEmpty(source[key]) ? null : (positive(source[key]) ?? DEFAULT_STEP));
+	const step = stepOf('step') ?? stepOf('stepInterval') ?? DEFAULT_STEP;
+
+	return {
+		input: INPUTS.includes(source['input']) ? (source['input'] as InputMethod) : DEFAULT_INPUT,
+		step: whole ? Math.max(1, Math.round(step)) : step,
+		sensitivity: positive(source['sensitivity']) ?? DEFAULT_SENSITIVITY,
+		whole,
+	};
+}
+
+/**
+ * Whether a field can be edited, by what the form says about it: not while it
+ * is disabled, which is what read-only comes to, be it by the settings of the
+ * field, by a condition, by the permissions of the user or in a batch edit;
+ * not where it is shown and not edited, as in the comparison of revisions;
+ * and not while it is loading. Each of the three alone is enough.
+ */
+export function canEdit(state: { disabled?: unknown; nonEditable?: unknown; loading?: unknown }): boolean {
+	return !state.disabled && !state.nonEditable && !state.loading;
+}
+
+/**
+ * Whether writing a number would change what a field holds. What it holds is
+ * compared as the number it stands for, so the text of a decimal is no
+ * change, and a field without a value is changed by any number.
+ */
+export function changes(held: unknown, next: number): boolean {
+	return numberOf(held) !== next;
+}
+
 type Range = Pick<Options, 'min' | 'max'>;
 
 /**
@@ -318,6 +575,266 @@ export function valueText(value: number, options: Pick<Options, 'min' | 'max' | 
 }
 
 /**
+ * How many pieces are wanted, before the width has its say: the number which
+ * was asked for, or else one for every unit of the range where the range is a
+ * whole number of at least 2, so a meter from 0 to 5 wants five. Any other
+ * range (not whole, smaller, or of one number) wants none in particular,
+ * which is `null`: as many as fit are drawn then.
+ */
+export function wantedCount(look: Pick<Look, 'subdivisions'>, range: Range): number | null {
+	if (look.subdivisions !== null) return look.subdivisions;
+
+	const span = range.max - range.min;
+	return Number.isInteger(span) && span >= MIN_SUBDIVISIONS ? span : null;
+}
+
+/**
+ * How many pieces of a visualization fit into a track of `width` pixels: each
+ * at its smallest, with the gaps between them. Never more than the cap of the
+ * package. A track without a width, as in a tab which is not shown, has room
+ * for none.
+ */
+export function fitCount(visualization: Shape, place: Place, width: number): number {
+	const { piece, gap } = PIECE_SIZES[place][visualization];
+	if (!(width > 0)) return 0;
+
+	// A measured width may be a hair under the whole number it stands for.
+	const count = Math.floor((width + gap) / (piece + gap) + 1e-6);
+	return Number.isFinite(count) ? Math.min(MAX_PIECES, count) : MAX_PIECES;
+}
+
+/**
+ * How many pieces are drawn, from how many are wanted and how many fit. What
+ * is wanted is drawn where it fits. Where it does not, the largest number of
+ * at least 2 which fits and divides it, so that every piece stands for a
+ * round share: 25 for 100 wanted with room for 29, 6 for 12 with room for 7.
+ * A number which nothing divides (a prime), and no wanted number at all, give
+ * as many as fit. With room for fewer than two there are no pieces, which is
+ * 0: the meter is one bar then.
+ */
+export function drawnCount(wanted: number | null, fit: number): number {
+	const room = Math.min(MAX_PIECES, Math.floor(fit));
+
+	if (!(room >= MIN_SUBDIVISIONS)) return 0;
+	if (wanted === null || !(wanted >= MIN_SUBDIVISIONS)) return room;
+	if (wanted <= room) return wanted;
+
+	for (let count = room; count >= MIN_SUBDIVISIONS; count--) {
+		if (wanted % count === 0) return count;
+	}
+
+	return room;
+}
+
+/**
+ * How many pieces a meter is cut into in a track of `width` pixels: 0 for one
+ * bar, which is what `contiguous` is and what is left where fewer than two
+ * pieces fit. The display hands over its fixed width, so every row of a
+ * layout comes to the same number.
+ */
+export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number): number {
+	if (look.visualization === 'contiguous') return 0;
+	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width));
+}
+
+/**
+ * Where each of `count` pieces starts and ends in a track of `width` pixels,
+ * from the start side, which is the right in a right-to-left page. Pills,
+ * segments and bars share the width equally, with their gap between them.
+ * Dots keep their size: packed they stand from the start with their gap,
+ * spread the first is at the start edge, the last at the end edge, and the
+ * gaps between are equal. The styles of the components lay the pieces out by
+ * the same rules; this is the same thing as numbers, for whatever has to find
+ * the piece under a point.
+ */
+export function pieceGeometry(visualization: Shape, place: Place, count: number, width: number, dotsLayout: DotsLayout = DEFAULT_DOTS_LAYOUT): Piece[] {
+	const { piece, gap } = PIECE_SIZES[place][visualization];
+	if (!(count >= 1) || !(width > 0)) return [];
+
+	const dots = visualization === 'dots';
+	const size = dots ? piece : (width - gap * (count - 1)) / count;
+	const between = dots && dotsLayout === 'spread' && count > 1 ? (width - count * size) / (count - 1) : gap;
+
+	return Array.from({ length: count }, (_, index) => {
+		const start = index * (size + between);
+		return { start, end: start + size };
+	});
+}
+
+/** How many digits a number has after its decimal point, as it is written out. */
+function decimalsOf(number: number): number {
+	const [mantissa = '', exponent = '0'] = String(number).toLowerCase().split('e');
+	return Math.max(0, (mantissa.split('.')[1] ?? '').length - Number(exponent));
+}
+
+/**
+ * The value which is written for a value which was asked for: on the grid of
+ * steps counted from the minimum, never outside the range, and never anything
+ * but a finite number. The maximum can always be written, also where the grid
+ * misses it: with steps of 3 from 0 to 10 the values are 0, 3, 6, 9 and 10.
+ *
+ * `rounding` says which of the two values around the one asked for it is: the
+ * nearer one, with the upper one for a value half way; or the next one below
+ * or above, which is what a key press wants, so that a step up from a value
+ * between two points of the grid goes to the next point and not past it.
+ *
+ * The result has no more decimals than the step, the minimum and the maximum
+ * have between them, so a step of 0.1 gives 0.3 and not 0.30000000000000004.
+ * A field of a whole type gets a whole number, from a grid which starts at
+ * the first whole number of the range. Where the range holds no value which
+ * can be written, or the value asked for is not a number, there is nothing to
+ * write, which is `null`.
+ */
+export function snapValue(value: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>, rounding: Rounding = 'nearest'): number | null {
+	const min = editing.whole ? Math.ceil(range.min) : range.min;
+	const max = editing.whole ? Math.floor(range.max) : range.max;
+	const step = editing.step;
+
+	if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || !(max >= min) || !(step > 0)) return null;
+
+	const within = Math.min(max, Math.max(min, value));
+	const span = max - min;
+
+	// Limits too far apart to subtract: no grid can be counted, and the value within the range is all there is.
+	if (!Number.isFinite(span)) return (editing.whole ? Math.round(within) : within) + 0;
+
+	// A hair of slack, so that 0.3 counts as three steps of 0.1 and not as 2.9999999999999996.
+	const SLACK = 1e-9;
+	const steps = (within - min) / step;
+	const lastIndex = Math.floor(span / step + SLACK);
+	const last = min + lastIndex * step;
+
+	let snapped: number;
+
+	if (within >= max) {
+		snapped = max;
+	} else if (steps >= lastIndex) {
+		// Between the last point of the grid and the maximum.
+		const beyond = steps - lastIndex > SLACK;
+		if (rounding === 'down' || !beyond) snapped = last;
+		else if (rounding === 'up') snapped = max;
+		else snapped = within - last < max - within ? last : max;
+	} else {
+		const index = rounding === 'down' ? Math.floor(steps + SLACK) : rounding === 'up' ? Math.ceil(steps - SLACK) : Math.round(steps);
+		snapped = min + index * step;
+	}
+
+	const decimals = Math.max(decimalsOf(step), decimalsOf(min), decimalsOf(max));
+	const clean = editing.whole ? Math.round(snapped) : decimals <= 15 ? Number(snapped.toFixed(decimals)) : snapped;
+	const written = Math.min(max, Math.max(min, clean));
+
+	return Number.isFinite(written) ? written + 0 : null;
+}
+
+/** The value at a share of the range: the minimum at 0, the maximum at 1, and nothing beyond them. */
+export function valueAtShare(share: number, range: Range): number {
+	if (!(share > 0)) return range.min;
+	if (share >= 1) return range.max;
+
+	const offset = share * (range.max - range.min);
+	return Number.isFinite(offset) ? range.min + offset : range.min * (1 - share) + range.max * share;
+}
+
+/**
+ * Where a point stands along a track of `length` pixels, as a share from 0 to
+ * 1. `position` is in pixels from the start side of the track, which is the
+ * right in a right-to-left page.
+ */
+export function shareAt(position: number, length: number): number {
+	if (!(length > 0) || !(position > 0)) return 0;
+	return Math.min(1, position / length);
+}
+
+/**
+ * How many pieces a point fills with the `segment` method: all up to and
+ * including the piece it is on. A point in a gap counts for the piece before
+ * it. A point before the start of the first piece fills none, and one beyond
+ * the last piece all of them, wherever the track itself ends: packed dots end
+ * long before their track does.
+ */
+export function filledAt(position: number, pieces: Piece[]): number {
+	let filled = 0;
+
+	for (const piece of pieces) {
+		if (!(position >= piece.start)) break;
+		filled++;
+	}
+
+	return filled;
+}
+
+/**
+ * The method by which the pointer sets the value of a meter which is drawn
+ * with `count` pieces (below 2: one bar). `relative` is only ever chosen by
+ * the option. One bar has no pieces to fill, so `segment` is `contiguous`
+ * there. `automatic` fills pieces where each piece stands for exactly one
+ * step, which is where a click on the third piece can mean nothing but three
+ * steps; where a piece stands for more or less than a step, as for a range of
+ * a hundred drawn in ten pieces, it takes the value under the pointer, so
+ * that every value of the grid can be reached.
+ */
+export function inputMethod(editing: Pick<Editing, 'input' | 'step'>, count: number, range: Range): Exclude<InputMethod, 'automatic'> {
+	if (editing.input === 'relative') return 'relative';
+	if (!(count >= MIN_SUBDIVISIONS) || editing.input === 'contiguous') return 'contiguous';
+	if (editing.input === 'segment') return 'segment';
+
+	const span = range.max - range.min;
+	return Math.abs(count * editing.step - span) <= 1e-9 * Math.max(1, Math.abs(span)) ? 'segment' : 'contiguous';
+}
+
+/**
+ * The `relative` method: the value before it is put on the grid, after the
+ * pointer has moved by `movement` pixels towards the end side (negative:
+ * towards the start side) along a track of `length` pixels. One length of the
+ * track is the whole range at a sensitivity of 1, and a tenth of it while
+ * `fine` (Shift) is held. The value stays within the range. It is kept from
+ * one movement to the next as it is, not as it was written, so a slow
+ * movement of less than a step at a time still adds up.
+ */
+export function relativeMove(raw: number, movement: number, length: number, range: Range, sensitivity: number, fine = false): number {
+	const from = Math.min(range.max, Math.max(range.min, raw));
+	if (!(length > 0) || !Number.isFinite(movement) || !Number.isFinite(from)) return Number.isFinite(from) ? from : range.min;
+
+	const moved = from + (movement / length) * (range.max - range.min) * sensitivity * (fine ? FINE : 1);
+	return Number.isFinite(moved) ? Math.min(range.max, Math.max(range.min, moved)) : from;
+}
+
+/**
+ * The value a key asks for, or `undefined` for a key which is none of the
+ * meter's. Right and Up are one step up, Left and Down one step down, with
+ * Left and Right the other way round in a right-to-left page. Page Up and
+ * Page Down are ten steps, or one piece where a piece is more than that. Home
+ * and End are the two ends of the range. A step is counted from the value as
+ * it is, within the range, or from the minimum for a field without a value;
+ * a value between two points of the grid goes to the next point.
+ */
+export function keyValue(key: string, current: number | null, range: Range, editing: Pick<Editing, 'step' | 'whole'>, count = 0, rtl = false): number | null | undefined {
+	const forward = rtl ? 'ArrowLeft' : 'ArrowRight';
+	const backward = rtl ? 'ArrowRight' : 'ArrowLeft';
+	const piece = count >= MIN_SUBDIVISIONS ? (range.max - range.min) / count : 0;
+	const page = Math.max(PAGE_STEPS * editing.step, Number.isFinite(piece) ? piece : 0);
+
+	if (key === 'Home') return snapValue(range.min, range, editing);
+	if (key === 'End') return snapValue(range.max, range, editing);
+
+	const delta = key === forward || key === 'ArrowUp' ? editing.step : key === backward || key === 'ArrowDown' ? -editing.step : key === 'PageUp' ? page : key === 'PageDown' ? -page : null;
+	if (delta === null) return undefined;
+
+	const from = current === null || !Number.isFinite(current) ? range.min : Math.min(range.max, Math.max(range.min, current));
+	return snapValue(from + delta, range, editing, delta > 0 ? 'down' : 'up');
+}
+
+/**
+ * How many of `count` pieces are filled for a fraction of the track, the one
+ * the bar is filled to: the nearest whole number of them. No piece is ever
+ * filled in part, so 44 of 100 fills four of ten and 45 fills five. The text
+ * beside it still says the value as it is.
+ */
+export function filledCount(fraction: number, count: number): number {
+	return Math.min(count, Math.max(0, Math.round(fraction * count)));
+}
+
+/**
  * The colour of the fill for a value: that of the highest threshold the value
  * has reached, and the `color` option below all of them.
  */
@@ -347,6 +864,139 @@ export function readingOf(value: unknown, options: Options, locale?: string): Re
 		now: Math.min(options.max, Math.max(options.min, number)),
 		text: valueText(number, options, locale),
 		color: colorFor(number, options),
+	};
+}
+
+/** A colour mixed towards the colour of the track, by the one share of the package. The browser does the mixing: a colour may be a theme variable. */
+export function fadedColor(color: string): string {
+	return `color-mix(in srgb, ${color} ${100 - FADE}%, ${TRACK_COLOR})`;
+}
+
+/**
+ * The colours along the scale: the colour of a meter at its minimum, at 0,
+ * and after it every threshold above the minimum, at its share of the range,
+ * in rising order. A threshold beyond the maximum is among them, beyond 1.
+ * One stop only means one colour everywhere: no thresholds, or none above the
+ * minimum, or a range of one number.
+ */
+export function scaleStops(options: Pick<Options, 'min' | 'max' | 'color' | 'thresholds'>): Stop[] {
+	const stops: Stop[] = [{ at: 0, color: colorFor(options.min, options) }];
+	if (!(options.max > options.min)) return stops;
+
+	for (const threshold of options.thresholds) {
+		if (threshold.value <= options.min) continue;
+
+		const at = shareOf(threshold.value, options);
+		const last = stops[stops.length - 1]!;
+
+		if (!Number.isFinite(at)) continue;
+
+		// Of two thresholds at one value the later one counts, as for the colour of a value.
+		if (last.at === at) last.color = threshold.color;
+		else stops.push({ at, color: threshold.color });
+	}
+
+	return stops;
+}
+
+/**
+ * The stops as the arguments of a CSS gradient across the whole track. For
+ * `gradient` each colour stands at its place and the browser blends from one
+ * to the next. For `steps` each colour holds up to the next place, where it
+ * changes at once. `faded` mixes every colour towards the track.
+ */
+export function stopsCss(stops: Stop[], coloring: 'steps' | 'gradient', faded = false): string {
+	const colorOf = (stop: Stop) => (faded ? fadedColor(stop.color) : stop.color);
+	const placeOf = (stop: Stop) => `${Number((Math.min(1e4, Math.max(-1e4, stop.at)) * 100).toFixed(3))}%`;
+
+	if (coloring === 'gradient') return stops.map((stop) => `${colorOf(stop)} ${placeOf(stop)}`).join(', ');
+
+	return stops
+		.slice(1)
+		.map((stop, index) => `${colorOf(stops[index]!)} ${placeOf(stop)}, ${colorOf(stop)} ${placeOf(stop)}`)
+		.join(', ');
+}
+
+/** The value a piece reaches when it is filled completely: the maximum for the last of them. */
+function valueAtPiece(index: number, count: number, range: Range): number {
+	if (index + 1 >= count) return range.max;
+
+	// Multiplied first, so that the 57th of a hundred pieces on 0 to 100 reaches 57 and not a hair less.
+	const offset = ((index + 1) * (range.max - range.min)) / count;
+	if (Number.isFinite(offset)) return range.min + offset;
+
+	const share = (index + 1) / count;
+	return range.min * (1 - share) + range.max * share;
+}
+
+const NO_PAINT: Paint = { color: null, scale: null };
+
+/**
+ * The colours and the pieces of a meter. `count` is how many pieces the track
+ * is cut into (`pieceCount`); below 2 it is one bar.
+ *
+ * What is filled is coloured by `activeColoring`. `value`: the colour of the
+ * current value, everywhere. `steps`: a piece has the colour of the value it
+ * reaches when it is filled completely, and the one bar changes colour at
+ * each threshold. `gradient`: the colours of the scale blended across the
+ * whole track, of which a piece or the fill shows its own part; the blend is
+ * never squeezed into what is filled.
+ *
+ * What is not filled is the plain track, or coloured by `inactiveColoring`
+ * in the same three ways and faded; `automatic` is the way of what is filled.
+ *
+ * A scale of one colour makes the three ways the same, and is drawn as
+ * `value`. A meter without a reading has no colours at all: it keeps its
+ * dashed look.
+ */
+export function drawingOf(look: Pick<Look, 'activeColoring' | 'inactiveColoring'>, options: Options, reading: Pick<Reading, 'empty' | 'fraction' | 'color'>, count = 0): Drawing {
+	const pieces = count >= MIN_SUBDIVISIONS ? Math.min(MAX_PIECES, Math.floor(count)) : 0;
+	const filled = filledCount(reading.fraction, pieces);
+	const placeOf = (index: number) => (pieces > 1 ? index / (pieces - 1) : 0);
+
+	if (reading.empty) {
+		return {
+			stops: null,
+			weakStops: null,
+			track: NO_PAINT,
+			fill: NO_PAINT,
+			pieces: pieces ? Array.from({ length: pieces }, (_, index) => ({ filled: false, at: placeOf(index), paint: NO_PAINT })) : null,
+		};
+	}
+
+	const stops = scaleStops(options);
+	const flat = stops.length < 2;
+	const active: Coloring = flat ? 'value' : look.activeColoring;
+	const wanted = look.inactiveColoring === 'automatic' ? look.activeColoring : look.inactiveColoring;
+	const inactive: Coloring | 'plain' = flat && wanted !== 'plain' ? 'value' : wanted;
+
+	if (!pieces) {
+		return {
+			stops: active === 'value' ? null : stopsCss(stops, active),
+			weakStops: inactive === 'plain' || inactive === 'value' ? null : stopsCss(stops, inactive, true),
+			track: inactive === 'plain' ? NO_PAINT : inactive === 'value' ? { color: fadedColor(reading.color), scale: null } : { color: null, scale: 'weak' },
+			fill: active === 'value' ? { color: reading.color, scale: null } : { color: null, scale: 'full' },
+			pieces: null,
+		};
+	}
+
+	const paintOf = (index: number): Paint => {
+		const coloring = index < filled ? active : inactive;
+		const weak = index >= filled;
+
+		if (coloring === 'plain') return NO_PAINT;
+		if (coloring === 'gradient') return { color: null, scale: weak ? 'weak' : 'full' };
+
+		const color = coloring === 'value' ? reading.color : colorFor(valueAtPiece(index, pieces, options), options);
+		return { color: weak ? fadedColor(color) : color, scale: null };
+	};
+
+	return {
+		stops: active === 'gradient' && filled > 0 ? stopsCss(stops, 'gradient') : null,
+		weakStops: inactive === 'gradient' && filled < pieces ? stopsCss(stops, 'gradient', true) : null,
+		track: NO_PAINT,
+		fill: NO_PAINT,
+		pieces: Array.from({ length: pieces }, (_, index) => ({ filled: index < filled, at: placeOf(index), paint: paintOf(index) })),
 	};
 }
 
