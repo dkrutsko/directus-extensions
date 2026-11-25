@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
-import { canEdit, changes, drawingOf, fillScale, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
+import { canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
 import type { Paint, Piece, PieceDrawing } from './meter';
 
 /**
@@ -118,7 +118,22 @@ onBeforeUnmount(() => {
 // again only when the number of pieces changes, not with every pixel.
 const look = computed(() => readLook(props));
 const count = computed(() => pieceCount(look.value, options.value, 'form', width.value));
-const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value));
+
+// Over how many pieces a piece grows or fades in before it is filled: by the number of `grow`, and by that of 1
+// where the pieces only fade in. For thin bars it also depends on how wide a bar is, and so on the width; that part
+// is a number of half pieces, which like the count changes only now and then, and it is asked for only where pieces
+// grow or fade in, so a meter without that is still drawn again for nothing but its count.
+const reach = computed(() =>
+	look.value.grow > 0 || look.value.fade ? reachOf(look.value.visualization, 'form', count.value, width.value, look.value.grow > 0 ? look.value.grow : 1) : undefined,
+);
+
+// Where the pointer is along the track while it drags the value, as a fraction of the range: by its place for the
+// `contiguous` method, and by the value before it goes to the grid for the `relative` one. Pieces which grow or fade
+// in are drawn from it, so they follow the pointer and not the steps the value takes, which for coarse steps are
+// one or two sizes on the way to a piece. The fill, the text and what is written stay those of the value. `null`
+// outside such a drag, and where nothing grows or fades in.
+const exact = shallowRef<number | null>(null);
+const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value, { reach: reach.value, at: exact.value }));
 
 // The colour stops of the scale are set once, on the root, for whichever
 // surfaces paint with them.
@@ -150,7 +165,7 @@ const following = shallowRef(false);
 let easing = 0;
 
 watch(
-	() => (look.value.grow || look.value.fade) && !reading.value.empty,
+	() => (look.value.grow > 0 || look.value.fade) && !reading.value.empty,
 	(drawn) => {
 		cancelAnimationFrame(easing);
 		eased.value = false;
@@ -225,10 +240,17 @@ function frame(element: HTMLElement) {
 	return { box, rtl, pieces, length };
 }
 
+// A point of the page, given by how far it is across the page, in pixels from the start side of the track.
+const positionOf = (x: number, at: ReturnType<typeof frame>) => (at.rtl ? at.box.right - x : x - at.box.left);
+
+// Says where the pointer is to the pieces which grow or fade in (`exact`): a fraction of the range, or `null`.
+function follow(place: number | null) {
+	exact.value = place !== null && (look.value.grow > 0 || look.value.fade) && method.value !== 'segment' ? Math.min(1, Math.max(0, place)) : null;
+}
+
 // The value under a point of the page, given by how far it is across the page, by the method of the meter.
 function valueUnder(x: number, at: ReturnType<typeof frame>) {
-	// In pixels from the start side of the track.
-	const position = at.rtl ? at.box.right - x : x - at.box.left;
+	const position = positionOf(x, at);
 
 	// By the piece: the value which leaves the pieces up to the pointer filled.
 	if (method.value === 'segment' && at.pieces.length) return segmentValue(filledAt(position, at.pieces), at.pieces.length, options.value, editing.value);
@@ -271,7 +293,7 @@ function rest(x: number, y: number, touch: boolean, held = false) {
 
 	const at = frame(element);
 	const inside = held || (x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom);
-	hover.value = inside ? filledAt(at.rtl ? at.box.right - x : x - at.box.left, at.pieces) : 0;
+	hover.value = inside ? filledAt(positionOf(x, at), at.pieces) : 0;
 }
 
 let drag: Drag | null = null;
@@ -313,7 +335,12 @@ function onPointerDown(event: PointerEvent) {
 	// A mouse or a pen sets the value where it is pressed. A finger writes nothing by coming down: the first write
 	// is that of a sideways drag, or of the finger being lifted where it came down.
 	if (method.value !== 'relative') {
-		if (!drag.pending) write(valueUnder(event.clientX, frame(element)));
+		if (!drag.pending) {
+			const at = frame(element);
+			follow(shareAt(positionOf(event.clientX, at), at.length));
+			write(valueUnder(event.clientX, at));
+		}
+
 		return;
 	}
 
@@ -368,6 +395,7 @@ function onPointerMove(event: PointerEvent) {
 	following.value = true;
 
 	if (method.value !== 'relative') {
+		follow(shareAt(positionOf(event.clientX, at), at.length));
 		write(valueUnder(event.clientX, at));
 		return;
 	}
@@ -380,6 +408,7 @@ function onPointerMove(event: PointerEvent) {
 	const moved = locked ? event.movementX : event.clientX - drag.lastX;
 	drag.lastX = event.clientX;
 	drag.raw = relativeMove(drag.raw, at.rtl ? -moved : moved, at.length, options.value, editing.value.sensitivity, event.shiftKey);
+	follow(fractionOf(drag.raw, options.value));
 	write(snapValue(drag.raw, options.value, editing.value));
 }
 
@@ -392,6 +421,9 @@ function finish(restore: boolean) {
 	drag = null;
 	dragging.value = false;
 	following.value = false;
+
+	// The sizes settle on what the value gives, eased like any change which is not the pointer's.
+	follow(null);
 
 	if (element) {
 		try {
@@ -552,7 +584,7 @@ const lineClass = computed(() => {
 			: [
 					'mt-strip',
 					`mt-${look.value.visualization}`,
-					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-eased': (look.value.grow || look.value.fade) && eased.value && !following.value },
+					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value },
 				];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
@@ -586,7 +618,7 @@ onBeforeUnmount(() => {
 //   Pills, segments and bars share the width of the field equally: pills
 //   0.25rem apart with both ends round, segments 0.1875rem apart with only
 //   the two outer ends of the row round, bars 0.125rem apart and square. Dots
-//   are circles as high as the track, which do not stretch: 0.375rem apart
+//   are circles as high as the track, which do not stretch: 0.125rem apart
 //   from the start side, or spread from edge to edge. The gaps and the dot
 //   are those of `PIECE_SIZES` in meter.ts, by which the pieces are counted,
 //   with 16px to the rem. Without a value every piece is a dashed outline, as
@@ -639,13 +671,14 @@ onBeforeUnmount(() => {
 //   fill, never past either end, which shows while the pointer is over the
 //   track, while the track has the keyboard's focus and during a drag. It is
 //   shown and hidden at once, without a transition.
-// - The pieces up to the pointer (`mt-hint`) have a thin ring inside their
-//   edge, an inset shadow which takes no room and moves nothing: in the
-//   primary colour on a piece which is not filled, and in its accent on one
-//   which is, as the marker of a step changes the colour of its border under
-//   the pointer in the Steps interface of this repository. Bars are too thin
-//   for a ring, which would fill them: they get its top and bottom only, so
-//   a row of them reads as two faint rails up to the pointer.
+// - The pieces up to the pointer (`mt-hint`) are tinted: a pseudo-element
+//   which covers the piece, with the piece's corners, in the colour of the
+//   text at 16%. That colour is dark in a light theme and light in a dark
+//   one, so the tint is the same step away from the neighbours in both: a
+//   darker grey on a piece which is not filled and a darker tone of the
+//   colour of one which is, or a lighter one of each in a dark theme. It is
+//   the last thing in the piece, so it also lies over what fades in. It
+//   takes no press and changes no box.
 // - The fill of the one bar is the exception to "`--mt-n` times as wide": its
 //   image is as wide as the track itself, `100cqi`, with the track made a
 //   container for that (`mt-scaled`, only where the fill is painted so). An
@@ -694,7 +727,11 @@ onBeforeUnmount(() => {
 //   opacity of the piece which fades in, 150ms each, by the class
 //   `mt-eased` on the row: not for the first value a meter draws, not while
 //   the pointer drags the value, and not for a user who asked for less
-//   motion. Nothing else has one. The form hands over `null` until the item
+//   motion. While the pointer drags, the sizes and the fading are worked out
+//   from where the pointer is (`exact`), so they change with every movement
+//   and need no transition; at the release they ease to what the value
+//   gives. A transition which is under way when the next change comes is
+//   taken up by the browser from where it is. Nothing else has one. The form hands over `null` until the item
 //   has loaded, so any other transition would play on every page load.
 //
 // The package's AGENTS.md, "How it works", has the rest.
@@ -801,7 +838,7 @@ onBeforeUnmount(() => {
 }
 
 .mt-dots {
-	gap: 0.375rem;
+	gap: 0.125rem;
 }
 
 .mt-spread {
@@ -970,19 +1007,16 @@ onBeforeUnmount(() => {
 }
 
 .mt-hint {
-	--mt-ring: var(--theme--primary);
-
-	box-shadow: inset 0 0 0 1px var(--mt-ring);
+	position: relative;
 }
 
-.mt-hint.mt-on {
-	--mt-ring: var(--theme--primary-accent);
-}
-
-.mt-bars .mt-hint {
-	box-shadow:
-		inset 0 1px 0 0 var(--mt-ring),
-		inset 0 -1px 0 0 var(--mt-ring);
+.mt-hint::after {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	content: '';
+	background-color: color-mix(in srgb, var(--theme--foreground) 16%, transparent);
+	border-radius: inherit;
 }
 
 .mt-line {

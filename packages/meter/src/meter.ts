@@ -59,8 +59,11 @@ export interface Look {
 	dotsLayout: DotsLayout;
 	activeColoring: Coloring;
 	inactiveColoring: InactiveColoring;
-	/** Whether the pieces which are not filled are drawn small, the next one growing as the value nears it. Only the interface has it. */
-	grow: boolean;
+	/**
+	 * How many pieces in front of the fill can be growing at once, where the pieces which are not filled are drawn
+	 * small: 0 is off, from 0 to `MAX_GROW`. Only the interface has it.
+	 */
+	grow: number;
 	/** Whether the next piece takes on the look of a filled one gradually, as the value nears it. */
 	fade: boolean;
 }
@@ -99,7 +102,7 @@ export interface Paint {
 	scale: 'full' | 'weak' | null;
 }
 
-/** What is laid over a piece which is about to be filled (`fade`): the look it has once it is filled, and how much of it shows, above 0 and below 1. */
+/** What is laid over a piece which is about to be filled (`fade`): the look it has once it is filled, and how much of it shows, above 0 and up to 1. */
 export interface Overlay {
 	paint: Paint;
 	opacity: number;
@@ -204,13 +207,13 @@ export const PIECE_SIZES: Record<Place, Record<Shape, PieceSize>> = {
 		pills: { piece: 20, gap: 4 },
 		segments: { piece: 14, gap: 3 },
 		bars: { piece: 3, gap: 2 },
-		dots: { piece: 12, gap: 6 },
+		dots: { piece: 12, gap: 2 },
 	},
 	display: {
 		pills: { piece: 8, gap: 2 },
 		segments: { piece: 6, gap: 2 },
 		bars: { piece: 2, gap: 1 },
-		dots: { piece: 6, gap: 1.5 },
+		dots: { piece: 6, gap: 1 },
 	},
 };
 
@@ -242,6 +245,17 @@ export const SMALL_PIECES: Record<Shape, Scale> = {
 
 /** How much of a piece the value has to have come before the piece is filled: half of it, as pieces are filled to the nearest. */
 const FILLED_FROM = 0.5;
+
+/** The most `grow` can be: more pieces growing at once than that is no ramp any more. */
+export const MAX_GROW = 20;
+
+/**
+ * How far ahead of the fill thin bars grow and fade in at the least, in
+ * pixels of the track for each 1 of `grow`: about three bars at their
+ * narrowest in the form, and three in the display. Every other shape, and
+ * bars which are wider than that, go by the number of pieces alone.
+ */
+export const BAR_REACH: Record<Place, number> = { form: 15, display: 9 };
 
 export const DEFAULT_INPUT: InputMethod = 'automatic';
 export const DEFAULT_STEP = 1;
@@ -471,7 +485,7 @@ export function readLook(own?: unknown, inherited?: unknown): Look {
 		dotsLayout: oneOf<DotsLayout>('dotsLayout', DOTS_LAYOUTS) ?? DEFAULT_DOTS_LAYOUT,
 		activeColoring: oneOf<Coloring>('activeColoring', COLORINGS) ?? DEFAULT_ACTIVE_COLORING,
 		inactiveColoring: oneOf<InactiveColoring>('inactiveColoring', INACTIVE_COLORINGS) ?? DEFAULT_INACTIVE_COLORING,
-		grow: sources[0]!['grow'] === true,
+		grow: growOf(sources[0]!['grow']),
 		fade: first(sources, (source) => (typeof source['fade'] === 'boolean' ? source['fade'] : null)) ?? false,
 	};
 }
@@ -1046,22 +1060,86 @@ export function keyValue(key: string, current: number | null, range: Range, edit
 }
 
 /**
- * How far a piece has grown towards its full size, from 0 to 1, where the
- * pieces which are not filled are drawn small (`grow`). `index` counts the
- * pieces from 0. With the value at `fraction * count` pieces, not rounded, a
- * piece is filled once the value has come half of it, and that is where its
- * growth reaches 1: the piece after the filled ones grows from 0, where the
- * value stands exactly at its start, to 1 as the value comes that half. So at
- * a value which is a whole number of pieces nothing is growing, only the next
- * piece ever is, and every piece further on is 0. A filled piece is 1.
+ * What the option `grow` comes to: a number from 0 to `MAX_GROW`, or the
+ * text of one. It was a switch once: a stored `true` is 1 and `false` is 0.
+ * Anything else, and a negative number, is 0, which is off.
  */
-export function growthOf(fraction: number, count: number, index: number): number {
-	if (!(count >= 1) || !(fraction > 0)) return 0;
-	if (index < filledCount(fraction, count)) return 1;
+export function growOf(value: unknown): number {
+	if (value === true) return 1;
 
-	// Without the dust of the product: 0.6 of 5 pieces is 3 of them and not a hair more.
-	const pieces = Number((Math.min(1, fraction) * count).toFixed(9));
-	return Math.min(1, Math.max(0, (pieces - index) / FILLED_FROM));
+	const number = typeof value === 'boolean' ? null : numberOf(value);
+	return number !== null && number > 0 ? Math.min(MAX_GROW, number) : 0;
+}
+
+/**
+ * Over how many pieces before it is filled a piece grows and fades in: the
+ * reach, for a `grow` which says how many pieces can be growing at once.
+ *
+ * A piece is filled once the value has come half of it. With `grow` at 1 the
+ * reach is that half piece: the piece after the filled ones grows during the
+ * half step before it is filled, only one piece is ever under way, and a
+ * value which is a whole number of pieces shows nothing growing. Every
+ * further 1 reaches one piece further: 2 is a piece and a half, so the next
+ * piece is always partly grown and the one after it starts as the next comes
+ * close to being filled; 3 is two and a half, a ramp of up to three. Below 1
+ * the reach is half of `grow`, so the growth starts later than half a step
+ * before the fill. At 0 there is none.
+ *
+ * Bars are the exception where they are thin. On a range of a hundred in
+ * whole numbers, fifty or a hundred bars stand for two units or one each, and
+ * no whole number ever lies inside the last half of such a bar: with a reach
+ * in pieces alone they would never be seen growing. So the reach of bars is
+ * at least `BAR_REACH` pixels of the track for each 1 of `grow`: the next few
+ * bars form a short ramp in front of the fill. That part is counted in half
+ * pieces, so that it changes with the number of bars and not with every pixel
+ * of the width. `width` is that of the row and `count` the number of bars.
+ */
+export function reachOf(visualization: Visualization, place: Place, count: number, width: number, grow = 1): number {
+	const amount = Number.isFinite(grow) && grow > 0 ? Math.min(MAX_GROW, grow) : 0;
+	const pieces = amount <= 1 ? amount / 2 : amount - FILLED_FROM;
+
+	if (visualization !== 'bars' || !(count >= 1) || !(width > 0)) return pieces;
+
+	const pitch = (width + PIECE_SIZES[place].bars.gap) / count;
+	const track = Math.round((2 * amount * BAR_REACH[place]) / pitch) / 2;
+
+	return Number.isFinite(track) ? Math.max(pieces, track) : pieces;
+}
+
+/**
+ * How far a piece has grown towards its full size, from 0 to 1, where the
+ * pieces which are not filled are drawn small (`grow`) or fade in (`fade`).
+ * `index` counts the pieces from 0. With the value at `fraction * count`
+ * pieces, not rounded, a piece is filled once the value has come half of it,
+ * and that is where its growth reaches 1. It starts `reach` pieces before
+ * that (`reachOf`): a piece which is still `d` pieces from being filled has
+ * grown `1 - d / reach`. A filled piece is 1, and a reach of nothing leaves
+ * every other piece at 0.
+ *
+ * The reach grows out of the start of the scale: what counts is the reach or
+ * the position plus half a piece, whichever is less. At the minimum that is
+ * the half piece the first piece is away, so nothing has grown and an empty
+ * meter is empty; as the value rises the ramp gets longer with the fill until
+ * it has its whole reach. So it comes out of the start as it runs into the
+ * end, where the pieces which are left grow until all are full, and nothing
+ * jumps anywhere between the two. A reach of half a piece or less is never
+ * more than that, and is as it is everywhere. An earlier rule made the
+ * minimum a case of its own, nothing under way there, and a long ramp was
+ * there in full at the first value above it.
+ *
+ * `fraction` may be the place of the pointer and not that of the value, and
+ * so ahead of what is filled: a piece which is not filled is then 1 as well.
+ */
+export function growthOf(fraction: number, count: number, index: number, reach = FILLED_FROM): number {
+	if (!(count >= 1) || !(fraction >= 0)) return 0;
+	if (index < filledCount(fraction, count)) return 1;
+	if (!(reach > 0)) return 0;
+
+	const pieces = piecesAt(Math.min(1, fraction), count);
+	const within = Math.min(reach, pieces + FILLED_FROM);
+	const away = index + FILLED_FROM - pieces;
+
+	return Math.min(1, Math.max(0, 1 - away / within));
 }
 
 /** How large a piece of a shape is drawn for its growth: from the small size of the shape at 0 to its full size at 1. */
@@ -1079,13 +1157,22 @@ export function scaleCss(size: Scale): string {
 }
 
 /**
+ * How many pieces a fraction of the track comes to, not rounded to whole
+ * pieces but without the dust of the product: 0.6 of 5 pieces is 3 of them
+ * and not a hair more, and 0.29 of 50 is 14.5 and not a hair less.
+ */
+function piecesAt(fraction: number, count: number): number {
+	return Number((fraction * count).toFixed(9));
+}
+
+/**
  * How many of `count` pieces are filled for a fraction of the track, the one
- * the bar is filled to: the nearest whole number of them. No piece is ever
- * filled in part, so 44 of 100 fills four of ten and 45 fills five. The text
- * beside it still says the value as it is.
+ * the bar is filled to: the nearest whole number of them, with the upper one
+ * half way. No piece is ever filled in part, so 44 of 100 fills four of ten
+ * and 45 fills five. The text beside it still says the value as it is.
  */
 export function filledCount(fraction: number, count: number): number {
-	return Math.min(count, Math.max(0, Math.round(fraction * count)));
+	return Math.min(count, Math.max(0, Math.round(piecesAt(fraction, count))));
 }
 
 /**
@@ -1249,12 +1336,19 @@ const NO_PAINT: Paint = { color: null, scale: null };
  * piece and without a reading, `size` is `null`: the piece is as it always
  * was.
  *
- * Where the look says `fade`, the piece after the filled ones has an `over`
- * while it is growing: the look it has once it is filled, by `activeColoring`,
+ * Where the look says `fade`, a piece which is not filled and has started to
+ * grow has an `over`: the look it has once it is filled, by `activeColoring`,
  * shown as much as it has grown (`growthOf`), over its own look, which stays
  * what `inactiveColoring` gives it. At the moment it is filled the two are
  * the same, so no colour jumps. Every other piece has `over: null`, and so
  * has every piece of a meter which does not fade.
+ *
+ * `ahead` says how the growth is counted: over which `reach` in pieces
+ * (`reachOf`; half a piece without it), and from which place, `at`, a
+ * fraction of the track, where that is not the place of the value: the
+ * place of the pointer while it drags the value, so that sizes and fading
+ * follow the pointer and not the steps the value takes. What is filled, the
+ * colours and everything else stay those of the value.
  */
 export function drawingOf(
 	look: Pick<Look, 'activeColoring' | 'inactiveColoring'> & Partial<Pick<Look, 'grow' | 'fade' | 'visualization'>>,
@@ -1262,6 +1356,7 @@ export function drawingOf(
 	reading: Pick<Reading, 'empty' | 'fraction' | 'color'>,
 	count = 0,
 	value: unknown = null,
+	ahead: { reach?: number | undefined; at?: number | null | undefined } = {},
 ): Drawing {
 	const pieces = count >= MIN_SUBDIVISIONS ? Math.min(MAX_PIECES, Math.floor(count)) : 0;
 	const filled = filledCount(reading.fraction, pieces);
@@ -1304,8 +1399,10 @@ export function drawingOf(
 	}
 
 	// Pieces which grow: those which are not filled are small, and the next one is as large as the value has come.
-	const shape = look.grow === true && look.visualization !== undefined && look.visualization !== 'contiguous' ? look.visualization : null;
-	const sizeOf = (index: number): Scale | null => (shape === null || index < filled ? null : pieceScale(shape, growthOf(reading.fraction, pieces, index)));
+	const shape = typeof look.grow === 'number' && look.grow > 0 && look.visualization !== undefined && look.visualization !== 'contiguous' ? look.visualization : null;
+	const from = typeof ahead.at === 'number' && Number.isFinite(ahead.at) ? Math.min(1, Math.max(0, ahead.at)) : reading.fraction;
+	const grown = (index: number) => growthOf(from, pieces, index, ahead.reach);
+	const sizeOf = (index: number): Scale | null => (shape === null || index < filled ? null : pieceScale(shape, grown(index)));
 
 	// A piece as one of the two colourings paints it, at full strength or faded.
 	const paintAs = (index: number, coloring: Coloring | 'plain', weak: boolean): Paint => {
@@ -1318,12 +1415,12 @@ export function drawingOf(
 
 	const paintOf = (index: number): Paint => (index < filled ? paintAs(index, active, false) : paintAs(index, inactive, true));
 
-	// The piece which fades in: the one after the filled ones, while the value is on its way into it.
+	// The pieces which fade in: those which are not filled and have started to grow.
 	const overOf = (index: number): Overlay | null => {
-		if (look.fade !== true || index !== filled) return null;
+		if (look.fade !== true || index < filled) return null;
 
-		const opacity = Number(growthOf(reading.fraction, pieces, index).toFixed(4));
-		return opacity > 0 && opacity < 1 ? { paint: paintAs(index, active, false), opacity } : null;
+		const opacity = Number(grown(index).toFixed(4));
+		return opacity > 0 ? { paint: paintAs(index, active, false), opacity } : null;
 	};
 
 	const fading = filled < pieces && overOf(filled) !== null;

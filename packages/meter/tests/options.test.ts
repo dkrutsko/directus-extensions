@@ -465,22 +465,27 @@ describe('the options form of a display which is not told its field', () => {
 });
 
 describe('the options which grow the pieces and fade the next one in', () => {
-	test('two toggles which are off until they are set, each with a note', () => {
+	test('a number for how far the growth reaches, and a toggle for the fading, each with a note', () => {
 		const fields = optionFields({}, false);
 
-		for (const [key, name] of [
-			['grow', 'Grow'],
-			['fade', 'Fade In'],
-		] as const) {
-			const field = fieldOf(fields, key);
+		const grow = fieldOf(fields, 'grow');
+		expect(grow.name).toBe('Grow');
+		expect(grow.type).toBe('float');
+		expect(grow.meta?.interface).toBe('input');
+		expect(grow.meta?.width).toBe('half');
+		expect(grow.meta?.options).toEqual({ placeholder: '0', min: 0, max: 20, step: 0.5 });
+		expect(grow.schema?.default_value).toBeUndefined();
 
-			expect(field.name).toBe(name);
-			expect(field.type).toBe('boolean');
-			expect(field.meta?.interface).toBe('boolean');
-			expect(field.meta?.width).toBe('half');
+		const fade = fieldOf(fields, 'fade');
+		expect(fade.name).toBe('Fade In');
+		expect(fade.type).toBe('boolean');
+		expect(fade.meta?.interface).toBe('boolean');
+		expect(fade.meta?.width).toBe('half');
+		expect(preset(fields, 'fade')).toBe(false);
+
+		for (const field of [grow, fade]) {
 			expect(String(field.meta?.note).length).toBeGreaterThan(20);
 			expect(String(field.meta?.note)).not.toContain('\n');
-			expect(preset(fields, key)).toBe(false);
 		}
 	});
 

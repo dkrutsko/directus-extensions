@@ -5,6 +5,8 @@ import {
 	FADE,
 	FREE_DIGITS,
 	MAX_PIECES,
+	BAR_REACH,
+	MAX_GROW,
 	MAX_STEPS,
 	SMALL_PIECES,
 	TOUCH_SLOP,
@@ -21,8 +23,10 @@ import {
 	drawnCount,
 	fadedColor,
 	fillScale,
+	growOf,
 	growthOf,
 	pieceScale,
+	reachOf,
 	scaleCss,
 	filledAt,
 	filledCount,
@@ -767,7 +771,7 @@ describe('the display as plain text', () => {
 	});
 });
 
-const PLAIN_LOOK = { visualization: 'contiguous', subdivisions: null, dotsLayout: 'packed', activeColoring: 'value', inactiveColoring: 'plain', grow: false, fade: false };
+const PLAIN_LOOK = { visualization: 'contiguous', subdivisions: null, dotsLayout: 'packed', activeColoring: 'value', inactiveColoring: 'plain', grow: 0, fade: false };
 const SHAPES: Shape[] = ['pills', 'segments', 'bars', 'dots'];
 
 describe('how the meter is drawn', () => {
@@ -846,8 +850,8 @@ describe('how the meter is drawn', () => {
 
 	test('the display takes every key from the interface which it does not set itself, a stored null among them', () => {
 		// `grow` is the one key which is not taken over: the pieces of a display never grow.
-		const inherited = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: true, fade: true };
-		const taken = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: false, fade: true };
+		const inherited = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: 2, fade: true };
+		const taken = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: 0, fade: true };
 		const keys = Object.keys(inherited) as (keyof typeof inherited)[];
 
 		// Nothing of its own, in whichever way: absent, undefined, null or unusable.
@@ -933,8 +937,8 @@ describe('how many pieces are wanted', () => {
 describe('how many pieces fit', () => {
 	test('the sizes of the pieces, for each visualization in each place', () => {
 		expect(PIECE_SIZES).toEqual({
-			form: { pills: { piece: 20, gap: 4 }, segments: { piece: 14, gap: 3 }, bars: { piece: 3, gap: 2 }, dots: { piece: 12, gap: 6 } },
-			display: { pills: { piece: 8, gap: 2 }, segments: { piece: 6, gap: 2 }, bars: { piece: 2, gap: 1 }, dots: { piece: 6, gap: 1.5 } },
+			form: { pills: { piece: 20, gap: 4 }, segments: { piece: 14, gap: 3 }, bars: { piece: 3, gap: 2 }, dots: { piece: 12, gap: 2 } },
+			display: { pills: { piece: 8, gap: 2 }, segments: { piece: 6, gap: 2 }, bars: { piece: 2, gap: 1 }, dots: { piece: 6, gap: 1 } },
 		});
 	});
 
@@ -943,7 +947,7 @@ describe('how many pieces fit', () => {
 		expect(fitCount('pills', 'display', DISPLAY_WIDTH)).toBe(7);
 		expect(fitCount('segments', 'display', DISPLAY_WIDTH)).toBe(9);
 		expect(fitCount('bars', 'display', DISPLAY_WIDTH)).toBe(24);
-		expect(fitCount('dots', 'display', DISPLAY_WIDTH)).toBe(9);
+		expect(fitCount('dots', 'display', DISPLAY_WIDTH)).toBe(10);
 	});
 
 	test('in the form: as many as the width has room for, each at its smallest with its gap', () => {
@@ -962,9 +966,11 @@ describe('how many pieces fit', () => {
 		expect(fitCount('bars', 'form', 8)).toBe(2);
 		expect(fitCount('bars', 'form', 7)).toBe(1);
 
-		expect(fitCount('dots', 'form', 342)).toBe(19);
-		expect(fitCount('dots', 'form', 174)).toBe(10);
-		expect(fitCount('dots', 'form', 173)).toBe(9);
+		// 24 dots are 24 * 12 + 23 * 2 = 334px, and ten are 138px.
+		expect(fitCount('dots', 'form', 342)).toBe(24);
+		expect(fitCount('dots', 'form', 138)).toBe(10);
+		expect(fitCount('dots', 'form', 137)).toBe(9);
+		expect(fitCount('dots', 'form', 713)).toBe(51);
 	});
 
 	test('a width which is a hair under a whole number of pieces counts as that number', () => {
@@ -1050,11 +1056,16 @@ describe('how many pieces are drawn', () => {
 		expect(count({ visualization: 'pills' }, 'form', 342)).toBe(10);
 		expect(count({ visualization: 'segments' }, 'form', 342)).toBe(20);
 		expect(count({ visualization: 'bars' }, 'form', 342)).toBe(50);
-		expect(count({ visualization: 'dots' }, 'form', 342)).toBe(10);
+		expect(count({ visualization: 'dots' }, 'form', 342)).toBe(20);
 
 		// The same field in a wider form has more.
 		expect(count({ visualization: 'pills' }, 'form', 717)).toBe(25);
 		expect(count({ visualization: 'bars' }, 'form', 717)).toBe(100);
+		expect(count({ visualization: 'dots' }, 'form', 713)).toBe(50);
+
+		// And in the display ten dots, where it has five pills.
+		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(10);
+		expect(count({ visualization: 'pills' }, 'display', DISPLAY_WIDTH)).toBe(5);
 
 		// One for every unit, and a number which is set.
 		expect(count({ visualization: 'pills', max: 5 }, 'form', 342)).toBe(5);
@@ -1074,7 +1085,7 @@ describe('how many pieces are drawn', () => {
 		expect(count({ visualization: 'pills' }, 'display', DISPLAY_WIDTH)).toBe(5);
 		expect(count({ visualization: 'segments' }, 'display', DISPLAY_WIDTH)).toBe(5);
 		expect(count({ visualization: 'bars' }, 'display', DISPLAY_WIDTH)).toBe(20);
-		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(5);
+		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(10);
 		expect(count({ visualization: 'dots', max: 8 }, 'display', DISPLAY_WIDTH)).toBe(8);
 		expect(count({ visualization: 'pills', max: 12 }, 'display', DISPLAY_WIDTH)).toBe(6);
 		expect(count({ visualization: 'bars', subdivisions: 24 }, 'display', DISPLAY_WIDTH)).toBe(24);
@@ -1106,12 +1117,12 @@ describe('where the pieces are', () => {
 	test('packed dots keep their size and their gap, from the start', () => {
 		expect(pieceGeometry('dots', 'form', 3, 342)).toEqual([
 			{ start: 0, end: 12 },
-			{ start: 18, end: 30 },
-			{ start: 36, end: 48 },
+			{ start: 14, end: 26 },
+			{ start: 28, end: 40 },
 		]);
 
 		expect(pieceGeometry('dots', 'form', 3, 342, 'packed')).toEqual(pieceGeometry('dots', 'form', 3, 342));
-		expect(pieceGeometry('dots', 'display', 9, 72).at(-1)).toEqual({ start: 60, end: 66 });
+		expect(pieceGeometry('dots', 'display', 10, 72).at(-1)).toEqual({ start: 63, end: 69 });
 	});
 
 	test('spread dots keep their size: the first at the start edge, the last at the end edge, equal gaps between', () => {
@@ -1785,16 +1796,16 @@ describe('the pieces the pointer fills', () => {
 	});
 
 	test('packed dots: the pieces are where the dots are, not the whole track', () => {
-		// Five dots of 12px, 6px apart: the row is 84px of a track of 342px.
+		// Five dots of 12px, 2px apart: the row is 68px of a track of 342px.
 		const dots = pieceGeometry('dots', 'form', 5, 342);
 
 		expect(filledAt(5, dots)).toBe(1);
-		expect(filledAt(14, dots)).toBe(1);
-		expect(filledAt(18, dots)).toBe(2);
-		expect(filledAt(40, dots)).toBe(3);
-		expect(filledAt(60, dots)).toBe(4);
-		expect(filledAt(80, dots)).toBe(5);
-		expect(filledAt(84, dots)).toBe(5);
+		expect(filledAt(13, dots)).toBe(1);
+		expect(filledAt(14, dots)).toBe(2);
+		expect(filledAt(30, dots)).toBe(3);
+		expect(filledAt(45, dots)).toBe(4);
+		expect(filledAt(60, dots)).toBe(5);
+		expect(filledAt(68, dots)).toBe(5);
 		expect(filledAt(171, dots)).toBe(5);
 		expect(filledAt(342, dots)).toBe(5);
 
@@ -2063,11 +2074,539 @@ describe('pieces which grow', () => {
 		expect(drawingOf(readLook({ grow: true }), options, reading, 0, 65)).toEqual(drawingOf(readLook({}), options, reading, 0, 65));
 		expect(drawingOf(readLook({ visualization: 'contiguous', grow: true }), options, reading, 5, 65).pieces!.every((piece) => piece.size === null)).toBe(true);
 
-		expect(readLook({ grow: true }).grow).toBe(true);
-		expect(readLook({}, { grow: true }).grow).toBe(false);
-		expect(readLook({ grow: null }, { grow: true }).grow).toBe(false);
-		expect(readLook({ grow: 'true' }).grow).toBe(false);
-		expect(readLook({ grow: 1 }).grow).toBe(false);
+		expect(readLook({ grow: 2 }).grow).toBe(2);
+		expect(readLook({}, { grow: 2 }).grow).toBe(0);
+		expect(readLook({ grow: null }, { grow: 2 }).grow).toBe(0);
+		expect(readLook({ grow: null }, { grow: true }).grow).toBe(0);
+	});
+});
+
+describe('grow as a number: how many pieces can be growing at once', () => {
+	test('what the option comes to: a number from 0 to 20, a switch which was stored, and junk', () => {
+		expect(MAX_GROW).toBe(20);
+
+		for (const [stored, grow] of [
+			[0, 0],
+			[0.5, 0.5],
+			[1, 1],
+			[1.5, 1.5],
+			[2, 2],
+			[3, 3],
+			[20, 20],
+			['2', 2],
+			['1.5', 1.5],
+			// It was a switch before it was a number.
+			[true, 1],
+			[false, 0],
+			// Junk, and less than nothing.
+			['true', 0],
+			['abc', 0],
+			['', 0],
+			[null, 0],
+			[undefined, 0],
+			[{}, 0],
+			[[], 0],
+			[Number.NaN, 0],
+			[Number.POSITIVE_INFINITY, 0],
+			[-1, 0],
+			[-0.5, 0],
+			// More than twenty is twenty.
+			[25, 20],
+			[1e9, 20],
+		] as const) {
+			expect(growOf(stored), String(stored)).toBe(grow);
+			expect(readLook({ grow: stored }).grow, String(stored)).toBe(grow);
+		}
+	});
+
+	test('the reach in pieces: half of it up to 1, and half a piece less than it above', () => {
+		for (const shape of ['pills', 'segments', 'dots'] as const) {
+			for (const [grow, reach] of [
+				[0, 0],
+				[0.5, 0.25],
+				[1, 0.5],
+				[1.5, 1],
+				[2, 1.5],
+				[3, 2.5],
+				[20, 19.5],
+				[25, 19.5],
+				[-1, 0],
+				[Number.NaN, 0],
+			] as const) {
+				expect(reachOf(shape, 'form', 5, 342, grow), `${shape} ${grow}`).toBe(reach);
+			}
+
+			// Without a number it is that of 1, as for pieces which only fade in.
+			expect(reachOf(shape, 'form', 5, 342)).toBe(0.5);
+			expect(reachOf(shape, 'display', 5, 72)).toBe(0.5);
+		}
+
+		// What the stored switch comes to.
+		expect(reachOf('dots', 'form', 5, 342, growOf(true))).toBe(0.5);
+		expect(reachOf('dots', 'form', 5, 342, growOf(false))).toBe(0);
+		expect(reachOf('dots', 'form', 5, 342, growOf('junk'))).toBe(0);
+		expect(reachOf('dots', 'form', 5, 342, growOf(25))).toBe(19.5);
+	});
+
+	test('the growth of the next three pieces at a whole number of pieces, for 1, 2 and 3', () => {
+		// Ten pieces, the value at exactly four of them: the pieces 5, 6 and 7 are half a piece, one and a half
+		// and two and a half from being filled.
+		const next = (grow: number, fraction: number) => [4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(4)));
+
+		// 1: nothing is growing.
+		expect(next(1, 0.4)).toEqual([0, 0, 0]);
+
+		// 2: the next piece is two thirds grown, and the one after it has not started.
+		expect(next(2, 0.4)).toEqual([0.6667, 0, 0]);
+
+		// 3: a ramp of two, the nearer the larger.
+		expect(next(3, 0.4)).toEqual([0.8, 0.4, 0]);
+
+		// Below 1 nothing either, and at 0 nothing ever.
+		expect(next(0.5, 0.4)).toEqual([0, 0, 0]);
+		expect(next(0, 0.4)).toEqual([0, 0, 0]);
+	});
+
+	test('and close before a piece is filled', () => {
+		// The value a hair short of four and a half pieces: the fifth piece is about to be filled.
+		const next = (grow: number, fraction: number) => [4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(3)));
+
+		expect(next(1, 0.4499)).toEqual([0.998, 0, 0]);
+		expect(next(2, 0.4499)).toEqual([0.999, 0.333, 0]);
+		expect(next(3, 0.4499)).toEqual([1, 0.6, 0.2]);
+
+		// Half way there, at four and a quarter pieces.
+		expect(next(1, 0.425)).toEqual([0.5, 0, 0]);
+		expect(next(2, 0.425)).toEqual([0.833, 0.167, 0]);
+		expect(next(3, 0.425)).toEqual([0.9, 0.5, 0.1]);
+
+		// Below 1 the growth starts later: with a half, only over the last quarter of a piece.
+		expect(next(0.5, 0.425)).toEqual([0, 0, 0]);
+		expect(next(0.5, 0.4375)).toEqual([0.5, 0, 0]);
+		expect(next(0.5, 0.4499)).toEqual([0.996, 0, 0]);
+
+		// At the moment it is filled a piece is full, whatever the number.
+		for (const grow of [0.5, 1, 2, 3]) expect(growthOf(0.45, 10, 4, reachOf('pills', 'form', 10, 342, grow)), String(grow)).toBe(1);
+
+		// With 0 a piece which is not filled is never under way.
+		expect(growthOf(0.4499, 10, 4, 0)).toBe(0);
+		expect(growthOf(0.45, 10, 4, 0)).toBe(1);
+	});
+
+	test('thin bars: at least fifteen pixels of the track for each 1, where that is more than the pieces give', () => {
+		// Fifty bars in half of the form, 6.9px apart. 1: two bars, as before there was a number. 2: twice the ramp.
+		expect(reachOf('bars', 'form', 50, 342, 1)).toBe(2);
+		expect(reachOf('bars', 'form', 50, 342, 2)).toBe(4.5);
+		expect(reachOf('bars', 'form', 50, 342, 3)).toBe(6.5);
+		expect(reachOf('bars', 'form', 50, 342, 0.5)).toBe(1);
+		expect(reachOf('bars', 'form', 50, 342, 0)).toBe(0);
+		expect(reachOf('bars', 'form', 50, 342)).toBe(2);
+
+		// At their narrowest, 5px apart: three for each 1.
+		expect(reachOf('bars', 'form', 68, 342, 1)).toBe(3);
+		expect(reachOf('bars', 'form', 68, 342, 2)).toBe(6);
+
+		// The display, where pieces only fade in: its own nine pixels, for 1.
+		expect(reachOf('bars', 'display', 24, 72)).toBe(3);
+		expect(reachOf('bars', 'display', 20, 72)).toBe(2.5);
+	});
+
+	test('wide bars: the pieces alone, as every other shape', () => {
+		// Five bars in half of the form are 69px apart: fifteen pixels are less than half of one.
+		for (const [grow, reach] of [
+			[0, 0],
+			[0.5, 0.25],
+			[1, 0.5],
+			[2, 1.5],
+			[3, 2.5],
+		] as const) {
+			expect(reachOf('bars', 'form', 5, 342, grow), String(grow)).toBe(reach);
+			expect(reachOf('bars', 'form', 5, 342, grow), String(grow)).toBe(reachOf('segments', 'form', 5, 342, grow));
+		}
+	});
+
+	test('what is drawn for dots with 3, 1 and a stored switch', () => {
+		const options = readOptions({ max: 8 });
+		const sizes = (grow: unknown, value: number) => {
+			const look = readLook({ visualization: 'dots', grow });
+			return drawingOf(look, options, readingOf(value, options, EN), 8, value, { reach: reachOf('dots', 'form', 8, 342, look.grow) }).pieces!.map((piece) => piece.size?.along ?? 1);
+		};
+
+		// At exactly 3 of 8: with 3 the next two dots are larger than the ones after them, the nearer the larger.
+		expect(sizes(3, 3)).toEqual([1, 1, 1, 0.9, 0.7, 0.5, 0.5, 0.5]);
+
+		// With 1 every dot which is not filled is small, and a stored switch is 1.
+		expect(sizes(1, 3)).toEqual([1, 1, 1, 0.5, 0.5, 0.5, 0.5, 0.5]);
+		expect(sizes(true, 3)).toEqual(sizes(1, 3));
+		expect(sizes(true, 3.3)).toEqual(sizes(1, 3.3));
+		expect(sizes(true, 3.3)).toEqual([1, 1, 1, 0.8, 0.5, 0.5, 0.5, 0.5]);
+
+		// With 0, with the switch off and with junk, no piece has a size at all.
+		for (const grow of [0, false, 'junk', -2]) {
+			const look = readLook({ visualization: 'dots', grow });
+			expect(drawingOf(look, options, readingOf(3.3, options, EN), 8, 3.3).pieces!.every((piece) => piece.size === null), String(grow)).toBe(true);
+		}
+	});
+
+	test('pieces which only fade in have the reach of 1, and with a number that of the number', () => {
+		const options = readOptions({ max: 8, color: GREEN });
+		const overs = (grow: number, value: number) => {
+			const look = readLook({ visualization: 'dots', fade: true, grow });
+			const reach = reachOf('dots', 'form', 8, 342, look.grow > 0 ? look.grow : 1);
+			return drawingOf(look, options, readingOf(value, options, EN), 8, value, { reach }).pieces!.map((piece) => piece.over?.opacity ?? 0);
+		};
+
+		expect(overs(0, 3)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
+		expect(overs(0, 3.25)).toEqual([0, 0, 0, 0.5, 0, 0, 0, 0]);
+		expect(overs(3, 3)).toEqual([0, 0, 0, 0.8, 0.4, 0, 0, 0]);
+	});
+});
+
+describe('half a piece is half a piece, whatever the product of two numbers comes to', () => {
+	test('a value half way into a piece fills it, also where the product falls a hair short', () => {
+		// 0.29 times 50 is 14.499999999999998 as numbers go, and 14.5 as pieces.
+		expect(0.29 * 50).toBeLessThan(14.5);
+		expect(filledCount(0.29, 50)).toBe(15);
+		expect(filledCount(fractionOf(29, range(0, 100)), 50)).toBe(15);
+
+		// Every odd value of a hundred fills its bar of fifty, and every even one the same as the value before it.
+		for (let value = 0; value <= 100; value++) expect(filledCount(value / 100, 50), String(value)).toBe(Math.ceil(value / 2));
+
+		// A hair short of half way is still not filled.
+		expect(filledCount(0.2899999, 50)).toBe(14);
+		expect(filledCount(0.44, 10)).toBe(4);
+		expect(filledCount(0.45, 10)).toBe(5);
+	});
+});
+
+describe('how far ahead of the fill a piece grows', () => {
+	test('half a piece for pills, segments and dots, whatever their number and width', () => {
+		for (const shape of ['pills', 'segments', 'dots', 'contiguous'] as const) {
+			for (const [count, width] of [
+				[5, 342],
+				[20, 342],
+				[100, 713],
+				[9, 72],
+			] as const) {
+				expect(reachOf(shape, 'form', count, width), `${shape} ${count}`).toBe(0.5);
+				expect(reachOf(shape, 'display', count, width), `${shape} ${count}`).toBe(0.5);
+			}
+		}
+	});
+
+	test('thin bars: about fifteen pixels of the track, counted in half pieces', () => {
+		expect(BAR_REACH).toEqual({ form: 15, display: 9 });
+
+		// Bars at their narrowest, 5px from one to the next: three of them.
+		expect(reachOf('bars', 'form', 68, 342)).toBe(3);
+
+		// Fifty bars in half of the form are 6.9px apart, a hundred across it 7.2px: two.
+		expect(reachOf('bars', 'form', 50, 342)).toBe(2);
+		expect(reachOf('bars', 'form', 100, 713)).toBe(2);
+
+		// Twenty-five in half of the form, 13.8px apart: one.
+		expect(reachOf('bars', 'form', 25, 342)).toBe(1);
+
+		// The display is smaller, and so is its reach: about three of its narrowest bars.
+		expect(reachOf('bars', 'display', 24, 72)).toBe(3);
+		expect(reachOf('bars', 'display', 20, 72)).toBe(2.5);
+	});
+
+	test('wide bars: half a piece, as the other shapes', () => {
+		expect(reachOf('bars', 'form', 10, 342)).toBe(0.5);
+		expect(reachOf('bars', 'form', 5, 342)).toBe(0.5);
+		expect(reachOf('bars', 'form', 2, 713)).toBe(0.5);
+		expect(reachOf('bars', 'display', 5, 72)).toBe(0.5);
+	});
+
+	test('never less than half a piece, and never anything but a number', () => {
+		for (const [count, width] of [
+			[0, 342],
+			[-3, 342],
+			[Number.NaN, 342],
+			[50, 0],
+			[50, -10],
+			[50, Number.NaN],
+			[50, Number.POSITIVE_INFINITY],
+			[1, 1e9],
+		] as const) {
+			const reach = reachOf('bars', 'form', count, width);
+			expect(Number.isFinite(reach), `${count} in ${width}`).toBe(true);
+			expect(reach, `${count} in ${width}`).toBeGreaterThanOrEqual(0.5);
+		}
+	});
+
+	test('with the reach of half a piece the growth is what it was', () => {
+		for (let value = 0; value <= 100; value += 0.5) {
+			for (let index = 0; index < 5; index++) expect(growthOf(value / 100, 5, index, 0.5), `${value} ${index}`).toBe(growthOf(value / 100, 5, index));
+		}
+
+		// Without a reach it is half a piece; with a shorter one the growth starts later, and with none never.
+		expect(growthOf(0.65, 5, 3, undefined)).toBe(0.5);
+		expect(growthOf(0.65, 5, 3, 0.1)).toBe(0);
+		expect(growthOf(0.69, 5, 3, 0.1)).toBeCloseTo(0.5, 9);
+		expect(growthOf(0.65, 5, 3, 0)).toBe(0);
+		expect(growthOf(0.65, 5, 3, Number.NaN)).toBe(0);
+		expect(growthOf(0.65, 5, 3, -1)).toBe(0);
+	});
+
+	test('with a longer reach the bars in front of the fill are a ramp, each further along the nearer it is', () => {
+		// Fifty bars for 0 to 100, a reach of two bars. At 40, twenty are filled: the next is three quarters of
+		// the way, the one after it a quarter, and the rest have not started.
+		const fifty = (value: number) => Array.from({ length: 50 }, (_, index) => growthOf(value / 100, 50, index, 2));
+
+		expect(fifty(40).slice(18, 24)).toEqual([1, 1, 0.75, 0.25, 0, 0]);
+
+		// At 41 the twenty-first is filled, and the next is half way.
+		expect(fifty(41).slice(18, 24)).toEqual([1, 1, 1, 0.5, 0, 0]);
+		expect(fifty(42).slice(18, 24)).toEqual([1, 1, 1, 0.75, 0.25, 0]);
+
+		// At the minimum nothing is under way: an empty meter is empty. The ramp comes out of the start: at 1 a
+		// bar is filled and the next has not started, at 2 it is two thirds of the way, and from 3 on the ramp
+		// has its whole reach.
+		expect(fifty(0).every((growth) => growth === 0)).toBe(true);
+		expect(fifty(1).slice(0, 4)).toEqual([1, 0, 0, 0]);
+		expect(fifty(2).slice(0, 4).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 0.6667, 0, 0]);
+		expect(fifty(3).slice(0, 4)).toEqual([1, 1, 0.5, 0]);
+
+		// From there on the ramp is there at every whole value which leaves a bar to fill (99 fills the last),
+		// falls from the fill onward, and moves with the value.
+		expect(filledCount(0.99, 50)).toBe(50);
+
+		for (let value = 2; value < 99; value++) {
+			const growth = fifty(value);
+			const filled = filledCount(value / 100, 50);
+			const ahead = growth.slice(filled);
+
+			if (!(ahead[0]! > 0 && ahead[0]! < 1)) expect.fail(`${value}: the next bar is at ${ahead[0]}`);
+			for (let index = 1; index < ahead.length; index++) if (ahead[index]! > ahead[index - 1]!) expect.fail(`${value}: bar ${index} is further along than the one before it`);
+			if (ahead.length > 2 && ahead[2] !== 0) expect.fail(`${value}: the third bar ahead is at ${ahead[2]}`);
+		}
+
+		// A hundred bars, one for each unit, with the same reach: also at every whole value.
+		for (let value = 2; value < 100; value++) expect(growthOf(value / 100, 100, value, 2), String(value)).toBe(0.75);
+		expect(growthOf(0.01, 100, 1, 2)).toBeCloseTo(2 / 3, 9);
+
+		// With the reach of half a piece none of them would ever be seen growing.
+		for (let value = 0; value <= 100; value++) {
+			for (const count of [50, 100]) {
+				const filled = filledCount(value / 100, count);
+				if (filled < count) expect(growthOf(value / 100, count, filled), `${value} of ${count}`).toBe(0);
+			}
+		}
+	});
+
+	test('a piece is at its full size at the moment it is filled, whatever the reach', () => {
+		for (const reach of [0.5, 1, 2, 3]) {
+			expect(growthOf(0.409999, 50, 20, reach), String(reach)).toBeGreaterThan(0.99);
+			expect(growthOf(0.409999, 50, 20, reach), String(reach)).toBeLessThan(1);
+			expect(growthOf(0.41, 50, 20, reach), String(reach)).toBe(1);
+		}
+	});
+
+	test('the drawing takes the reach: sizes and what fades in, for bars in the form and in the display', () => {
+		const options = readOptions({ max: 100, color: GREEN });
+		const pieces = (look: object, count: number, reach: number | undefined) => drawingOf(readLook({ visualization: 'bars', ...look }), options, readingOf(40, options, EN), count, 40, { reach }).pieces!;
+
+		// Fifty bars which grow, at 40: the heights of the two bars in front of the fill, between a third and all.
+		const grown = pieces({ grow: true }, 50, reachOf('bars', 'form', 50, 342));
+		expect(grown.slice(19, 23).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.8333 }, { along: 1, across: 0.5 }, { along: 1, across: 0.3333 }]);
+
+		// Without a reach, as before: nothing in front of the fill has started.
+		expect(pieces({ grow: true }, 50, undefined).slice(19, 22).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+
+		// Twenty bars of a display which fade in, at 40: eight filled, and over the next two the green, less and less.
+		const faded = pieces({ fade: true }, 20, reachOf('bars', 'display', 20, 72));
+		expect(faded.slice(7, 11).map((piece) => piece.over)).toEqual([null, { paint: { color: GREEN, scale: null }, opacity: 0.8 }, { paint: { color: GREEN, scale: null }, opacity: 0.4 }, null]);
+	});
+});
+
+describe('growing and fading by where the pointer is', () => {
+	// Five segments for a hundred, which grow and fade in. The value is 40: two filled.
+	const options = readOptions({ max: 100, color: GREEN });
+	const look = readLook({ visualization: 'segments', grow: true, fade: true });
+	const reading = readingOf(40, options, EN);
+	const draw = (at?: number | null) => drawingOf(look, options, reading, 5, 40, { at });
+
+	test('without a place of the pointer, by the value', () => {
+		expect(draw()).toEqual(drawingOf(look, options, reading, 5, 40));
+		expect(draw(null)).toEqual(draw());
+		expect(draw(Number.NaN)).toEqual(draw());
+		expect(draw().pieces!.map((piece) => piece.size)).toEqual([null, null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+	});
+
+	test('with one, the pieces which are not filled are as far along as the pointer is, while the value fills what it fills', () => {
+		// The pointer at 42, 44 and 48 of a hundred: the value is still 40, and the third segment on its way.
+		for (const [at, growth] of [
+			[0.42, 0.2],
+			[0.44, 0.4],
+			[0.48, 0.8],
+		] as const) {
+			const drawing = draw(at);
+
+			expect(drawing.pieces!.map((piece) => piece.filled), String(at)).toEqual([true, true, false, false, false]);
+			expect(drawing.pieces![2]!.size, String(at)).toEqual(pieceScale('segments', growth));
+			expect(drawing.pieces![2]!.over, String(at)).toEqual({ paint: { color: GREEN, scale: null }, opacity: growth });
+			expect(drawing.pieces![3]!.size, String(at)).toEqual({ along: 1, across: 0.3333 });
+			expect(drawing.pieces![3]!.over, String(at)).toBeNull();
+
+			// The paint of every piece is that of the value.
+			expect(drawing.pieces!.map((piece) => piece.paint), String(at)).toEqual(draw().pieces!.map((piece) => piece.paint));
+		}
+	});
+
+	test('a pointer which is ahead of the value leaves a piece full and not filled; one behind it leaves the filled pieces alone', () => {
+		// At 55 the third segment would be filled by the pointer, and is not by the value: full size, all of the look laid over it.
+		const ahead = draw(0.55).pieces!;
+		expect(ahead.map((piece) => piece.filled)).toEqual([true, true, false, false, false]);
+		expect(ahead[2]!.size).toEqual({ along: 1, across: 1 });
+		expect(ahead[2]!.over).toEqual({ paint: { color: GREEN, scale: null }, opacity: 1 });
+		expect(ahead[3]!.size).toEqual({ along: 1, across: 0.3333 });
+
+		// At 10 the pointer is behind: the two filled segments stay as they are, and nothing is under way.
+		const behind = draw(0.1).pieces!;
+		expect(behind.map((piece) => piece.filled)).toEqual([true, true, false, false, false]);
+		expect(behind.map((piece) => piece.size)).toEqual([null, null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+		expect(behind.every((piece) => piece.over === null)).toBe(true);
+	});
+
+	test('a place outside the track is its nearer end, and a meter which neither grows nor fades takes no notice', () => {
+		expect(draw(-3)).toEqual(draw(0));
+		expect(draw(7)).toEqual(draw(1));
+
+		const plain = readLook({ visualization: 'segments' });
+		expect(drawingOf(plain, options, reading, 5, 40, { at: 0.48 })).toEqual(drawingOf(plain, options, reading, 5, 40));
+
+		// Without a value there is nothing to grow, wherever the pointer is.
+		expect(drawingOf(look, options, readingOf(null, options, EN), 5, null, { at: 0.48 }).pieces!.every((piece) => piece.size === null && piece.over === null)).toBe(true);
+	});
+});
+
+describe('the ramp at the start of the scale', () => {
+	// The reach which a `grow` gives: for dots by the pieces, for fifty thin bars in half of the form by the pixels.
+	const dots = (grow: number) => reachOf('dots', 'form', 20, 342, grow);
+	const bars = (grow: number) => reachOf('bars', 'form', 50, 342, grow);
+	const all = (fraction: number, count: number, reach: number) => Array.from({ length: count }, (_, index) => growthOf(fraction, count, index, reach));
+
+	// The growth as it was before the reach grew out of the start, away from the minimum: 1 - d / reach.
+	const plain = (fraction: number, count: number, index: number, reach: number) => {
+		if (index < filledCount(fraction, count)) return 1;
+		return Math.min(1, Math.max(0, 1 - (index + 0.5 - Number((fraction * count).toFixed(9))) / reach));
+	};
+
+	test('at the minimum every growth is 0: an empty meter is empty, whatever the number', () => {
+		expect(bars(4)).toBe(8.5);
+		expect(dots(4)).toBe(3.5);
+
+		for (const grow of [0.5, 1, 2, 4, 20]) {
+			expect(all(0, 20, dots(grow)), `dots ${grow}`).toEqual(Array.from({ length: 20 }, () => 0));
+			expect(all(0, 50, bars(grow)), `bars ${grow}`).toEqual(Array.from({ length: 50 }, () => 0));
+			expect(all(0, 100, reachOf('bars', 'form', 100, 713, grow)), `a hundred bars ${grow}`).toEqual(Array.from({ length: 100 }, () => 0));
+			expect(all(0, 2, reachOf('pills', 'form', 2, 342, grow)), `two pills ${grow}`).toEqual([0, 0]);
+		}
+
+		// And what is drawn there: no piece is larger than small, and nothing fades in.
+		const options = readOptions({ max: 100, color: GREEN });
+		const look = readLook({ visualization: 'bars', grow: 4, fade: true });
+		const drawing = drawingOf(look, options, readingOf(0, options, EN), 50, 0, { reach: bars(4) });
+		expect(drawing.pieces!.every((piece) => piece.size!.across === 0.3333 && piece.over === null)).toBe(true);
+	});
+
+	test('the ramp comes out of the start piece by piece: fifty bars with 4, at the first values', () => {
+		// How many bars are filled or on their way, for the values 0 to 8 of a hundred.
+		const larger = (value: number) => all(value / 100, 50, bars(4)).filter((growth) => growth > 0).length;
+		expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map(larger)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+
+		// At 2 one bar is filled and the next two thirds of the way; at 4 two are filled, then 0.8 and 0.4.
+		expect(all(0.02, 50, bars(4)).slice(0, 4).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 0.6667, 0, 0]);
+		expect(all(0.04, 50, bars(4)).slice(0, 5).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 1, 0.8, 0.4, 0]);
+
+		// Before there was this rule the value 1 had a filled bar and eight on their way behind an empty meter.
+		expect(all(0.01, 50, bars(4)).filter((growth) => growth > 0)).toHaveLength(1);
+	});
+
+	test('the growth of the first pieces is continuous in the position, from the minimum upwards', () => {
+		for (const [name, count, reach] of [
+			['bars with 4', 50, bars(4)],
+			['dots with 4', 20, dots(4)],
+			['bars with 20', 50, bars(20)],
+			['dots with 2', 20, dots(2)],
+		] as const) {
+			// A thousandth of a piece at a time over the first twelve pieces. The steepest a growth can be is
+			// that of the first piece at the very start, 4 for a piece, so no step is more than 0.004 and a hair.
+			const step = 1 / (count * 1000);
+			let before = all(0, count, reach);
+			let largest = 0;
+
+			for (let position = 1; position <= 12000; position++) {
+				const now = all(position * step, count, reach);
+
+				for (let index = 0; index < 16; index++) {
+					const jump = Math.abs(now[index]! - before[index]!);
+					largest = Math.max(largest, jump);
+					if (jump > 0.0045) expect.fail(`${name}: piece ${index} jumps by ${jump} at ${position / 1000} pieces`);
+				}
+
+				before = now;
+			}
+
+			// It did move: the sweep is not of a meter in which nothing grows.
+			expect(largest, name).toBeGreaterThan(0.001);
+		}
+	});
+
+	test('once the fill is as long as the reach, the values are what they were', () => {
+		for (const [count, reach] of [
+			[50, bars(4)],
+			[20, dots(4)],
+			[50, bars(1)],
+			[20, dots(2)],
+		] as const) {
+			// From the position at which the whole reach counts, up to the end of the scale.
+			for (let position = Math.ceil((reach - 0.5) * 100); position <= count * 100; position += 7) {
+				const fraction = position / (count * 100);
+				for (let index = 0; index < count; index++) {
+					const growth = growthOf(fraction, count, index, reach);
+					if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12) expect.fail(`${count} pieces, reach ${reach}, at ${position / 100}: piece ${index} is ${growth}`);
+				}
+			}
+		}
+
+		// Fifty bars with 4 at 40 of a hundred: twenty filled and a ramp of eight, as before.
+		expect(all(0.4, 50, bars(4)).filter((growth) => growth > 0 && growth < 1)).toHaveLength(8);
+		expect(all(0.4, 50, bars(4)).slice(20, 23).map((growth) => Number(growth.toFixed(4)))).toEqual([0.9412, 0.8235, 0.7059]);
+	});
+
+	test('a grow of 1 and less gives the same values as before everywhere, the start included', () => {
+		for (const grow of [0.5, 1]) {
+			for (const count of [2, 5, 20]) {
+				const reach = reachOf('dots', 'form', count, 342, grow);
+				expect(reach).toBeLessThanOrEqual(0.5);
+
+				for (let position = 0; position <= count * 200; position++) {
+					const fraction = position / (count * 200);
+					for (let index = 0; index < count; index++) {
+						const growth = growthOf(fraction, count, index, reach);
+						if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12) expect.fail(`grow ${grow}, ${count} pieces at ${position / 200}: piece ${index} is ${growth}`);
+					}
+				}
+			}
+		}
+	});
+
+	test('what fades in and the place of the pointer go by the same rule', () => {
+		const options = readOptions({ max: 100, color: GREEN });
+		const look = readLook({ visualization: 'bars', grow: 4, fade: true });
+		const overs = (value: number, at?: number) => drawingOf(look, options, readingOf(value, options, EN), 50, value, { reach: bars(4), at }).pieces!.map((piece) => piece.over?.opacity ?? 0);
+
+		// By the value: nothing at 0, nothing but the filled bar at 1, one bar fading in at 2.
+		expect(overs(0).filter((opacity) => opacity > 0)).toHaveLength(0);
+		expect(overs(1).filter((opacity) => opacity > 0)).toHaveLength(0);
+		expect(overs(2).filter((opacity) => opacity > 0)).toEqual([0.6667]);
+
+		// By the pointer, with the value still at 0: a hair past the start next to nothing, not a ramp of eight.
+		expect(overs(0, 0.0001).filter((opacity) => opacity > 0.05)).toHaveLength(0);
+		expect(overs(0, 0.005).filter((opacity) => opacity > 0)).toEqual([0.6667]);
 	});
 });
 

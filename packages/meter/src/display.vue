@@ -2,7 +2,7 @@
 import { useStores } from '@directus/extensions-sdk';
 import { computed } from 'vue';
 import { useLanguage } from './i18n';
-import { DISPLAY_WIDTH, PIECE_SIZES, drawingOf, fillScale, isEmpty, numberOf, pieceCount, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
+import { DISPLAY_WIDTH, PIECE_SIZES, drawingOf, fillScale, isEmpty, numberOf, pieceCount, reachOf, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
 import type { Paint } from './meter';
 
 /**
@@ -85,7 +85,9 @@ const tooltip = computed(() => tooltipOf(reading.value.text, options.value.label
 // layout, by the same rule as in the form.
 const look = computed(() => readLook(props, props.interfaceOptions));
 const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH));
-const drawing = computed(() => drawingOf({ ...look.value, grow: false }, options.value, reading.value, count.value, props.value));
+const drawing = computed(() =>
+	drawingOf({ ...look.value, grow: 0 }, options.value, reading.value, count.value, props.value, { reach: reachOf(look.value.visualization, 'display', count.value, DISPLAY_WIDTH) }),
+);
 
 const dots = computed(() => drawing.value.pieces !== null && look.value.visualization === 'dots');
 const packed = computed(() => dots.value && look.value.dotsLayout !== 'spread');
@@ -149,7 +151,7 @@ const fillStyle = computed(() => {
 // bars share that length equally: pills 0.125rem apart with both ends round,
 // segments 0.125rem apart with only the two outer ends of the row round, bars
 // 0.0625rem apart and square. Dots are 0.375rem across, smaller than the bar
-// is high so that nine of them fit: packed they are 0.09375rem apart from the
+// is high so that ten of them fit: packed they are 0.0625rem apart from the
 // start, and the row is as long as its dots, which the root is told
 // (`--md-bar`) for the room of the text; spread they stand from one end of
 // the bar's length to the other. The gaps and the dot are those of
@@ -279,7 +281,7 @@ const fillStyle = computed(() => {
 .md-dots {
 	--md-height: 0.375rem;
 
-	gap: 0.09375rem;
+	gap: 0.0625rem;
 }
 
 .md-packed {

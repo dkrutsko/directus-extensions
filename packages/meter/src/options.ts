@@ -235,19 +235,19 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 					{
 						field: 'grow',
 						name: 'Grow',
-						type: 'boolean' as const,
+						type: 'float' as const,
 						meta: {
 							width: 'half' as const,
-							interface: 'boolean',
+							interface: 'input',
 							options: {
-								label: 'Grow the next piece',
+								placeholder: '0',
+								min: 0,
+								max: 20,
+								step: 0.5,
 							},
-							note: 'Pieces which are not filled are drawn small, and the next one grows as the value comes near it.',
+							note: 'How many pieces in front of the fill can be growing at once. 0: off. 1: the pieces which are not filled are small and the next one grows as the value comes near it. More: a ramp of that many.',
 							hidden: baseLook.visualization === 'contiguous',
 							conditions: SHOWN_FOR_PIECES,
-						},
-						schema: {
-							default_value: false,
 						},
 					},
 				]),
