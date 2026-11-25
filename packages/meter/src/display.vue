@@ -163,7 +163,7 @@ const fillStyle = computed(() => {
 // meter.ts, handed to the row as `--md-bar-size` and `--md-gap`, with the
 // class `md-fitted`), so that every bar is drawn as wide as every other; what
 // is left of the 4.5rem is empty at the end side. Dots are 0.375rem across, smaller than the bar
-// is high so that ten of them fit: packed they are 0.0625rem apart from the
+// is high so that nine of them fit: packed they are 0.125rem apart from the
 // start, and the row is as long as its dots, which the root is told
 // (`--md-bar`) for the room of the text; spread they stand from one end of
 // the bar's length to the other. The gaps and the dot are those of
@@ -302,7 +302,7 @@ const fillStyle = computed(() => {
 .md-dots {
 	--md-height: 0.375rem;
 
-	gap: 0.0625rem;
+	gap: 0.125rem;
 }
 
 .md-packed {

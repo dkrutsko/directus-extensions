@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
 import { useRatio } from './ratio';
-import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
+import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, largeScale, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
 import type { Paint, Piece, PieceDrawing } from './meter';
 
 /**
@@ -160,11 +160,21 @@ const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.s
 const paintStyle = (paint: Paint, at: number) => (paint.color !== null ? { backgroundColor: paint.color } : paint.scale !== null ? { '--mt-at': at } : undefined);
 
 // The inline style of a piece: its paint, and its size where the pieces grow. A piece at its full size has no
-// size here, so a meter whose pieces do not grow has the styles it always had.
-function partStyle(piece: PieceDrawing) {
+// size here, so a meter whose pieces do not grow has the styles it always had. A piece up to the pointer has the
+// large size instead, whatever it would have without the pointer.
+function partStyle(piece: PieceDrawing, index: number) {
 	const paint = paintStyle(piece.paint, piece.at);
-	return piece.size === null ? paint : { ...paint, transform: scaleCss(piece.size) };
+	const near = index < hover.value && large.value !== null;
+	const size = near ? large.value : piece.size;
+
+	if (size === null) return paint;
+
+	// A large pill is higher by more than it is longer, which would flatten its round ends: its corners are
+	// given the radii which the transform turns back into half circles.
+	return near && look.value.visualization === 'pills' ? { ...paint, transform: scaleCss(size), borderRadius: roundEnds(size) } : { ...paint, transform: scaleCss(size) };
 }
+
+const roundEnds = (size: { along: number; across: number }) => `calc(var(--mt-height) * ${Number((size.across / size.along / 2).toFixed(4))}) / calc(var(--mt-height) / 2)`;
 
 // Pieces which grow or fade in change with a short transition when the value changes, by a press, a key or from
 // outside. Not while the pointer drags the value, which they follow at once, and not for the first value a meter
@@ -221,8 +231,27 @@ const editable = computed(() => canEdit(props));
 const editing = computed(() => readEditing(props, props.type));
 const method = computed(() => inputMethod(editing.value, count.value, options.value));
 
-// How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it.
+// How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it. Those are
+// drawn larger than regular (`largeScale`), by a transform like the one of pieces which grow: no box changes.
+// `long` is how long a piece is along the track at that moment, which the size of pills and dots goes by.
 const hover = shallowRef(0);
+const long = shallowRef(0);
+const large = computed(() => (drawing.value.pieces === null || look.value.visualization === 'contiguous' ? null : largeScale(look.value.visualization, long.value)));
+
+// While pieces are large, and for a moment after the last one stopped being so, the row lets them reach outside
+// its box and eases their size (`mt-swell`). With no pointer on the meter the row is what it was.
+const swell = shallowRef(false);
+const SETTLE = 250;
+let settling: ReturnType<typeof setTimeout> | undefined;
+
+onBeforeUnmount(() => clearTimeout(settling));
+
+watch(hover, (now) => {
+	clearTimeout(settling);
+
+	if (now > 0) swell.value = true;
+	else settling = setTimeout(() => (swell.value = false), SETTLE);
+});
 const dragging = shallowRef(false);
 
 /**
@@ -303,6 +332,9 @@ function rest(x: number, y: number, touch: boolean, held = false) {
 
 	const at = frame(element);
 	const inside = held || (x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom);
+	const first = at.pieces[0];
+
+	if (first !== undefined) long.value = Number((first.end - first.start).toFixed(2));
 	hover.value = inside ? filledAt(positionOf(x, at), at.pieces) : 0;
 }
 
@@ -594,7 +626,7 @@ const lineClass = computed(() => {
 			: [
 					'mt-strip',
 					`mt-${look.value.visualization}`,
-					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-fitted': barSize.value !== null, 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value },
+					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-fitted': barSize.value !== null, 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value, 'mt-swell': swell.value },
 				];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
@@ -634,7 +666,7 @@ onBeforeUnmount(() => {
 //   in whole device pixels (`barFit` in meter.ts) and hands them to the row
 //   as `--mt-bar` and `--mt-gap` (`mt-fitted`); the bars have that size, and
 //   what is left of the track is empty at its end side. Dots
-//   are circles as high as the track, which do not stretch: 0.125rem apart
+//   are circles as high as the track, which do not stretch: 0.25rem apart
 //   from the start side, or spread from edge to edge. The gaps and the dot
 //   are those of `PIECE_SIZES` in meter.ts, by which the pieces are counted,
 //   with 16px to the rem. Without a value every piece is a dashed outline, as
@@ -687,14 +719,15 @@ onBeforeUnmount(() => {
 //   fill, never past either end, which shows while the pointer is over the
 //   track, while the track has the keyboard's focus and during a drag. It is
 //   shown and hidden at once, without a transition.
-// - The pieces up to the pointer (`mt-hint`) are tinted: a pseudo-element
-//   which covers the piece, with the piece's corners, in the colour of the
-//   text at 16%. That colour is dark in a light theme and light in a dark
-//   one, so the tint is the same step away from the neighbours in both: a
-//   darker grey on a piece which is not filled and a darker tone of the
-//   colour of one which is, or a lighter one of each in a dark theme. It is
-//   the last thing in the piece, so it also lies over what fades in. It
-//   takes no press and changes no box.
+// - The pieces up to the pointer are drawn larger than regular, by an inline
+//   transform like that of pieces which grow, so no box changes: bars and
+//   segments half as high again, dots a pixel on every side, pills a pixel
+//   at each end and a third higher, with their corners set so that the ends
+//   stay half circles; two pixels of a gap are left between two large dots
+//   or pills. They have no class and no other colour.
+//   The row clips what is outside its box (`overflow: hidden`), so while
+//   pieces are large, and until the last has eased back, it has `mt-swell`:
+//   nothing is clipped, and the size is eased like that of pieces which grow.
 // - The fill of the one bar is the exception to "`--mt-n` times as wide": its
 //   image is as wide as the track itself, `100cqi`, with the track made a
 //   container for that (`mt-scaled`, only where the fill is painted so). An
@@ -779,8 +812,8 @@ onBeforeUnmount(() => {
 				v-else
 				:key="index"
 				class="mt-part"
-				:class="[{ 'mt-on': piece.filled, 'mt-hint': index < hover, 'mt-under': piece.over !== null }, paintClass(piece.paint)]"
-				:style="partStyle(piece)"
+				:class="[{ 'mt-on': piece.filled, 'mt-under': piece.over !== null }, paintClass(piece.paint)]"
+				:style="partStyle(piece, index)"
 			>
 				<span
 					v-if="piece.over !== null"
@@ -863,7 +896,7 @@ onBeforeUnmount(() => {
 }
 
 .mt-dots {
-	gap: 0.125rem;
+	gap: 0.25rem;
 }
 
 .mt-spread {
@@ -952,6 +985,12 @@ onBeforeUnmount(() => {
 		transition: transform 150ms ease-out;
 	}
 
+	.mt-swell .mt-part {
+		transition:
+			transform 150ms ease-out,
+			border-radius 150ms ease-out;
+	}
+
 	.mt-eased .mt-over {
 		transition: opacity 150ms ease-out;
 	}
@@ -1031,17 +1070,8 @@ onBeforeUnmount(() => {
 	visibility: visible;
 }
 
-.mt-hint {
-	position: relative;
-}
-
-.mt-hint::after {
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	content: '';
-	background-color: color-mix(in srgb, var(--theme--foreground) 16%, transparent);
-	border-radius: inherit;
+.mt-swell {
+	overflow: visible;
 }
 
 .mt-line {

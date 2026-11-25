@@ -505,6 +505,11 @@ test.beforeAll(async ({ api }) => {
 			live('grow_true', { visualization: 'dots', max: 5, step: 0.1, grow: true, indicatorFormat: 'value' }, {}, 'float'),
 			// A long ramp on thin bars: fifty bars for a hundred, up to four growing by the pieces and more by the pixels.
 			live('grow_four', { visualization: 'bars', subdivisions: 50, grow: 4 }),
+			// Forty bars for forty which grow and are filled by the piece: what is not filled is small, and the
+			// pieces up to the pointer are large.
+			live('near_bars', { visualization: 'bars', max: 40, grow: 2 }),
+			// Packed dots for a hundred, as many as fit, filled by the piece.
+			live('near_dots', { visualization: 'dots', input: 'segment' }),
 		],
 	});
 
@@ -556,6 +561,8 @@ test.beforeAll(async ({ api }) => {
 			grow_three: 3,
 			grow_true: 3.3,
 			grow_four: 40,
+			near_bars: 24,
+			near_dots: 40,
 		})
 	).id;
 
@@ -1630,11 +1637,11 @@ async function expectFilledPieces(row: Locator, count: number, filled: number) {
 
 // The rule by which the pieces are counted, written out again here: how narrow a piece of each shape may get and
 // how far it is from the next, in the form and in the display; how many of those fit a width; and how many are
-// drawn when a number is wanted, or none is. Bars take no number which divides the wanted one: what is wanted
-// where it fits, else as many as fit.
+// drawn when a number is wanted, or none is. Bars and packed dots take no number which divides the wanted one:
+// what is wanted where it fits, else as many as fit.
 const SIZES = {
-	form: { pills: [20, 4], segments: [14, 3], bars: [4, 2], dots: [12, 2] },
-	display: { pills: [8, 2], segments: [6, 2], bars: [2, 1], dots: [6, 1] },
+	form: { pills: [20, 4], segments: [14, 3], bars: [4, 2], dots: [12, 4] },
+	display: { pills: [8, 2], segments: [6, 2], bars: [2, 1], dots: [6, 2] },
 } as const;
 
 type Shape = keyof (typeof SIZES)['form'];
@@ -1763,7 +1770,7 @@ test('pills, segments, bars and dots in the form: the pieces which are wanted, t
 
 	// A range of a hundred in ten pills: 44 fills four of them. In twenty dots 98 fills all twenty.
 	await expectFilledPieces(strip(page, 'pill_hundred'), 10, 4);
-	await expectFilledPieces(strip(page, 'dot_hundred'), 20, 20);
+	await expectFilledPieces(strip(page, 'dot_hundred'), 21, 21);
 
 	// What is said stays exact: the text, and the meter for assistive technology, which the row of pieces is.
 	const spoken = fieldOf(page, 'pill_hundred').getByRole('meter', { name: 'Pill Hundred', exact: true });
@@ -1800,7 +1807,7 @@ test('pills, segments, bars and dots in the form: the pieces which are wanted, t
 	await openItem(page, COLLECTION, ids['Second']!);
 	await expect(text(page, 'pill_hundred')).toHaveText('45%');
 	await expectFilledPieces(strip(page, 'pill_hundred'), 10, 5);
-	await expectFilledPieces(strip(page, 'dot_hundred'), 20, 0);
+	await expectFilledPieces(strip(page, 'dot_hundred'), 21, 0);
 	await expectFilledPieces(strip(page, 'pill_auto'), 5, 5);
 	await expect(text(page, 'dot_hundred')).toHaveText('2%');
 	await expect(edited(page)).toHaveCount(0);
@@ -1865,7 +1872,7 @@ test('each visualization has its shape: which corners are round, how far the pie
 	expect((await pieces(strip(page, 'seg_hundred'))).length).toBeGreaterThan((await pieces(strip(page, 'pill_hundred'))).length);
 	expect(bars[0]!.width).toBeGreaterThanOrEqual(4);
 
-	// Dots: circles as high as the track, 2px apart, from the start of the field. In a field as wide as the form
+	// Dots: circles as high as the track, 4px apart, from the start of the field. In a field as wide as the form
 	// they are the same circles.
 	for (const name of ['dot_hundred', 'dot_auto', 'dot_set', 'look_wide']) {
 		const area = await edges(meter(page, name));
@@ -1874,8 +1881,8 @@ test('each visualization has its shape: which corners are round, how far the pie
 		expect(all[0]!.left).toBe(area.left);
 		expect(all.map((piece) => [piece.width, piece.height])).toEqual(all.map(() => [12, 12]));
 		expect(all.map((piece) => piece.corners)).toEqual(all.map(() => ['50%', '50%', '50%', '50%']));
-		all.slice(1).forEach((piece, index) => expect(piece.left - all[index]!.right).toBe(2));
-		expect(all.at(-1)!.right).toBe(area.left + all.length * 14 - 2);
+		all.slice(1).forEach((piece, index) => expect(piece.left - all[index]!.right).toBe(4));
+		expect(all.at(-1)!.right).toBe(area.left + all.length * 16 - 4);
 	}
 
 	// The row of pieces is where the track is, and the line with caption and text under it as under a track.
@@ -1915,7 +1922,7 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	const expectRule = () =>
 		expect(async () => {
 			for (const [name, shape, wanted] of CASES) {
-				expect(await countOf(name), name).toBe(drawn(wanted, fits(await widthOf(name), SIZES.form[shape]), shape !== 'bars'));
+				expect(await countOf(name), name).toBe(drawn(wanted, fits(await widthOf(name), SIZES.form[shape]), shape !== 'bars' && shape !== 'dots'));
 			}
 		}).toPass({ timeout: 5000 });
 
@@ -1929,8 +1936,8 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	expect(await countOf('pill_hundred')).toBe(10);
 	expect(await countOf('seg_hundred')).toBe(20);
 	expect(await countOf('bar_hundred')).toBe(57);
-	expect(await countOf('dot_hundred')).toBe(20);
-	expect(await countOf('look_wide')).toBe(50);
+	expect(await countOf('dot_hundred')).toBe(21);
+	expect(await countOf('look_wide')).toBe(44);
 
 	// 62 of a hundred fills the nearest whole number of whatever is drawn: 12 of 20, 35 of 57.
 	await expectFilledPieces(strip(page, 'seg_hundred'), 20, 12);
@@ -1943,10 +1950,11 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	expect((await pieces(strip(page, 'seg_free')))[0]!.width).toBeGreaterThanOrEqual(14);
 	expect((await pieces(strip(page, 'bar_free')))[0]!.width).toBeGreaterThanOrEqual(4);
 
-	// A number which is set and fits is drawn as set: twelve pills. Thirty dots do not fit, so fifteen are drawn.
+	// A number which is set and fits is drawn as set: twelve pills. Thirty packed dots do not fit, so as many
+	// as fit are drawn, 21, of which half the range fills eleven.
 	expect(await countOf('pill_many')).toBe(12);
-	expect(await countOf('dot_many')).toBe(15);
-	await expectFilledPieces(strip(page, 'dot_many'), 15, 8);
+	expect(await countOf('dot_many')).toBe(21);
+	await expectFilledPieces(strip(page, 'dot_many'), 21, 11);
 
 	// The same fields in a narrower window: the form gets narrower, and each field again draws what its width
 	// gives. Bars without a wanted number are fewer than before, and as many again in the window as it was.
@@ -1982,7 +1990,7 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	// Wide again: as before.
 	for (const name of ['pill_many', 'dot_many', 'pill_hundred']) await squeeze(page, name, null);
 	await expect(strip(page, 'pill_many').locator('> *')).toHaveCount(12);
-	await expect(strip(page, 'dot_many').locator('> *')).toHaveCount(15);
+	await expect(strip(page, 'dot_many').locator('> *')).toHaveCount(21);
 	await expect(strip(page, 'pill_hundred').locator('> *')).toHaveCount(10);
 
 	// The text never changed with any of it.
@@ -2115,19 +2123,19 @@ test('dots are packed from the start, or spread from edge to edge', async ({ pag
 	await openItem(page, COLLECTION, ids['First']!);
 	await expect(text(page, 'dot_spread')).toHaveText('60%');
 
-	// Packed: the row is as long as its dots, 14px for each but the last, from the start of the field. Fifty of
-	// them for a hundred nearly fill a field as wide as the form; five end long before half of it does.
+	// Packed: the row is as long as its dots, 16px for each but the last, from the start of the field. As many
+	// as fit, 44 for a hundred, nearly fill a field as wide as the form; five end long before half of it does.
 	const wide = await edges(meter(page, 'look_wide'));
 	const packed = await pieces(strip(page, 'look_wide'));
-	expect(packed).toHaveLength(50);
+	expect(packed).toHaveLength(44);
 	expect(packed[0]!.left).toBe(wide.left);
-	expect(packed.at(-1)!.right).toBe(wide.left + packed.length * 14 - 2);
+	expect(packed.at(-1)!.right).toBe(wide.left + packed.length * 16 - 4);
 	expect(packed.at(-1)!.right).toBeLessThanOrEqual(wide.right);
 	await expect(meter(page, 'look_wide').locator('.mt-spread')).toHaveCount(0);
 
 	const few = await pieces(strip(page, 'dot_auto'));
 	const short = await edges(meter(page, 'dot_auto'));
-	expect(few.at(-1)!.right).toBe(short.left + 5 * 14 - 2);
+	expect(few.at(-1)!.right).toBe(short.left + 5 * 16 - 4);
 	expect(few.at(-1)!.right).toBeLessThan(short.right - 100);
 
 	// Spread: the same five dots for a range of five, the first at the start edge, the last at the end edge, and
@@ -2143,13 +2151,53 @@ test('dots are packed from the start, or spread from edge to edge', async ({ pag
 	const gaps = spread.slice(1).map((piece, index) => piece.left - spread[index]!.right);
 	expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(0.5);
 	expect(Math.abs(gaps[0]! - (area.width - 5 * 12) / 4)).toBeLessThan(0.5);
-	expect(gaps[0]!).toBeGreaterThan(2);
+	expect(gaps[0]!).toBeGreaterThan(4);
 
 	// The packed dots of the same range, beside them, are the same dots.
 	expect((await pieces(strip(page, 'dot_auto'))).map((piece) => piece.filled)).toEqual(spread.map((piece) => piece.filled));
 
 	// The layout of the dots is nothing to pills.
 	await expect(meter(page, 'pill_auto').locator('.mt-spread')).toHaveCount(0);
+});
+
+test('packed dots are as many as fit: a hundred nearly fill the field and less than a dot and its gap is left, in the form and in the display', async ({ page }) => {
+	await openItem(page, COLLECTION, ids['First']!);
+	await expect(text(page, 'dot_hundred')).toHaveText('98%');
+
+	// A hundred wanted in half of the form, 342px: 21 dots of 12px, 4px apart, are 332px. Twenty, the number
+	// which divides a hundred, would end 26px before the field does.
+	for (const [name, width] of [
+		['dot_hundred', 342],
+		['look_wide', 713],
+	] as const) {
+		const area = await edges(meter(page, name));
+		const dots = await pieces(strip(page, name));
+		const left = area.right - dots.at(-1)!.right;
+
+		expect(area.width, name).toBe(width);
+		expect(dots.length, name).toBe(Math.floor((width + 4) / 16));
+		expect(dots.length, name).toBe(name === 'dot_hundred' ? 21 : 44);
+		expect(100 % dots.length, name).not.toBe(0);
+		expect(dots[0]!.left, name).toBe(area.left);
+		expect([...new Set(dots.map((dot) => `${dot.width} ${dot.height}`))], name).toEqual(['12 12']);
+		expect([...new Set(dots.slice(1).map((dot, index) => dot.left - dots[index]!.right))], name).toEqual([4]);
+		expect(left, name).toBeGreaterThanOrEqual(0);
+		expect(left, name).toBeLessThan(16);
+		expect(left, name).toBe(name === 'dot_hundred' ? 10 : 13);
+	}
+
+	// A number which is set and fits is a short row from the start, as it was: four dots.
+	expect(await pieces(strip(page, 'dot_set'))).toHaveLength(4);
+	expect((await pieces(strip(page, 'dot_auto'))).length).toBe(5);
+
+	// The display in the table: nine dots of 6px, 2px apart, in its 72px, with 2px left.
+	await page.goto(`/admin/content/${COLLECTION}?bookmark=${looks}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+	const shown = table(page, LOOKS).display('First', 'dot_hundred').locator('.md-strip');
+	const small = await pieces(shown);
+	expect(small).toHaveLength(9);
+	expect([...new Set(small.slice(1).map((dot, index) => dot.left - small[index]!.right))]).toEqual([2]);
+	expect((await edges(shown)).width).toBe(70);
 });
 
 test('with pills or dots the area is as high as a stock input, and the note of the form level with the note beside it', async ({ page }) => {
@@ -2217,9 +2265,9 @@ test('the display draws the pieces in the table: the same number in every row, b
 	await expectFilledPieces(row('First', 'pill_hundred'), 5, 2);
 	await expectFilledPieces(row('First', 'seg_hundred'), 5, 3);
 	await expectFilledPieces(row('First', 'bar_hundred'), 24, 15);
-	await expectFilledPieces(row('First', 'dot_hundred'), 10, 10);
+	await expectFilledPieces(row('First', 'dot_hundred'), 9, 9);
 	await expectFilledPieces(row('Second', 'pill_hundred'), 5, 2);
-	await expectFilledPieces(row('Second', 'dot_hundred'), 10, 0);
+	await expectFilledPieces(row('Second', 'dot_hundred'), 9, 0);
 	expect((await pieces(row('First', 'pill_hundred')))[0]!.color).toBe(RGB[AMBER]);
 
 	// The same number in every row, whatever the value.
@@ -2260,15 +2308,15 @@ test('the display draws the pieces in the table: the same number in every row, b
 	const bars = await pieces(row('First', 'bar_hundred'));
 	expect(bars.map((piece) => piece.corners)).toEqual(bars.map(() => ['0px', '0px', '0px', '0px']));
 
-	// Dots are circles of 6px, 1px apart, from the start: the row is as long as its dots.
+	// Dots are circles of 6px, 2px apart, from the start: the row is as long as its dots.
 	for (const [name, count] of [
-		['dot_hundred', 10],
+		['dot_hundred', 9],
 		['dot_set', 4],
 	] as const) {
 		const all = await pieces(row('First', name));
 		expect(all.map((piece) => [piece.width, piece.height])).toEqual(all.map(() => [6, 6]));
 		expect(all.map((piece) => piece.corners)).toEqual(all.map(() => ['50%', '50%', '50%', '50%']));
-		expect((await edges(row('First', name))).width).toBe(count * 7 - 1);
+		expect((await edges(row('First', name))).width).toBe(count * 8 - 2);
 	}
 
 	// One line, as tall as the text display beside it, and every text whole.
@@ -2291,7 +2339,7 @@ test('the display draws the pieces in the table: the same number in every row, b
 		['pill_free', 'pills', 7],
 		['seg_free', 'segments', 9],
 		['bar_free', 'bars', 24],
-		['dot_free', 'dots', 10],
+		['dot_free', 'dots', 9],
 	] as const) {
 		expect(fits(72, SIZES.display[shape])).toBe(count);
 		await expect(other('First', name).locator('> *')).toHaveCount(count);
@@ -2641,6 +2689,19 @@ test('the options form of the look: the number and the layout only while they ap
 /** The element on the line of the track, which is the slider of a meter that can be edited. */
 const line = (page: Page, name: string) => meter(page, name).locator('> :first-child');
 
+/**
+ * Which pieces of a row are drawn larger than their boxes are laid out: the pieces up to the pointer, on a meter
+ * whose pieces are filled by it.
+ */
+const largeOf = (page: Page, name: string) =>
+	line(page, name).evaluate((element) => Array.from(element.children).map((part) => part.getBoundingClientRect().height > (part as HTMLElement).offsetHeight + 0.5));
+
+/** The first `count` pieces of a row are large and no other. The size is eased, so this is asked until it holds. */
+const expectLarge = (page: Page, name: string, count: number) =>
+	expect
+		.poll(async () => (await largeOf(page, name)).map((large) => (large ? 'L' : '-')).join(''), { message: `${name}: the first ${count} pieces are large, and no other` })
+		.toMatch(new RegExp(`^L{${count}}-*$`));
+
 /** The point at a share of the width of a meter's track, on its middle line. */
 async function pointAt(page: Page, name: string, share: number) {
 	await line(page, name).scrollIntoViewIfNeeded();
@@ -2751,6 +2812,8 @@ const EDIT_VALUES = {
 	grow_three: 3,
 	grow_true: 3.3,
 	grow_four: 40,
+	near_bars: 24,
+	near_dots: 40,
 };
 
 /**
@@ -2943,59 +3006,57 @@ test.describe('a meter which can be edited', () => {
 		await expectFilledPieces(line(page, 'forced'), 10, 7);
 
 		// While the pointer rests over a piece, the pieces up to it are marked, and no longer when it has left.
-		const hinted = line(page, 'five').locator('.mt-hint');
 		await page.mouse.move(fourth.x, fourth.y);
-		await expect(hinted).toHaveCount(4);
+		await expectLarge(page, 'five', 4);
 		await page.mouse.move(third.x, third.y);
-		await expect(hinted).toHaveCount(3);
+		await expectLarge(page, 'five', 3);
 		await page.mouse.move(third.x, third.y + 80);
-		await expect(hinted).toHaveCount(0);
+		await expectLarge(page, 'five', 0);
 		await expect(text(page, 'five')).toHaveText('1 / 5');
 
 		// The marks follow the pointer through a drag. From the press on they are the pieces up to it.
-		const marks = () => line(page, 'five').locator('> *').evaluateAll((all) => all.map((each) => each.classList.contains('mt-hint')));
-		const upTo = (count: number) => Array.from({ length: 5 }, (_, index) => index < count);
+		const marked = (count: number) => expectLarge(page, 'five', count);
 		const fifth = await middle('five', 4);
 		const secondPill = await middle('five', 1);
 
 		await page.mouse.move(fourth.x, fourth.y);
-		expect(await marks()).toEqual(upTo(4));
+		await marked(4);
 		await page.mouse.down();
 		await expect(text(page, 'five')).toHaveText('4 / 5');
-		expect(await marks()).toEqual(upTo(4));
+		await marked(4);
 
 		// Downwards.
 		await page.mouse.move(secondPill.x, secondPill.y, { steps: 3 });
 		await expect(text(page, 'five')).toHaveText('2 / 5');
 		await expectFilledPieces(line(page, 'five'), 5, 2);
-		expect(await marks()).toEqual(upTo(2));
+		await marked(2);
 
 		// Before the start of the first piece there is nothing up to the pointer.
 		await page.mouse.move(first.left - 30, first.y, { steps: 2 });
 		await expect(text(page, 'five')).toHaveText('0 / 5');
-		expect(await marks()).toEqual(upTo(0));
+		await marked(0);
 
 		// Upwards, and with the pointer far below the meter: still by its place along the track, as the fill is.
 		await page.mouse.move(fifth.x, fifth.y + 60, { steps: 3 });
 		await expect(text(page, 'five')).toHaveText('5 / 5');
-		expect(await marks()).toEqual(upTo(5));
+		await marked(5);
 		await page.mouse.move(third.x, third.y + 60, { steps: 3 });
 		await expect(text(page, 'five')).toHaveText('3 / 5');
-		expect(await marks()).toEqual(upTo(3));
+		await marked(3);
 
 		// Released there, away from the meter: the pointer rests on no piece, and nothing is marked.
 		await page.mouse.up();
-		await expect(hinted).toHaveCount(0);
+		await marked(0);
 
 		// Released on a piece, the marks are those of that place at once, without the pointer moving again: after
 		// a drag from the fifth pill down to the second, two are marked and nothing above the pointer.
 		await page.mouse.move(fifth.x, fifth.y);
 		await page.mouse.down();
-		expect(await marks()).toEqual(upTo(5));
+		await marked(5);
 		await page.mouse.move(secondPill.x, secondPill.y, { steps: 3 });
-		expect(await marks()).toEqual(upTo(2));
+		await marked(2);
 		await page.mouse.up();
-		expect(await marks()).toEqual(upTo(2));
+		await marked(2);
 		await expect(text(page, 'five')).toHaveText('2 / 5');
 
 		// Escape ends a drag as a release does: the value is back, and the marks are those of the pointer's place.
@@ -3003,12 +3064,12 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.down();
 		await page.mouse.move(first.x, first.y, { steps: 2 });
 		await expect(text(page, 'five')).toHaveText('1 / 5');
-		expect(await marks()).toEqual(upTo(1));
+		await marked(1);
 		await page.keyboard.press('Escape');
 		await expect(text(page, 'five')).toHaveText('2 / 5');
-		expect(await marks()).toEqual(upTo(1));
+		await marked(1);
 		await page.mouse.up();
-		expect(await marks()).toEqual(upTo(1));
+		await marked(1);
 
 		// Escape with the pointer held far below the meter: the drag is over and the pointer rests on no piece,
 		// so nothing is marked, at once and without the pointer moving.
@@ -3016,96 +3077,271 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.down();
 		await page.mouse.move(fourth.x, fourth.y + 70, { steps: 2 });
 		await expect(text(page, 'five')).toHaveText('4 / 5');
-		expect(await marks()).toEqual(upTo(4));
+		await marked(4);
 		await page.keyboard.press('Escape');
 		await expect(text(page, 'five')).toHaveText('2 / 5');
-		expect(await marks()).toEqual(upTo(0));
+		await marked(0);
 		await page.mouse.up();
-		expect(await marks()).toEqual(upTo(0));
+		await marked(0);
 
 		// A meter which takes the value under the pointer marks nothing, at rest or in a drag.
 		const plain = await pointAt(page, 'hundred', 0.5);
 		await page.mouse.move(plain.x, plain.y);
 		await page.mouse.down();
 		await page.mouse.move(plain.x + 40, plain.y, { steps: 2 });
-		await expect(line(page, 'hundred').locator('.mt-hint')).toHaveCount(0);
+		await expectLarge(page, 'hundred', 0);
 		await page.mouse.up();
 	});
 
-	test('the pieces up to the pointer are tinted a step darker, filled or not, without a line and without a change to any box', async ({ page }) => {
-		const ink = rgb(await token(page, '--theme--foreground'));
+	// Every piece of a row as it is drawn and as it is laid out, with its look, and the row itself. `cut` names the
+	// first element around a piece which clips what is outside its box and does not hold the whole piece.
+	const drawnRow = (page: Page, name: string) =>
+		line(page, name).evaluate((element) => {
+			const row = element.getBoundingClientRect();
+
+			return {
+				row: [row.left, row.top, row.width, row.height].join(' '),
+				area: element.parentElement!.getBoundingClientRect().height,
+				swell: element.classList.contains('mt-swell'),
+				pieces: Array.from(element.children).map((each) => {
+					const part = each as HTMLElement;
+					const area = part.getBoundingClientRect();
+					const style = getComputedStyle(part);
+					const over = part.firstElementChild === null ? null : getComputedStyle(part.firstElementChild);
+					let cut = '';
+
+					for (let around = part.parentElement; around !== null && cut === ''; around = around.parentElement) {
+						const clips = getComputedStyle(around);
+						if (clips.overflowX === 'visible' && clips.overflowY === 'visible') continue;
+
+						const box = around.getBoundingClientRect();
+						if (area.left < box.left - 0.01 || area.right > box.right + 0.01 || area.top < box.top - 0.01 || area.bottom > box.bottom + 0.01) cut = around.className || around.tagName;
+					}
+
+					return {
+						left: area.left,
+						right: area.right,
+						top: area.top,
+						bottom: area.bottom,
+						width: area.width,
+						height: area.height,
+						laid: [part.offsetLeft, part.offsetTop, part.offsetWidth, part.offsetHeight].join(' '),
+						look: [
+							style.backgroundColor,
+							style.backgroundImage,
+							style.opacity,
+							getComputedStyle(part, '::before').content,
+							getComputedStyle(part, '::after').content,
+							`${style.outlineStyle} ${style.boxShadow} ${style.borderTopWidth}`,
+							over === null ? 'nothing over it' : `${over.backgroundColor} ${over.opacity}`,
+						].join(' | '),
+						transform: part.style.transform,
+						filled: part.classList.contains('mt-on'),
+						cut,
+					};
+				}),
+			};
+		});
+
+	test('the pieces up to the pointer are drawn larger than regular, in their own colours and with every box where it was: bars and segments higher, pills and dots larger on every side', async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
 		const trackColour = rgb(await token(page, '--theme--form--field--input--border-color'));
 		const primary = rgb(await token(page, '--theme--primary'));
+		const paper = rgb(await token(page, '--theme--background'));
 
-		// Every piece of a meter: where it is, and what is laid over it.
-		const drawn = (name: string) =>
-			line(page, name)
-				.locator('> *')
-				.evaluateAll((all) =>
-					all.map((each) => {
-						const area = each.getBoundingClientRect();
-						const style = getComputedStyle(each);
-						const tint = getComputedStyle(each, '::after');
-						const laid = tint.content !== 'none';
-
-						return {
-							box: [area.left, area.top, area.width, area.height].join(' '),
-							tint: laid ? `${tint.position} ${tint.top} ${tint.right} ${tint.bottom} ${tint.left} ${tint.pointerEvents} ${tint.backgroundColor}` : 'none',
-							round: !laid || tint.borderTopLeftRadius === style.borderTopLeftRadius,
-							lines: `${style.outlineStyle} ${style.boxShadow} ${style.borderTopWidth}`,
-							hinted: each.classList.contains('mt-hint'),
-							filled: each.classList.contains('mt-on'),
-						};
-					}),
-				);
-
-		// Pills, segments and dots of five of which three are filled, and forty bars of which twenty are: the
-		// pointer rests on a piece which is not filled, so the tint is on filled pieces and on others.
-		for (const [name, count, over] of [
-			['five', 5, 4],
-			['ring_segments', 5, 4],
-			['dots', 5, 4],
-			['ring_bars', 40, 29],
+		// Forty bars of which twenty are filled, and segments, pills and dots of five of which three are: none of
+		// them grows or fades in. The pointer rests on a piece which is not filled and is not the last, so there
+		// are filled and unfilled pieces up to it and at least one after it.
+		for (const [name, count, over, high, longer] of [
+			['ring_bars', 40, 29, 18, 0],
+			['ring_segments', 5, 3, 18, 0],
+			['five', 5, 3, 16, 2],
+			['dots', 5, 3, 14, 2],
 		] as const) {
 			await line(page, name).scrollIntoViewIfNeeded();
 			await page.mouse.move(5, 5);
 			await expect(line(page, name)).toHaveClass(/mt-by-segment/);
 
-			const before = await drawn(name);
-			expect(before).toHaveLength(count);
-			expect(before.map((piece) => piece.tint)).toEqual(before.map(() => 'none'));
+			const before = await drawnRow(page, name);
+			expect(before.pieces, name).toHaveLength(count);
+			expect(before.pieces.map((piece) => `${piece.height} ${piece.transform}`), name).toEqual(before.pieces.map(() => '12 '));
+			expect(before.swell, name).toBe(false);
 
-			const target = (await line(page, name).locator('> *').nth(over).boundingBox())!;
-			const filled = (await line(page, name).locator('> *').first().boundingBox())!;
-			const beyond = (await line(page, name).locator('> *').last().boundingBox())!;
-			await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
-			await expect(line(page, name).locator('.mt-hint')).toHaveCount(over + 1);
+			const target = before.pieces[over]!;
+			await page.mouse.move((target.left + target.right) / 2, (target.top + target.bottom) / 2);
+			await expectLarge(page, name, over + 1);
 
-			// No piece has moved or changed its size, and none has a line of any kind: no outline, no shadow, no border.
-			const after = await drawn(name);
-			expect(after.map((piece) => piece.box), name).toEqual(before.map((piece) => piece.box));
-			expect([...new Set(after.map((piece) => piece.lines))], name).toEqual(['none none 0px']);
+			const after = await drawnRow(page, name);
+			const large = after.pieces.slice(0, over + 1);
 
-			// The pieces up to the pointer have one thing laid over them, which covers them to their corners and
-			// takes no press: the same on a filled piece and on one which is not. The pieces beyond have nothing.
-			const tints = [...new Set(after.slice(0, over + 1).map((piece) => piece.tint))];
-			expect(tints, name).toHaveLength(1);
-			expect(tints[0], name).toMatch(/^absolute 0px 0px 0px 0px none color\(srgb [\d. ]+ \/ 0\.16\)$/);
-			expect(after.every((piece) => piece.round), name).toBe(true);
-			expect(after.slice(over + 1).map((piece) => piece.tint), name).toEqual(after.slice(over + 1).map(() => 'none'));
-			expect(after.filter((piece) => piece.hinted && piece.filled).length, name).toBeGreaterThan(0);
-			expect(after.filter((piece) => piece.hinted && !piece.filled).length, name).toBeGreaterThan(0);
+			// Larger than regular, each about its own middle: bars and segments half as high again and as wide as
+			// they were, dots a pixel more on every side, pills a pixel more at each end and 2px above and below.
+			for (const [index, piece] of large.entries()) {
+				const was = before.pieces[index]!;
+				expect(piece.height, `${name} ${index}`).toBeCloseTo(high, 1);
+				expect(piece.width, `${name} ${index}`).toBeCloseTo(was.width + longer, 1);
+				expect(piece.left + piece.right, `${name} ${index}`).toBeCloseTo(was.left + was.right, 1);
+				expect(piece.top + piece.bottom, `${name} ${index}`).toBeCloseTo(was.top + was.bottom, 1);
+			}
 
-			// It shows, read from the page: a marked piece which is not filled is the colour of the track with
-			// 16% of the colour of the text in it, which is a darker grey here; a marked filled piece is its own
-			// colour with as much; and a piece beyond the pointer is the plain track.
-			expectColour(await pixel(page, target.x + target.width / 2, target.y + target.height / 2), mixed(trackColour, ink, 0.16));
-			expectColour(await pixel(page, filled.x + filled.width / 2, filled.y + filled.height / 2), mixed(primary, ink, 0.16));
-			if (over < count - 1) expectColour(await pixel(page, beyond.x + beyond.width / 2, beyond.y + beyond.height / 2), trackColour);
+			expect([...new Set(large.map((piece) => piece.transform))], name).toHaveLength(1);
+			expect(large.some((piece) => piece.filled) && large.some((piece) => !piece.filled), name).toBe(true);
+
+			// The pieces after the pointer are exactly what they were.
+			expect(after.pieces.slice(over + 1), name).toEqual(before.pieces.slice(over + 1));
+			expect(after.pieces.length, name).toBeGreaterThan(over + 1);
+
+			// No piece has another colour, and none has anything laid over it or a line around it.
+			expect(after.pieces.map((piece) => piece.look), name).toEqual(before.pieces.map((piece) => piece.look));
+
+			// No box has changed: not that of a piece, not the row and not the area of the meter.
+			expect(after.pieces.map((piece) => piece.laid), name).toEqual(before.pieces.map((piece) => piece.laid));
+			expect([after.row, after.area], name).toEqual([before.row, before.area]);
+
+			// Two large pieces side by side do not touch: two pixels of the page show between them.
+			for (let index = 1; index <= over; index++) expect(large[index]!.left - large[index - 1]!.right, `${name} ${index}`).toBeGreaterThanOrEqual(1.99);
+
+			// The ends of a large pill are still half circles: its corners, as the transform draws them, are as
+			// wide as they are high, half the height of the pill.
+			if (name === 'five') {
+				const corners = await line(page, name)
+					.locator('> *')
+					.first()
+					.evaluate((pill) => {
+						const [across, down] = getComputedStyle(pill).borderTopLeftRadius.split(' ').map(Number.parseFloat);
+						const [along, high] = (pill as HTMLElement).style.transform.replace(/[^\d.,]/g, '').split(',').map(Number);
+						return [across! * along!, (down ?? across)! * high!];
+					});
+				expect(corners[0]).toBeCloseTo(8, 1);
+				expect(corners[1]).toBeCloseTo(8, 1);
+			}
+
+			// Nothing around a large piece cuts any of it off.
+			expect(after.swell, name).toBe(true);
+			expect(after.pieces.map((piece) => piece.cut), name).toEqual(after.pieces.map(() => ''));
+
+			// And it is on the page: above the box of a bar or a segment up to the pointer there is its colour,
+			// that of a filled one and that of one which is not, and above one after the pointer the page.
+			if (longer === 0) {
+				const above = (piece: { left: number; right: number; top: number }) => pixel(page, (piece.left + piece.right) / 2, piece.top - 2);
+				expectColour(await above(before.pieces[0]!), primary);
+				expectColour(await above(before.pieces[over]!), trackColour);
+				expectColour(await above(before.pieces[over + 1]!), paper);
+			}
+
+			// With the pointer gone every piece is what it was, and so is the row.
+			await page.mouse.move(5, 5);
+			await expectLarge(page, name, 0);
+			await expect(line(page, name)).not.toHaveClass(/mt-swell/);
+			expect(await drawnRow(page, name), name).toEqual(before);
 		}
 
-		// A darker tone in this theme: every channel of the tinted track is below the plain one.
-		expect(mixed(trackColour, ink, 0.16).every((channel, index) => channel < trackColour[index]! - 10)).toBe(true);
+		await expect(edited(page)).toHaveCount(0);
+	});
+
+	test('pieces which grow are large up to the pointer too, filled or not, and beyond it they are what the value makes them; the size is eased, and not for a user who asked for less motion', async ({ page }) => {
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+
+		// Forty bars for forty with a grow of 2, at 24: the bars which are not filled are a third as high, but
+		// for the ramp in front of the fill.
+		await line(page, 'near_bars').scrollIntoViewIfNeeded();
+		await expect(line(page, 'near_bars')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'near_bars')).toHaveAttribute('aria-valuenow', '24');
+		const before = await drawnRow(page, 'near_bars');
+		expect(before.pieces).toHaveLength(40);
+		expect(before.pieces.slice(0, 24).map((piece) => piece.height)).toEqual(Array.from({ length: 24 }, () => 12));
+		expect(before.pieces.slice(24).every((piece) => piece.height < 12)).toBe(true);
+		expect(before.pieces.at(-1)!.height).toBeCloseTo(4, 1);
+
+		const middleOf = (index: number) => ({ x: (before.pieces[index]!.left + before.pieces[index]!.right) / 2, y: (before.pieces[index]!.top + before.pieces[index]!.bottom) / 2 });
+
+		// The pointer on the fourteenth bar, inside the fill: fourteen large bars, ten filled ones as they were,
+		// and what is not filled as it was.
+		await page.mouse.move(middleOf(13).x, middleOf(13).y);
+		await expectLarge(page, 'near_bars', 14);
+		const inside = await drawnRow(page, 'near_bars');
+		expect(inside.pieces.slice(0, 14).map((piece) => Number(piece.height.toFixed(1)))).toEqual(Array.from({ length: 14 }, () => 18));
+		expect(inside.pieces.slice(14)).toEqual(before.pieces.slice(14));
+
+		// The pointer on the thirty-second bar, past the fill: the filled bars and the eight after them are all
+		// as high as each other, each in the colour it had, and the last eight are small as before.
+		await page.mouse.move(middleOf(31).x, middleOf(31).y);
+		await expectLarge(page, 'near_bars', 32);
+		const past = await drawnRow(page, 'near_bars');
+		expect(past.pieces.slice(0, 32).map((piece) => Number(piece.height.toFixed(1)))).toEqual(Array.from({ length: 32 }, () => 18));
+		expect([...new Set(past.pieces.slice(0, 32).map((piece) => piece.transform))]).toHaveLength(1);
+		expect(past.pieces.slice(32)).toEqual(before.pieces.slice(32));
+		expect(past.pieces.map((piece) => piece.look)).toEqual(before.pieces.map((piece) => piece.look));
+		expect(past.pieces.map((piece) => piece.width)).toEqual(before.pieces.map((piece) => piece.width));
+		expect(past.pieces.map((piece) => piece.cut)).toEqual(past.pieces.map(() => ''));
+		expect(past.pieces[23]!.filled && !past.pieces[24]!.filled).toBe(true);
+
+		// Nothing was written by any of it, and with the pointer gone the row is what it was.
+		await expect(line(page, 'near_bars')).toHaveAttribute('aria-valuenow', '24');
+		await page.mouse.move(5, 5);
+		await expectLarge(page, 'near_bars', 0);
+		await expect(line(page, 'near_bars')).not.toHaveClass(/mt-swell/);
+		expect(await drawnRow(page, 'near_bars')).toEqual(before);
+
+		// Five segments which grow and fade in, at 3.3 of 5: the fourth has the look of a filled one over it at
+		// some strength, and still has it, as strong, when all five are large.
+		await line(page, 'grow_segments').scrollIntoViewIfNeeded();
+		const segments = await drawnRow(page, 'grow_segments');
+		expect(segments.pieces[3]!.look).not.toContain('nothing over it');
+		const fifth = segments.pieces[4]!;
+		await page.mouse.move((fifth.left + fifth.right) / 2, (fifth.top + fifth.bottom) / 2);
+		await expectLarge(page, 'grow_segments', 5);
+		const all = await drawnRow(page, 'grow_segments');
+		expect(all.pieces.map((piece) => Number(piece.height.toFixed(1)))).toEqual([18, 18, 18, 18, 18]);
+		expect(all.pieces.map((piece) => piece.look)).toEqual(segments.pieces.map((piece) => piece.look));
+		expect(all.pieces.map((piece) => piece.width)).toEqual(segments.pieces.map((piece) => piece.width));
+		await page.mouse.move(5, 5);
+		await expectLarge(page, 'grow_segments', 0);
+
+		// Less motion was asked for: the size is there at once, with no transition on any piece.
+		await page.mouse.move(middleOf(13).x, middleOf(13).y);
+		await line(page, 'near_bars').scrollIntoViewIfNeeded();
+		const still = (await line(page, 'near_bars').boundingBox())!;
+		await page.mouse.move(still.x + 100, still.y + 6);
+		await expect(line(page, 'near_bars')).toHaveClass(/mt-swell/);
+		expect(await line(page, 'near_bars').locator('> *').first().evaluate((piece) => getComputedStyle(piece).transitionDuration)).toBe('0s');
+		await page.mouse.move(5, 5);
+		await expectLarge(page, 'near_bars', 0);
+
+		// With motion the size is eased, on a meter which does not grow its pieces as on one which does: a
+		// transition of the transform runs on the pieces when the pointer arrives, when it moves on and when it
+		// leaves, and a size which is on its way goes on from where it is.
+		await page.emulateMedia({ reducedMotion: 'no-preference' });
+		for (const name of ['ring_bars', 'near_bars', 'dots']) {
+			await line(page, name).scrollIntoViewIfNeeded();
+			await page.mouse.move(5, 5);
+			await expect(line(page, name)).not.toHaveClass(/mt-swell/);
+			await line(page, name).evaluate((element) => {
+				const seen = ((window as unknown as { runs: string[] }).runs = [] as string[]);
+				element.addEventListener('transitionrun', (event) => seen.push((event as TransitionEvent).propertyName));
+			});
+			const runs = () => page.evaluate(() => (window as unknown as { runs: string[] }).runs.length);
+
+			const boxes = (await line(page, name).locator('> *').evaluateAll((all) => all.map((each) => each.getBoundingClientRect().toJSON()))) as { left: number; right: number; top: number; bottom: number }[];
+			const third = boxes[2]!;
+			await page.mouse.move((third.left + third.right) / 2, (third.top + third.bottom) / 2);
+			await expect(line(page, name)).toHaveClass(/mt-swell/);
+			expect(await line(page, name).locator('> *').first().evaluate((piece) => `${getComputedStyle(piece).transitionProperty} ${getComputedStyle(piece).transitionDuration}`), name).toBe('transform, border-radius 0.15s, 0.15s');
+			await expect.poll(runs, { message: name }).toBe(3);
+			await expectLarge(page, name, 3);
+
+			// One piece further: one more transition, and the three which were large stay as they are.
+			const fourth = boxes[3]!;
+			await page.mouse.move((fourth.left + fourth.right) / 2, (fourth.top + fourth.bottom) / 2);
+			await expect.poll(runs, { message: name }).toBe(4);
+			await expectLarge(page, name, 4);
+
+			// Away: the four ease back, and after that the row is no longer marked.
+			await page.mouse.move(5, 5);
+			await expect.poll(runs, { message: name }).toBe(8);
+			await expectLarge(page, name, 0);
+			await expect(line(page, name)).not.toHaveClass(/mt-swell/);
+		}
 
 		await expect(edited(page)).toHaveCount(0);
 	});
@@ -3129,7 +3365,7 @@ test.describe('a meter which can be edited', () => {
 		await expectFilledPieces(line(page, 'hundred'), 10, 9);
 
 		// No piece is marked under the pointer there, and none of the two is ever the relative method.
-		await expect(line(page, 'hundred').locator('.mt-hint')).toHaveCount(0);
+		await expectLarge(page, 'hundred', 0);
 		for (const name of ['whole', 'five', 'dots', 'hundred']) await expect(line(page, name)).not.toHaveClass(/mt-by-relative/);
 
 		// Only the option makes a meter relative.
@@ -3488,7 +3724,7 @@ test.describe('a meter which can be edited', () => {
 			const five = await pointAt(page, 'five', 0.9);
 			await page.touchscreen.tap(five.x, five.y);
 			await expect(text(page, 'five')).toHaveText('5 / 5');
-			await expect(line(page, 'five').locator('.mt-hint')).toHaveCount(0);
+			await expectLarge(page, 'five', 0);
 
 			// A read-only meter is not set by a finger either.
 			const locked = await pointAt(page, 'twin_locked', 0.9);
@@ -3610,7 +3846,7 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.move(twin.x + 50, twin.y - 5);
 		await expect(line(page, 'twin_live').locator('.mt-handle')).toBeHidden();
 		await page.mouse.move(await pillAt(3), five.y - 5);
-		await expect(line(page, 'five').locator('.mt-hint')).toHaveCount(0);
+		await expectLarge(page, 'five', 0);
 
 		// The caption and the value text under the track are not part of it: a press on either changes nothing.
 		const caption = (await meter(page, 'twin_live').locator('.mt-caption').boundingBox())!;
@@ -3833,11 +4069,11 @@ test.describe('a meter which can be edited', () => {
 		await expectFilledPieces(line(page, 'grow_dots'), 5, 3);
 		expect(await sizes('grow_dots')).toEqual([[12, 12], [12, 12], [12, 12], [9.6, 9.6], [6, 6]]);
 
-		// Each dot is on its place: the middles are 14px apart and on one line, and the boxes are as without it.
+		// Each dot is on its place: the middles are 16px apart and on one line, and the boxes are as without it.
 		const dots = await pieces(line(page, 'grow_dots'));
 		const plain = await pieces(line(page, 'dots'));
 		for (const [index, dot] of dots.entries()) {
-			expect(dot.left + dot.width / 2 - (dots[0]!.left + 6), `dot ${index}`).toBeCloseTo(14 * index, 1);
+			expect(dot.left + dot.width / 2 - (dots[0]!.left + 6), `dot ${index}`).toBeCloseTo(16 * index, 1);
 			expect(dot.top + dot.height / 2 - (dots[0]!.top + 6), `dot ${index}`).toBeCloseTo(0, 1);
 		}
 
@@ -3878,11 +4114,15 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.click(strip.x + slots[4]!.left + 3, strip.y + 1);
 		await expect(text(page, 'grow_segments')).toHaveText('5');
 		await expectFilledPieces(line(page, 'grow_segments'), 5, 5);
-		expect((await laid('grow_segments')).some((piece) => piece.sized)).toBe(false);
+
+		// The pointer rests on the fifth, so all five are large; once it is gone, no piece has a size of its own.
+		await expectLarge(page, 'grow_segments', 5);
+		await page.mouse.move(5, 5);
+		await expect.poll(async () => (await laid('grow_segments')).some((piece) => piece.sized)).toBe(false);
 		await page.mouse.click(strip.x + slots[1]!.left + slots[1]!.width / 2, strip.y + 6);
 		await expect(text(page, 'grow_segments')).toHaveText('2');
 		await page.mouse.move(5, 5);
-		expect(await sizes('grow_segments')).toEqual([[wide, 12], [wide, 12], [wide, 4], [wide, 4], [wide, 4]]);
+		await expect(async () => expect(await sizes('grow_segments')).toEqual([[wide, 12], [wide, 12], [wide, 4], [wide, 4], [wide, 4]])).toPass({ timeout: 5000 });
 		await page.mouse.click(strip.x + slots[3]!.left + slots[3]!.width - 2, strip.y + 11);
 		await expect(text(page, 'grow_segments')).toHaveText('4');
 
@@ -3911,9 +4151,9 @@ test.describe('a meter which can be edited', () => {
 		await expect(async () => expect(await sizes('grow_dots')).toEqual([[12, 12], [12, 12], [12, 12], [12, 12], [8.4, 8.4]])).toPass({ timeout: 5000 });
 
 		// While the pointer drags the value the sizes follow it at once: no transition is started.
-		// The value is spread along the row of dots, which is 68px long: five dots and four gaps.
+		// The value is spread along the row of dots, which is 76px long: five dots and four gaps.
 		const track = (await line(page, 'grow_dots').boundingBox())!;
-		const along = (share: number) => track.x + 68 * share;
+		const along = (share: number) => track.x + 76 * share;
 		await page.mouse.move(along(0.5), track.y + 6);
 		await page.mouse.down();
 		await expect(text(page, 'grow_dots')).toHaveText('2.5');
@@ -4445,16 +4685,20 @@ test.describe('a meter which can be edited', () => {
 			expect(await listened(page, line(page, `${kind}_locked`))).toEqual([]);
 			expect((await edges(meter(page, `${kind}_live`))).bottom - (await edges(meter(page, `${kind}_live`))).top).toBe(54);
 
-			// Under the pointer and with the focus of the keyboard nothing of it moves either.
+			// Under the pointer the first piece is drawn larger, about its middle, and nothing else of the meter
+			// moves; with the pointer gone and the focus of the keyboard on it, nothing at all.
 			await line(page, `${kind}_live`).scrollIntoViewIfNeeded();
 			const first = (await line(page, `${kind}_live`).locator('> *').first().boundingBox())!;
 			const over = { x: first.x + first.width / 2, y: first.y + first.height / 2 };
 			await page.mouse.move(over.x, over.y);
-			await expect(line(page, `${kind}_live`).locator('.mt-hint')).toHaveCount(1);
-			expect((await boxes(`${kind}_live`)).map((box) => box.split(' ').slice(0, 5).join(' '))).toEqual(locked.map((box) => box.split(' ').slice(0, 5).join(' ')));
+			await expectLarge(page, `${kind}_live`, 1);
+			const places = (all: string[]) => all.map((box) => box.split(' ').slice(0, 5).join(' '));
+			const under = places(await boxes(`${kind}_live`));
+			const piece = under.findIndex((box) => box.startsWith('mt-part '));
+			expect(under.filter((_, index) => index !== piece)).toEqual(places(locked).filter((_, index) => index !== piece));
 			await page.mouse.move(over.x, over.y + 100);
 			await line(page, `${kind}_live`).focus();
-			expect(await boxes(`${kind}_live`)).toEqual(locked);
+			await expect(async () => expect(await boxes(`${kind}_live`)).toEqual(locked)).toPass({ timeout: 5000 });
 
 			// A click on the read-only one changes nothing, one on the other does.
 			await clickAt(page, `${kind}_locked`, 0.05);
@@ -4649,7 +4893,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(fieldOf(page, 'twin_locked').getByRole('slider')).toHaveCount(0);
 		expect((await attributes(locked)).sort()).toEqual(['aria-labelledby', 'aria-valuemax', 'aria-valuemin', 'aria-valuenow', 'aria-valuetext', 'class', 'role']);
 		expect(await locked.getAttribute('class')).toBe('mt-track');
-		expect(await meter(page, 'twin_locked').evaluate((element) => element.querySelectorAll('[tabindex], .mt-handle, .mt-hint').length)).toBe(0);
+		expect(await meter(page, 'twin_locked').evaluate((element) => element.querySelectorAll('[tabindex], .mt-handle, .mt-swell, .mt-part[style*="transform"]').length)).toBe(0);
 		await expect(locked).toHaveCSS('cursor', 'auto');
 		await expect(locked).toHaveCSS('touch-action', 'auto');
 
@@ -4971,6 +5215,43 @@ test.describe('a meter which can be edited', () => {
 		await expect(edited(page)).toHaveCount(4);
 	});
 
+	test('packed dots for a hundred: a press on the last dot gives the maximum, and so does one in what is left of the track', async ({ page }) => {
+		await line(page, 'near_dots').scrollIntoViewIfNeeded();
+		await expect(line(page, 'near_dots')).toHaveClass(/mt-by-segment/);
+		await expect(text(page, 'near_dots')).toHaveText('40%');
+
+		// 21 dots in the 342px of the track, which is all that fit: 332px, and 10px left at the end.
+		const track = (await line(page, 'near_dots').boundingBox())!;
+		const dots = await pieces(line(page, 'near_dots'));
+		expect(track.width).toBe(342);
+		expect(dots).toHaveLength(21);
+		expect(track.x + track.width - dots.at(-1)!.right).toBe(10);
+		await expectFilledPieces(line(page, 'near_dots'), 21, 8);
+
+		const middle = (index: number) => ({ x: dots[index]!.left + 6, y: dots[index]!.top + 6 });
+
+		// The last dot is the maximum, and all 21 are filled.
+		await page.mouse.click(middle(20).x, middle(20).y);
+		await expect(line(page, 'near_dots')).toHaveAttribute('aria-valuenow', '100');
+		await expectFilledPieces(line(page, 'near_dots'), 21, 21);
+
+		// The first dot fills one, the eleventh eleven: the values nearest to those shares of a hundred.
+		await page.mouse.click(middle(0).x, middle(0).y);
+		await expect(line(page, 'near_dots')).toHaveAttribute('aria-valuenow', '5');
+		await expectFilledPieces(line(page, 'near_dots'), 21, 1);
+		await page.mouse.click(middle(10).x, middle(10).y);
+		await expect(line(page, 'near_dots')).toHaveAttribute('aria-valuenow', '52');
+		await expectFilledPieces(line(page, 'near_dots'), 21, 11);
+
+		// What is left of the track after the last dot is past the end: the maximum again. And the pieces up
+		// to the pointer there are all of them.
+		await page.mouse.click(track.x + track.width - 3, track.y + 6);
+		await expect(line(page, 'near_dots')).toHaveAttribute('aria-valuenow', '100');
+		await expectLarge(page, 'near_dots', 21);
+		await page.mouse.move(5, 5);
+		await expectLarge(page, 'near_dots', 0);
+	});
+
 	test('bars in a right-to-left page: the row starts at the right, what is left of the track is at the left, and the pointer goes by the bars', async ({ page }) => {
 		await turn(page, 'rtl');
 		await expect(meter(page, 'ring_bars')).toHaveCSS('direction', 'rtl');
@@ -5024,10 +5305,9 @@ test.describe('a meter which can be edited', () => {
 
 		// The tint is on the bars from the right up to the pointer, and on all of them from the empty rest.
 		await page.mouse.move(forty.bars[29]!.right - 1, forty.y);
-		await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(30);
-		expect(await line(page, 'ring_bars').evaluate((element) => Array.from(element.children).findIndex((bar) => !bar.classList.contains('mt-hint')))).toBe(30);
-		await page.mouse.move(forty.left + 3, forty.y);
-		await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(40);
+		await expectLarge(page, 'ring_bars', 30);
+				await page.mouse.move(forty.left + 3, forty.y);
+		await expectLarge(page, 'ring_bars', 40);
 		await page.mouse.move(5, 5);
 
 		// By the place, fifty bars which are set for a hundred: the row of bars, 298px from the right edge,
@@ -5069,7 +5349,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(shown.first()).toBeVisible();
 		expect(await dialogs.locator('.meter').count()).toBeGreaterThan(10);
 		await expect(dialogs.getByRole('slider')).toHaveCount(0);
-		expect(await dialogs.locator('.meter').evaluateAll((meters) => meters.filter((each) => each.querySelector('[tabindex], .mt-handle, .mt-live, .mt-hint')).length)).toBe(0);
+		expect(await dialogs.locator('.meter').evaluateAll((meters) => meters.filter((each) => each.querySelector('[tabindex], .mt-handle, .mt-live, .mt-swell')).length)).toBe(0);
 		expect(await dialogs.locator('.meter > :first-child').evaluateAll((lines) => [...new Set(lines.map((each) => each.getAttribute('role')))])).toEqual(['meter']);
 
 		// None of them listens to anything.
@@ -5373,9 +5653,9 @@ test.describe('bars are all drawn alike', () => {
 
 				// The tint is on the bars up to the pointer, and on all of them from the empty rest.
 				await page.mouse.move(forty.x + boxes[29]!.start + 1, forty.y + 6);
-				await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(30);
+				await expectLarge(page, 'ring_bars', 30);
 				await page.mouse.move(forty.x + forty.width - 3, forty.y + 6);
-				await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(40);
+				await expectLarge(page, 'ring_bars', 40);
 				await page.mouse.move(5, 5);
 
 				// By the place, fifty bars for a hundred: the row of bars stands for the whole range. Its end and
@@ -5643,6 +5923,28 @@ test.describe('a meter in a stock Repeater', () => {
 		// The form of the row says the type of each field: a whole number, tenths, fifties.
 		await press('level', 0.9);
 		await expect(textOf('level')).toHaveText('5 / 5');
+
+		// The pointer rests on the fifth pill, so all five are drawn large, 16px high: nothing around them in
+		// the drawer, which scrolls and so clips, cuts any of them off.
+		const large = () =>
+			lineOf('level').evaluate((element) =>
+				Array.from(element.children).map((part) => {
+					const area = part.getBoundingClientRect();
+					let cut = '';
+
+					for (let around = part.parentElement; around !== null && cut === ''; around = around.parentElement) {
+						const clips = getComputedStyle(around);
+						if (clips.overflowX === 'visible' && clips.overflowY === 'visible') continue;
+
+						const box = around.getBoundingClientRect();
+						if (area.left < box.left - 0.01 || area.right > box.right + 0.01 || area.top < box.top - 0.01 || area.bottom > box.bottom + 0.01) cut = around.className || around.tagName;
+					}
+
+					return `${Math.round(area.height)}px ${cut}`.trim();
+				}),
+			);
+		await expect.poll(large).toEqual(['16px', '16px', '16px', '16px', '16px']);
+
 		await press('share', 0.31);
 		await expect(textOf('share')).toHaveText('0.3');
 		await press('big', 0.33);

@@ -207,13 +207,13 @@ export const PIECE_SIZES: Record<Place, Record<Shape, PieceSize>> = {
 		pills: { piece: 20, gap: 4 },
 		segments: { piece: 14, gap: 3 },
 		bars: { piece: 4, gap: 2 },
-		dots: { piece: 12, gap: 2 },
+		dots: { piece: 12, gap: 4 },
 	},
 	display: {
 		pills: { piece: 8, gap: 2 },
 		segments: { piece: 6, gap: 2 },
 		bars: { piece: 2, gap: 1 },
-		dots: { piece: 6, gap: 1 },
+		dots: { piece: 6, gap: 2 },
 	},
 };
 
@@ -751,9 +751,14 @@ export function drawnCount(wanted: number | null, fit: number, divide = true): n
  * layout comes to the same number. `ratio` is that of the screen, by which
  * bars are counted.
  */
-export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number, ratio = 1): number {
+export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'> & Partial<Pick<Look, 'dotsLayout'>>, range: Range, place: Place, width: number, ratio = 1): number {
 	if (look.visualization === 'contiguous') return 0;
-	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width, ratio), look.visualization !== 'bars');
+
+	// Bars and packed dots keep their size and stand from the start, so a number which divides what is wanted
+	// would leave the rest of the track empty: they are as many as fit. Spread dots fill the track anyway.
+	const packed = look.visualization === 'dots' && (look.dotsLayout ?? DEFAULT_DOTS_LAYOUT) === 'packed';
+
+	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width, ratio), look.visualization !== 'bars' && !packed);
 }
 
 /** How wide a bar and the gap to the next one are drawn, and how long the row of bars is with them, in CSS pixels. */
@@ -1257,6 +1262,36 @@ export function pieceScale(shape: Shape, growth: number): Scale {
 	const between = (least: number) => Number((least + (1 - least) * grown).toFixed(4));
 
 	return { along: between(small.along), across: between(small.across) };
+}
+
+/**
+ * How much higher than its regular size a piece is drawn while the pointer
+ * would fill it (the pieces up to the pointer, on a meter whose pieces are
+ * filled by the pointer). Bars and segments half as high again, as wide as
+ * they are. Dots a pixel on every side, which is what `LARGE_ALONG` leaves
+ * them. Pills a third higher: a pixel on every side is hard to see on a piece
+ * that long, and along the track they have no more room than dots.
+ */
+export const LARGE_ACROSS: Record<Shape, number> = { pills: 4 / 3, segments: 1.5, bars: 1.5, dots: 7 / 6 };
+
+/**
+ * How many pixels longer along the track such a piece is drawn: pills and
+ * dots only, a pixel at each end, which is less than their gap, so that two
+ * of them side by side never touch. Bars and segments keep their width.
+ */
+export const LARGE_ALONG: Record<Shape, number> = { pills: 2, segments: 0, bars: 0, dots: 2 };
+
+/**
+ * The size at which a piece up to the pointer is drawn: larger than regular,
+ * whether it is filled or not and whatever it would be without the pointer.
+ * `length` is how long a piece is along the track, in pixels, since the
+ * growth along it is a number of pixels and a scale is a factor. A piece
+ * without a length is not made longer.
+ */
+export function largeScale(shape: Shape, length: number): Scale {
+	const along = length > 0 && Number.isFinite(length) ? Number(((length + LARGE_ALONG[shape]) / length).toFixed(4)) : 1;
+
+	return { along, across: Number(LARGE_ACROSS[shape].toFixed(4)) };
 }
 
 /** A size as the CSS transform which draws it: about the middle of the piece, so the piece stays on its place and its box as it was. */

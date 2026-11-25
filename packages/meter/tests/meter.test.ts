@@ -26,6 +26,9 @@ import {
 	fillScale,
 	growOf,
 	growthOf,
+	LARGE_ACROSS,
+	LARGE_ALONG,
+	largeScale,
 	pieceScale,
 	reachOf,
 	scaleCss,
@@ -938,8 +941,8 @@ describe('how many pieces are wanted', () => {
 describe('how many pieces fit', () => {
 	test('the sizes of the pieces, for each visualization in each place', () => {
 		expect(PIECE_SIZES).toEqual({
-			form: { pills: { piece: 20, gap: 4 }, segments: { piece: 14, gap: 3 }, bars: { piece: 4, gap: 2 }, dots: { piece: 12, gap: 2 } },
-			display: { pills: { piece: 8, gap: 2 }, segments: { piece: 6, gap: 2 }, bars: { piece: 2, gap: 1 }, dots: { piece: 6, gap: 1 } },
+			form: { pills: { piece: 20, gap: 4 }, segments: { piece: 14, gap: 3 }, bars: { piece: 4, gap: 2 }, dots: { piece: 12, gap: 4 } },
+			display: { pills: { piece: 8, gap: 2 }, segments: { piece: 6, gap: 2 }, bars: { piece: 2, gap: 1 }, dots: { piece: 6, gap: 2 } },
 		});
 	});
 
@@ -948,7 +951,7 @@ describe('how many pieces fit', () => {
 		expect(fitCount('pills', 'display', DISPLAY_WIDTH)).toBe(7);
 		expect(fitCount('segments', 'display', DISPLAY_WIDTH)).toBe(9);
 		expect(fitCount('bars', 'display', DISPLAY_WIDTH)).toBe(24);
-		expect(fitCount('dots', 'display', DISPLAY_WIDTH)).toBe(10);
+		expect(fitCount('dots', 'display', DISPLAY_WIDTH)).toBe(9);
 	});
 
 	test('in the form: as many as the width has room for, each at its smallest with its gap', () => {
@@ -967,11 +970,11 @@ describe('how many pieces fit', () => {
 		expect(fitCount('bars', 'form', 10)).toBe(2);
 		expect(fitCount('bars', 'form', 9)).toBe(1);
 
-		// 24 dots are 24 * 12 + 23 * 2 = 334px, and ten are 138px.
-		expect(fitCount('dots', 'form', 342)).toBe(24);
-		expect(fitCount('dots', 'form', 138)).toBe(10);
-		expect(fitCount('dots', 'form', 137)).toBe(9);
-		expect(fitCount('dots', 'form', 713)).toBe(51);
+		// 21 dots are 21 * 12 + 20 * 4 = 332px, and ten are 156px.
+		expect(fitCount('dots', 'form', 342)).toBe(21);
+		expect(fitCount('dots', 'form', 156)).toBe(10);
+		expect(fitCount('dots', 'form', 155)).toBe(9);
+		expect(fitCount('dots', 'form', 713)).toBe(44);
 	});
 
 	test('a width which is a hair under a whole number of pieces counts as that number', () => {
@@ -1069,25 +1072,30 @@ describe('how many pieces are drawn', () => {
 		expect(count({}, 'form', 342)).toBe(0);
 		expect(count({ visualization: 'contiguous', subdivisions: 4 }, 'form', 342)).toBe(0);
 
-		// A range of a hundred in half of the form: a number which divides 100, and for bars as many as fit.
+		// A range of a hundred in half of the form: a number which divides 100, and for bars and packed dots as
+		// many as fit. Spread dots divide too.
 		expect(count({ visualization: 'pills' }, 'form', 342)).toBe(10);
 		expect(count({ visualization: 'segments' }, 'form', 342)).toBe(20);
 		expect(count({ visualization: 'bars' }, 'form', 342)).toBe(57);
-		expect(count({ visualization: 'dots' }, 'form', 342)).toBe(20);
+		expect(count({ visualization: 'dots' }, 'form', 342)).toBe(21);
+		expect(count({ visualization: 'dots', dotsLayout: 'spread' }, 'form', 342)).toBe(20);
 
 		// The same field in a wider form has more.
 		expect(count({ visualization: 'pills' }, 'form', 717)).toBe(25);
 		expect(count({ visualization: 'bars' }, 'form', 717)).toBe(100);
-		expect(count({ visualization: 'dots' }, 'form', 713)).toBe(50);
+		expect(count({ visualization: 'dots' }, 'form', 713)).toBe(44);
+		expect(count({ visualization: 'dots', dotsLayout: 'spread' }, 'form', 713)).toBe(25);
 
-		// And in the display ten dots, where it has five pills.
-		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(10);
+		// And in the display nine dots, or five spread, where it has five pills.
+		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(9);
+		expect(count({ visualization: 'dots', dotsLayout: 'spread' }, 'display', DISPLAY_WIDTH)).toBe(5);
 		expect(count({ visualization: 'pills' }, 'display', DISPLAY_WIDTH)).toBe(5);
 
 		// One for every unit, and a number which is set.
 		expect(count({ visualization: 'pills', max: 5 }, 'form', 342)).toBe(5);
 		expect(count({ visualization: 'dots', subdivisions: 12 }, 'form', 342)).toBe(12);
-		expect(count({ visualization: 'dots', subdivisions: 12 }, 'form', 120)).toBe(6);
+		expect(count({ visualization: 'dots', subdivisions: 12 }, 'form', 120)).toBe(7);
+		expect(count({ visualization: 'dots', subdivisions: 12, dotsLayout: 'spread' }, 'form', 120)).toBe(6);
 		expect(count({ visualization: 'pills', subdivisions: '4', max: 5 }, 'form', 342)).toBe(4);
 
 		// A range which wants nothing: as many as fit.
@@ -1102,7 +1110,7 @@ describe('how many pieces are drawn', () => {
 		expect(count({ visualization: 'pills' }, 'display', DISPLAY_WIDTH)).toBe(5);
 		expect(count({ visualization: 'segments' }, 'display', DISPLAY_WIDTH)).toBe(5);
 		expect(count({ visualization: 'bars' }, 'display', DISPLAY_WIDTH)).toBe(24);
-		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(10);
+		expect(count({ visualization: 'dots' }, 'display', DISPLAY_WIDTH)).toBe(9);
 		expect(count({ visualization: 'dots', max: 8 }, 'display', DISPLAY_WIDTH)).toBe(8);
 		expect(count({ visualization: 'pills', max: 12 }, 'display', DISPLAY_WIDTH)).toBe(6);
 		expect(count({ visualization: 'bars', subdivisions: 24 }, 'display', DISPLAY_WIDTH)).toBe(24);
@@ -1135,12 +1143,12 @@ describe('where the pieces are', () => {
 	test('packed dots keep their size and their gap, from the start', () => {
 		expect(pieceGeometry('dots', 'form', 3, 342)).toEqual([
 			{ start: 0, end: 12 },
-			{ start: 14, end: 26 },
-			{ start: 28, end: 40 },
+			{ start: 16, end: 28 },
+			{ start: 32, end: 44 },
 		]);
 
 		expect(pieceGeometry('dots', 'form', 3, 342, 'packed')).toEqual(pieceGeometry('dots', 'form', 3, 342));
-		expect(pieceGeometry('dots', 'display', 10, 72).at(-1)).toEqual({ start: 63, end: 69 });
+		expect(pieceGeometry('dots', 'display', 9, 72).at(-1)).toEqual({ start: 64, end: 70 });
 	});
 
 	test('spread dots keep their size: the first at the start edge, the last at the end edge, equal gaps between', () => {
@@ -1814,16 +1822,16 @@ describe('the pieces the pointer fills', () => {
 	});
 
 	test('packed dots: the pieces are where the dots are, not the whole track', () => {
-		// Five dots of 12px, 2px apart: the row is 68px of a track of 342px.
+		// Five dots of 12px, 4px apart: the row is 76px of a track of 342px.
 		const dots = pieceGeometry('dots', 'form', 5, 342);
 
 		expect(filledAt(5, dots)).toBe(1);
-		expect(filledAt(13, dots)).toBe(1);
-		expect(filledAt(14, dots)).toBe(2);
-		expect(filledAt(30, dots)).toBe(3);
-		expect(filledAt(45, dots)).toBe(4);
-		expect(filledAt(60, dots)).toBe(5);
-		expect(filledAt(68, dots)).toBe(5);
+		expect(filledAt(15, dots)).toBe(1);
+		expect(filledAt(16, dots)).toBe(2);
+		expect(filledAt(34, dots)).toBe(3);
+		expect(filledAt(50, dots)).toBe(4);
+		expect(filledAt(66, dots)).toBe(5);
+		expect(filledAt(76, dots)).toBe(5);
 		expect(filledAt(171, dots)).toBe(5);
 		expect(filledAt(342, dots)).toBe(5);
 
@@ -2507,6 +2515,107 @@ describe('growing and fading by where the pointer is', () => {
 	});
 });
 
+describe('packed dots are as many as fit', () => {
+	const count = (own: object, place: 'form' | 'display', width: number) => pieceCount(readLook({ visualization: 'dots', ...own }), readOptions(own), place, width);
+
+	test('a wanted number which does not fit, and none: as many as fit, and less than one dot and its gap is left', () => {
+		let seen = 0;
+
+		for (const place of ['form', 'display'] as const) {
+			const { piece, gap } = PIECE_SIZES[place].dots;
+
+			for (let width = piece * 2 + gap; width <= 1200; width += place === 'form' ? 3.5 : 0.5) {
+				if (place === 'display' && width > 120) break;
+
+				for (const own of [{}, { max: 1000 }, { subdivisions: 150 }, { max: 2.5 }, { max: 97 }]) {
+					const most = fitCount('dots', place, width);
+					if (most >= 97) continue;
+
+					const dots = count(own, place, width);
+					const row = pieceGeometry('dots', place, dots, width);
+					const left = width - row.at(-1)!.end;
+					seen++;
+
+					if (dots !== most) expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: ${dots} dots where ${most} fit`);
+					if (left < -1e-6 || left >= piece + gap) expect.fail(`${place}, ${width}px: ${left}px are left behind ${dots} dots`);
+					if (row[1]!.start - row[0]!.end !== gap || row[0]!.end - row[0]!.start !== piece) expect.fail(`${place}, ${width}px: a dot or a gap of another size`);
+				}
+			}
+		}
+
+		expect(seen).toBeGreaterThan(1000);
+	});
+
+	test('a hundred in half of the form, across it and in the display', () => {
+		// 21 dots of 12px, 4px apart, are 332px of 342px: 10px are left, where the twenty which divide a hundred left 26px.
+		expect(count({}, 'form', 342)).toBe(21);
+		expect(pieceGeometry('dots', 'form', 21, 342).at(-1)).toEqual({ start: 320, end: 332 });
+		expect(count({}, 'form', 713)).toBe(44);
+		expect(pieceGeometry('dots', 'form', 44, 713).at(-1)).toEqual({ start: 688, end: 700 });
+		expect(count({}, 'display', DISPLAY_WIDTH)).toBe(9);
+		expect(pieceGeometry('dots', 'display', 9, DISPLAY_WIDTH).at(-1)).toEqual({ start: 64, end: 70 });
+	});
+
+	test('a wanted number which fits is drawn as it is, a short row from the start', () => {
+		expect(count({ max: 5 }, 'form', 342)).toBe(5);
+		expect(count({ subdivisions: 12 }, 'form', 342)).toBe(12);
+		expect(count({ subdivisions: 21 }, 'form', 342)).toBe(21);
+		expect(count({ max: 8 }, 'display', DISPLAY_WIDTH)).toBe(8);
+		expect(pieceGeometry('dots', 'form', 5, 342).at(-1)).toEqual({ start: 64, end: 76 });
+	});
+
+	test('spread dots keep the number which divides what is wanted', () => {
+		const spread = (own: object, place: 'form' | 'display', width: number) => count({ dotsLayout: 'spread', ...own }, place, width);
+
+		expect(spread({}, 'form', 342)).toBe(20);
+		expect(spread({}, 'form', 713)).toBe(25);
+		expect(spread({}, 'display', DISPLAY_WIDTH)).toBe(5);
+		expect(spread({ subdivisions: 30 }, 'form', 342)).toBe(15);
+		expect(spread({ max: 2.5 }, 'form', 342)).toBe(21);
+		expect(spread({ max: 13 }, 'form', 150)).toBe(9);
+
+		// A layout which is no layout is packed.
+		expect(count({ dotsLayout: 'everywhere' }, 'form', 342)).toBe(21);
+		expect(pieceCount({ visualization: 'dots', subdivisions: null }, readOptions({}), 'form', 342)).toBe(21);
+	});
+});
+
+describe('the pieces up to the pointer are drawn larger', () => {
+	test('bars and segments half as high again and no wider; dots a pixel on every side; pills a pixel at each end and a third higher', () => {
+		expect(largeScale('bars', 4)).toEqual({ along: 1, across: 1.5 });
+		expect(largeScale('bars', 66)).toEqual({ along: 1, across: 1.5 });
+		expect(largeScale('segments', 14.25)).toEqual({ along: 1, across: 1.5 });
+
+		// A dot of 12px is 14px both ways. A pill of 30px is 32px long and 16px high.
+		expect(largeScale('dots', 12)).toEqual({ along: 1.1667, across: 1.1667 });
+		expect(largeScale('pills', 30)).toEqual({ along: 1.0667, across: 1.3333 });
+		expect(largeScale('pills', 65.2).along * 65.2).toBeCloseTo(67.2, 1);
+	});
+
+	test('larger than any size a piece has without the pointer, and two side by side never touch', () => {
+		for (const shape of SHAPES) {
+			const large = largeScale(shape, PIECE_SIZES.form[shape].piece);
+			const full = pieceScale(shape, 1);
+
+			expect(large.across).toBeGreaterThan(full.across);
+			expect(large.along).toBeGreaterThanOrEqual(full.along);
+
+			// What a piece is longer by is less than the gap to the next one, by at least a pixel.
+			expect(LARGE_ALONG[shape]).toBeLessThanOrEqual(PIECE_SIZES.form[shape].gap - 1);
+		}
+
+		expect(LARGE_ACROSS).toEqual({ pills: 4 / 3, segments: 1.5, bars: 1.5, dots: 7 / 6 });
+		expect(LARGE_ALONG).toEqual({ pills: 2, segments: 0, bars: 0, dots: 2 });
+	});
+
+	test('a piece without a length, and one which is not a number, is not made longer', () => {
+		for (const length of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+			expect(largeScale('dots', length)).toEqual({ along: 1, across: 1.1667 });
+			expect(scaleCss(largeScale('pills', length))).toBe('scale(1, 1.3333)');
+		}
+	});
+});
+
 describe('bars which are all drawn alike', () => {
 	// A row of track widths, some of them not whole, on screens of several ratios.
 	const WIDTHS = [20, 72, 100, 137.5, 293, 342, 342.4, 512, 615, 713, 784.25, 1100, 2000];
@@ -2654,11 +2763,13 @@ describe('bars which are all drawn alike', () => {
 		expect(count({}, 'display', DISPLAY_WIDTH, 1.5)).toBe(22);
 		expect(count({ subdivisions: 12 }, 'display', DISPLAY_WIDTH)).toBe(12);
 
-		// The other shapes keep the number which divides what is wanted, whatever the ratio.
+		// Pills, segments and spread dots keep the number which divides what is wanted, whatever the ratio, and
+		// packed dots are as many as fit at any ratio: their sizes are whole device pixels at all three.
 		for (const ratio of [1, 1.5, 2]) {
 			expect(pieceCount(readLook({ visualization: 'pills' }), readOptions({}), 'form', 342, ratio)).toBe(10);
 			expect(pieceCount(readLook({ visualization: 'segments' }), readOptions({}), 'form', 342, ratio)).toBe(20);
-			expect(pieceCount(readLook({ visualization: 'dots' }), readOptions({}), 'form', 342, ratio)).toBe(20);
+			expect(pieceCount(readLook({ visualization: 'dots', dotsLayout: 'spread' }), readOptions({}), 'form', 342, ratio)).toBe(20);
+			expect(pieceCount(readLook({ visualization: 'dots' }), readOptions({}), 'form', 342, ratio)).toBe(21);
 		}
 
 		// How many fit, by the ratio: the least bar and gap are rounded up to whole device pixels.
