@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
-import { canEdit, changes, drawingOf, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, segmentValue, shareAt, snapValue, valueAtShare, writableRange } from './meter';
-import type { Paint, Piece } from './meter';
+import { canEdit, changes, drawingOf, fillScale, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
+import type { Paint, Piece, PieceDrawing } from './meter';
 
 /**
  * The Meter interface.
@@ -59,6 +59,8 @@ const props = defineProps<{
 	visualization?: unknown;
 	subdivisions?: unknown;
 	dotsLayout?: unknown;
+	grow?: unknown;
+	fade?: unknown;
 	activeColoring?: unknown;
 	inactiveColoring?: unknown;
 	input?: unknown;
@@ -129,6 +131,36 @@ const scales = computed(() => {
 
 const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.scale === 'weak' ? 'mt-paint mt-weak' : 'mt-paint');
 
+// What a surface is painted with, as an inline style: its one colour, or its place on the scale.
+const paintStyle = (paint: Paint, at: number) => (paint.color !== null ? { backgroundColor: paint.color } : paint.scale !== null ? { '--mt-at': at } : undefined);
+
+// The inline style of a piece: its paint, and its size where the pieces grow. A piece at its full size has no
+// size here, so a meter whose pieces do not grow has the styles it always had.
+function partStyle(piece: PieceDrawing) {
+	const paint = paintStyle(piece.paint, piece.at);
+	return piece.size === null ? paint : { ...paint, transform: scaleCss(piece.size) };
+}
+
+// Pieces which grow or fade in change with a short transition when the value changes, by a press, a key or from
+// outside. Not while the pointer drags the value, which they follow at once, and not for the first value a meter
+// draws: the form hands over nothing until the item has loaded, and a transition from there would play on every
+// page load. So the transition is switched on two frames after a value was first drawn.
+const eased = shallowRef(false);
+const following = shallowRef(false);
+let easing = 0;
+
+watch(
+	() => (look.value.grow || look.value.fade) && !reading.value.empty,
+	(drawn) => {
+		cancelAnimationFrame(easing);
+		eased.value = false;
+		if (drawn) easing = requestAnimationFrame(() => (easing = requestAnimationFrame(() => (eased.value = true))));
+	},
+	{ immediate: true },
+);
+
+onBeforeUnmount(() => cancelAnimationFrame(easing));
+
 // The element on the line of the track: the track of the one bar, or the row of pieces.
 const lineStyle = computed(() => {
 	const { pieces, track } = drawing.value;
@@ -142,7 +174,7 @@ const fillStyle = computed(() => {
 	const { fill } = drawing.value;
 	const inlineSize = `${reading.value.fraction * 100}%`;
 
-	if (fill.scale !== null) return { inlineSize, '--mt-n': 1 / reading.value.fraction };
+	if (fill.scale !== null) return { inlineSize, '--mt-n': fillScale(reading.value.fraction) };
 	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
 });
 
@@ -193,12 +225,10 @@ function frame(element: HTMLElement) {
 	return { box, rtl, pieces, length };
 }
 
-// A point of the pointer in pixels from the start side of the track.
-const positionOf = (event: PointerEvent, at: ReturnType<typeof frame>) => (at.rtl ? at.box.right - event.clientX : event.clientX - at.box.left);
-
-// The value under the pointer, by the method of the meter.
-function valueUnder(event: PointerEvent, at: ReturnType<typeof frame>) {
-	const position = positionOf(event, at);
+// The value under a point of the page, given by how far it is across the page, by the method of the meter.
+function valueUnder(x: number, at: ReturnType<typeof frame>) {
+	// In pixels from the start side of the track.
+	const position = at.rtl ? at.box.right - x : x - at.box.left;
 
 	// By the piece: the value which leaves the pieces up to the pointer filled.
 	if (method.value === 'segment' && at.pieces.length) return segmentValue(filledAt(position, at.pieces), at.pieces.length, options.value, editing.value);
@@ -218,11 +248,20 @@ interface Drag {
 	x: number;
 	y: number;
 	touch: boolean;
+	/**
+	 * A finger which has come down and has neither moved sideways nor been lifted yet. It has written nothing: it
+	 * may be the start of a scroll of the page. `startX` and `startY` are where it came down.
+	 */
+	pending: boolean;
+	startX: number;
+	startY: number;
 }
 
-// Marks the pieces which a pointer resting at a point of the page would fill: those up to it, where the pieces
-// are filled by the pointer and the point is on the track. A finger does not rest anywhere.
-function rest(x: number, y: number, touch: boolean) {
+// Marks the pieces which the pointer at a point of the page fills or would fill: those up to it, where the pieces
+// are filled by the pointer. A pointer which rests has to be on the track for that; one which is `held` down in
+// a drag counts wherever it is, by its place along the track, as the fill does. A finger does not rest anywhere,
+// and leaves no marks.
+function rest(x: number, y: number, touch: boolean, held = false) {
 	const element = line.value;
 
 	if (!editable.value || !element || touch || method.value !== 'segment') {
@@ -231,7 +270,7 @@ function rest(x: number, y: number, touch: boolean) {
 	}
 
 	const at = frame(element);
-	const inside = x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom;
+	const inside = held || (x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom);
 	hover.value = inside ? filledAt(at.rtl ? at.box.right - x : x - at.box.left, at.pieces) : 0;
 }
 
@@ -255,11 +294,14 @@ function onPointerDown(event: PointerEvent) {
 		x: event.clientX,
 		y: event.clientY,
 		touch: event.pointerType === 'touch',
+		pending: event.pointerType === 'touch',
+		startX: event.clientX,
+		startY: event.clientY,
 	};
 	dragging.value = true;
 
-	// Nothing is marked during a drag: the fill itself follows the pointer.
-	hover.value = 0;
+	// The marks are where the pointer is, from the press on.
+	rest(event.clientX, event.clientY, event.pointerType === 'touch', true);
 
 	// The drag goes on when the pointer leaves the field.
 	try {
@@ -268,8 +310,10 @@ function onPointerDown(event: PointerEvent) {
 		// A pointer which is gone already: the drag ends with the next event.
 	}
 
+	// A mouse or a pen sets the value where it is pressed. A finger writes nothing by coming down: the first write
+	// is that of a sideways drag, or of the finger being lifted where it came down.
 	if (method.value !== 'relative') {
-		write(valueUnder(event, frame(element)));
+		if (!drag.pending) write(valueUnder(event.clientX, frame(element)));
 		return;
 	}
 
@@ -305,6 +349,7 @@ function onPointerMove(event: PointerEvent) {
 
 	drag.x = event.clientX;
 	drag.y = event.clientY;
+	rest(drag.x, drag.y, drag.touch, true);
 
 	// A mouse which moves with no button held was released where the meter did not see it.
 	if (event.pointerType === 'mouse' && event.buttons === 0) {
@@ -312,8 +357,18 @@ function onPointerMove(event: PointerEvent) {
 		return;
 	}
 
+	// A finger has to have moved sideways first. From then on it is a drag like any other, and the relative method
+	// counts its whole distance from where it came down.
+	if (drag.pending) {
+		if (!sideways(event.clientX - drag.startX, event.clientY - drag.startY)) return;
+		drag.pending = false;
+	}
+
+	// From here the value follows the pointer, and pieces which grow follow it without a transition.
+	following.value = true;
+
 	if (method.value !== 'relative') {
-		write(valueUnder(event, at));
+		write(valueUnder(event.clientX, at));
 		return;
 	}
 
@@ -336,6 +391,7 @@ function finish(restore: boolean) {
 
 	drag = null;
 	dragging.value = false;
+	following.value = false;
 
 	if (element) {
 		try {
@@ -350,14 +406,22 @@ function finish(restore: boolean) {
 	// The marks are back at once, for where the pointer rests now, without waiting for it to move.
 	rest(ended.x, ended.y, ended.touch);
 
-	if (restore && editable.value && props.value !== ended.before) emit('input', ended.before);
+	// A finger which never wrote has nothing to put back.
+	if (restore && !ended.pending && editable.value && props.value !== ended.before) emit('input', ended.before);
 }
 
 function onPointerUp(event: PointerEvent) {
-	if (drag !== null && event.pointerId === drag.pointer) finish(false);
+	const element = line.value;
+	if (drag === null || event.pointerId !== drag.pointer) return;
+
+	// A finger which is lifted without having dragged was a tap: it writes what a press there writes.
+	if (drag.pending && element && method.value !== 'relative') write(valueUnder(drag.startX, frame(element)));
+
+	finish(false);
 }
 
-// The browser took the pointer away, as it does when a finger starts to scroll the page: nothing was meant.
+// The browser took the pointer away, as it does when a finger starts to scroll the page: nothing was meant. For a
+// finger nothing was written either, unless it had already dragged sideways.
 function onPointerCancel(event: PointerEvent) {
 	if (drag !== null && event.pointerId === drag.pointer) finish(true);
 }
@@ -429,6 +493,44 @@ const said = computed(() => {
 	return { min: range.min, max: range.max, now: now === null ? range.min : Math.min(range.max, Math.max(range.min, now)) };
 });
 
+// A taller target than the track, which is 0.75rem high. Above the track and under everything else are two
+// elements (`mt-reach`) which take the room the area has free there, up to 0.5rem each: a press on the one above
+// the track, on the gap between the track and the line of caption and text, or, where there is no such line, on
+// the one below, is a press on the track at the same place along it. For a finger, and for any pointer which is
+// coarse, a press anywhere in the area above the line of caption and text counts as well. Such a press is not
+// left to the browser, which would take the focus away from the track and with it the keys, Escape among them:
+// the track is given the focus.
+const under = shallowRef<HTMLElement | null>(null);
+const lined = computed(() => options.value.label !== null || options.value.indicator);
+
+function pressBeside(event: PointerEvent) {
+	const element = line.value;
+	if (!editable.value || !element || !event.isPrimary || event.button !== 0) return;
+
+	event.preventDefault();
+	element.focus({ preventScroll: true });
+	onPointerDown(event);
+}
+
+function onAreaDown(event: PointerEvent) {
+	const element = line.value;
+	if (!editable.value || !element) return;
+
+	// What the track and its reach are pressed on themselves, they deal with themselves.
+	const target = event.target instanceof Element ? event.target : null;
+	if (target !== null && (element.contains(target) || target.closest('.mt-reach') !== null)) return;
+
+	const coarse = event.pointerType === 'touch' || (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches);
+	if (!coarse) return;
+
+	// Not on the caption or the value text, nor under them.
+	if (under.value && event.clientY >= under.value.getBoundingClientRect().top) return;
+
+	pressBeside(event);
+}
+
+const areaListeners = computed(() => (editable.value ? { pointerdown: onAreaDown } : {}));
+
 const listeners = computed(() =>
 	editable.value
 		? {
@@ -447,7 +549,11 @@ const lineClass = computed(() => {
 	const drawn =
 		drawing.value.pieces === null
 			? ['mt-track', paintClass(drawing.value.track), { 'mt-scaled': drawing.value.fill.scale !== null }]
-			: ['mt-strip', `mt-${look.value.visualization}`, { 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread' }];
+			: [
+					'mt-strip',
+					`mt-${look.value.visualization}`,
+					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-eased': (look.value.grow || look.value.fade) && eased.value && !following.value },
+				];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
 });
@@ -498,8 +604,9 @@ onBeforeUnmount(() => {
 //   `--mt-stops` for itself: the fill is inside the track and would inherit
 //   that.
 // - A track which can be edited (`mt-live`) has a cursor, takes sideways
-//   drags of a finger for itself and leaves the up and down ones to the page
-//   (`touch-action: pan-y`), and lets no drag select text. Its focus ring is
+//   drags of a finger for itself and leaves the up and down ones and a pinch
+//   to the page (`touch-action: pan-y pinch-zoom`, on the whole area of a
+//   meter which can be edited), and lets no drag select text. Its focus ring is
 //   an outline in the colour of a focused input, which takes no room. The
 //   app has a focus ring of its own for every `div` which takes the focus,
 //   drawn inside the element and with square corners
@@ -508,12 +615,37 @@ onBeforeUnmount(() => {
 //   would need, to come before that one, and the second gives the track its
 //   round ends back. None of the rules changes a size or a place: the area,
 //   the caption, the text and the note of the form stay where they are.
+// - The track is a small target, so more than the track takes a press. Two
+//   more items of the column (`mt-reach`) stand above the track and under
+//   everything else: `mt-above`, which is after the track in the markup and
+//   drawn before it (`order`), so that the track stays the first child, and
+//   `mt-below`. Each grows into the room the area has free, up to 0.5rem,
+//   and has no height where there is none; the gap of the column next to
+//   each is taken back by a negative margin. Two items which grow alike keep
+//   the group in the middle of the area, exactly where centring puts it
+//   without them, so nothing moves. Being items of the root, neither can
+//   reach outside it, whatever the height of the area: under a caption of
+//   several lines the track is at the top edge and the one above is nothing.
+//   The 0.25rem between the track and the line of caption and text belong to
+//   the target too, by a pseudo-element of `mt-above` laid under the track.
+//   With a line under the track that is up to 0.5rem, the track and 0.25rem,
+//   1.5rem in all, and `mt-below`, which then lies under the caption, takes
+//   no press; without that line `mt-below` is right under the track and
+//   takes them. None of it lies over the caption or the text, and the track
+//   keeps its own events: the handle, the marks and the cursor under the
+//   pointer are the track's. A finger gets the whole area above the line of
+//   caption and text, by a listener on the root and not by a box.
 // - The handle of the one bar is a dot inside the track at the end of the
 //   fill, never past either end, which shows while the pointer is over the
 //   track, while the track has the keyboard's focus and during a drag. It is
 //   shown and hidden at once, without a transition.
-// - The pieces which the pointer would fill (`mt-hint`) have a veil in the
-//   text colour over whatever they are painted with.
+// - The pieces up to the pointer (`mt-hint`) have a thin ring inside their
+//   edge, an inset shadow which takes no room and moves nothing: in the
+//   primary colour on a piece which is not filled, and in its accent on one
+//   which is, as the marker of a step changes the colour of its border under
+//   the pointer in the Steps interface of this repository. Bars are too thin
+//   for a ring, which would fill them: they get its top and bottom only, so
+//   a row of them reads as two faint rails up to the pointer.
 // - The fill of the one bar is the exception to "`--mt-n` times as wide": its
 //   image is as wide as the track itself, `100cqi`, with the track made a
 //   container for that (`mt-scaled`, only where the fill is painted so). An
@@ -548,14 +680,28 @@ onBeforeUnmount(() => {
 //   otherwise be laid out as "20%-" and "7 / 12" as "12 / 7"; the number
 //   formatting of a right-to-left language puts the marks it needs into the
 //   text itself.
-// - There is no transition anywhere. The form hands over `null` until the
-//   item has loaded, so any transition would play on every page load.
+// - Pieces which grow (`grow`) are drawn at their size by a transform about
+//   their middle, set on the piece itself: no box changes, so the pitch, the
+//   gaps, where the pointer counts a piece and the height of the area are
+//   what they are without it. A filled piece has no transform, and a meter
+//   which does not grow its pieces has none anywhere.
+// - The piece which fades in (`fade`) has one child (`mt-over`) which covers
+//   it, painted as the piece will be once it is filled, at the opacity of
+//   how far the value has come into it. It takes no press: the piece under
+//   it does. Only that one piece has a child and the class `mt-under`; a
+//   meter which does not fade has neither anywhere.
+// - There are two transitions, of the size of pieces which grow and of the
+//   opacity of the piece which fades in, 150ms each, by the class
+//   `mt-eased` on the row: not for the first value a meter draws, not while
+//   the pointer drags the value, and not for a user who asked for less
+//   motion. Nothing else has one. The form hands over `null` until the item
+//   has loaded, so any other transition would play on every page load.
 //
 // The package's AGENTS.md, "How it works", has the rest.
 </script>
 
 <template>
-	<div class="meter" :class="{ 'mt-empty': reading.empty }" :style="scales">
+	<div class="meter" :class="{ 'mt-empty': reading.empty, 'mt-open': editable, 'mt-lined': editable && lined }" :style="scales" v-on="areaListeners">
 		<div
 			ref="line"
 			:class="lineClass"
@@ -580,19 +726,28 @@ onBeforeUnmount(() => {
 				v-else
 				:key="index"
 				class="mt-part"
-				:class="[{ 'mt-on': piece.filled, 'mt-hint': index < hover }, paintClass(piece.paint)]"
-				:style="
-					piece.paint.color !== null ? { backgroundColor: piece.paint.color } : piece.paint.scale !== null ? { '--mt-at': piece.at } : undefined
-				"
-			/>
+				:class="[{ 'mt-on': piece.filled, 'mt-hint': index < hover, 'mt-under': piece.over !== null }, paintClass(piece.paint)]"
+				:style="partStyle(piece)"
+			>
+				<span
+					v-if="piece.over !== null"
+					class="mt-over"
+					:class="paintClass(piece.over.paint)"
+					:style="{ ...paintStyle(piece.over.paint, piece.at), opacity: piece.over.opacity }"
+				/>
+			</span>
 		</div>
 
-		<div v-if="options.label !== null || options.indicator" class="mt-line">
+		<div v-if="editable" class="mt-reach mt-above" :class="`mt-by-${method}`" @pointerdown="pressBeside" />
+
+		<div v-if="lined" ref="under" class="mt-line">
 			<span v-if="options.label !== null" :id="`${id}-caption`" class="mt-caption" v-text="options.label" />
 			<span v-if="options.indicator" class="mt-text" aria-hidden="true">
 				<span dir="ltr" v-text="reading.text" />
 			</span>
 		</div>
+
+		<div v-if="editable" class="mt-reach mt-below" :class="`mt-by-${method}`" @pointerdown="pressBeside" />
 	</div>
 </template>
 
@@ -718,11 +873,68 @@ onBeforeUnmount(() => {
 	border: 1px dashed var(--theme--foreground-subdued);
 }
 
+.mt-under {
+	position: relative;
+}
+
+.mt-over {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	background-color: var(--theme--primary);
+	border-radius: inherit;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.mt-eased .mt-part {
+		transition: transform 150ms ease-out;
+	}
+
+	.mt-eased .mt-over {
+		transition: opacity 150ms ease-out;
+	}
+}
+
 .mt-live {
 	position: relative;
 	cursor: pointer;
-	touch-action: pan-y;
+	touch-action: pan-y pinch-zoom;
 	user-select: none;
+}
+
+.mt-open {
+	touch-action: pan-y pinch-zoom;
+}
+
+.mt-reach {
+	flex: 1 1 0;
+	min-block-size: 0;
+	max-block-size: 0.5rem;
+	cursor: pointer;
+	touch-action: pan-y pinch-zoom;
+	user-select: none;
+}
+
+.mt-above {
+	position: relative;
+	order: -1;
+	margin-block-end: -0.25rem;
+}
+
+.mt-below {
+	margin-block-start: -0.25rem;
+}
+
+.mt-lined .mt-below {
+	pointer-events: none;
+}
+
+.mt-lined .mt-above::after {
+	position: absolute;
+	inset-inline: 0;
+	inset-block-start: calc(100% + var(--mt-height));
+	block-size: 0.25rem;
+	content: '';
 }
 
 .mt-by-relative {
@@ -758,16 +970,19 @@ onBeforeUnmount(() => {
 }
 
 .mt-hint {
-	position: relative;
+	--mt-ring: var(--theme--primary);
+
+	box-shadow: inset 0 0 0 1px var(--mt-ring);
 }
 
-.mt-hint::after {
-	position: absolute;
-	inset: 0;
-	content: '';
-	background-color: var(--theme--foreground);
-	border-radius: inherit;
-	opacity: 0.25;
+.mt-hint.mt-on {
+	--mt-ring: var(--theme--primary-accent);
+}
+
+.mt-bars .mt-hint {
+	box-shadow:
+		inset 0 1px 0 0 var(--mt-ring),
+		inset 0 -1px 0 0 var(--mt-ring);
 }
 
 .mt-line {

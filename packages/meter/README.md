@@ -13,8 +13,9 @@ A meter interface and display for [Directus](https://directus.io). A number whic
 - **The value as text,** at the end of the row: the percentage ("58%"), the value itself ("7") or the value over the maximum ("7 / 12"), written the way the language of the user writes numbers. It can be switched off.
 - **Honest at the edges.** The percentage is a whole number, but a value which is not yet at the maximum never reads "100%", and one which has left the minimum never reads "0%". A value beyond the range fills or empties the bar and prints what it is, such as "150%". A field without a value has a dashed outline and a dash, and does not pass for a field at zero.
 - **Colour by value.** A list of thresholds gives the bar another colour from a value upward: red below 50, amber from 50, green from 80. It works in the form and in every layout.
-- **Colour by place.** The same colours can belong to the places on the scale instead of to the current value: in steps, or blended into a gradient across the whole track, of which the fill shows its part. What is not filled can show them too, faded.
+- **Colour by place.** The same colours can belong to the places on the scale instead of to the current value: in steps, or blended into a gradient across the whole track, of which the fill shows its part. Or the one colour of the fill can shift from one threshold's colour towards the next as the value moves. What is not filled can show them too, faded.
 - **One bar, or a row of pieces.** The track can be cut into pills, segments, bars or dots, each of which is filled or not: five dots for a rating out of five, twenty segments for a percentage, fifty thin bars like a level meter. How many are drawn depends on the width the meter has. The text keeps the exact value.
+- **The way to the next piece.** Two switches show what a few pieces cannot: the pieces which are not filled are drawn small and the next one grows as the value comes near it, or the next one takes on its colour little by little, or both.
 - **A caption** under the bar, at the start of the line which has the value at its end, typed in or picked from the translation strings of the project.
 - **A display for layouts.** A short bar and the text, on one line: in the table at every row height, in cards, in the templates of related items and in the title of an item. Every bar is the same length.
 - **Configured once.** The display takes every option which it does not set itself from the interface of the field. It also reads the limits of the stock Input and the stock Slider, so it works on a field of either without any options.
@@ -22,8 +23,8 @@ A meter interface and display for [Directus](https://directus.io). A number whic
 - **Set with the pointer and the keys,** unless the field is read-only: by where the pointer is, by the piece it is on, or by how far it moves, in steps of your choosing. What is written is always on those steps, within the range and in the type of the field.
 - **A reading where the field is read-only.** A read-only meter cannot be changed, is no tab stop, and is not dimmed: a number which a flow maintains is normally read-only, and it stays as legible as any other.
 - **A real meter for assistive technology:** the role `meter`, or `slider` where it can be edited, with its range, its value and the text which is printed, named by the caption or else by the field.
-- **Looks like Directus** in light, dark and custom themes, follows right-to-left languages, and has no animation.
-- **Self-contained.** One app bundle of about 36 KB which imports only `vue` and `@directus/extensions-sdk`.
+- **Looks like Directus** in light, dark and custom themes, follows right-to-left languages, and has no animation but the short one of pieces which grow or fade in, where that is switched on.
+- **Self-contained.** One app bundle of about 43 KB which imports only `vue` and `@directus/extensions-sdk`.
 
 ![The same form in the dark theme](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/form-dark.png)
 
@@ -59,6 +60,8 @@ Every option is optional.
 | `visualization` | Visualization | `contiguous` | How the track is drawn. `contiguous`: one bar, filled exactly as far as the value has come. `pills`: pieces which are round at both ends. `segments`: pieces with square edges between them, so the row reads as one rounded bar which is cut. `bars`: thin square pieces, many of them, like a level meter. `dots`: circles. A piece is filled or it is not. |
 | `subdivisions` | Subdivisions | automatic | How many pieces are wanted, 2 or more. Empty means automatic: one for every unit of the range, or as many as fit. The width is the ceiling: where the number does not fit, fewer are drawn. The options form asks for it only while the visualization is not `contiguous`, which ignores it. |
 | `dotsLayout` | Dots Layout | `packed` | Where dots stand. `packed`: from the start, a fixed distance apart. `spread`: the first at the start edge, the last at the end edge, equal gaps between. The options form asks for it only for `dots`. |
+| `grow` | Grow | off | In the interface: the pieces which are not filled are drawn small, and the next one grows to its full size as the value comes near it. The options form asks for it only while the visualization is not `contiguous`, which ignores it. The display has no such option. |
+| `fade` | Fade In | off | The next piece takes on the colour of a filled one gradually, as the value comes near it. Asked for like `grow`, and `contiguous` ignores it too. |
 | `color` | Color | the primary colour | The colour of the bar. The colour picker stores a hex colour; a theme variable such as `var(--theme--danger)` can be written by hand. |
 | `thresholds` | Thresholds | none | A list of entries with a `value` and a `color`. From its value upward the bar has the colour of an entry. |
 | `activeColoring` | Active Coloring | `value` | The colours of what is filled. `value`: one colour, that of the current value. `blend`: one colour as well, which shifts towards the colour of the next threshold as the value comes near it. `steps`: each place on the scale has the colour of its own threshold. `gradient`: those colours blended from one to the next along the track. |
@@ -72,6 +75,7 @@ How they are read:
 - **The range.** A limit is a number, or the text of a number. Anything else counts as not set, and each limit has its own default. A minimum above the maximum counts as the two swapped. When both are the same number, the bar is empty below that number and full from it upward.
 - **Thresholds.** The bar takes the colour of the entry with the highest `value` which the field's value has reached, and the `color` option while it is below all of them. The order of the list does not matter. An entry without a number or without a colour is left out. Values are in the units of the field, not in percent, and may lie outside the range: an entry at 101 colours only what is over a maximum of 100.
 - **The visualization, the layout of the dots and the two colourings.** Each is one of its words. Anything else, and no word at all, is the default.
+- **`grow` and `fade`.** On or off. Anything else counts as not set, which is off.
 - **The input method.** One of its four words. Anything else is `automatic`.
 - **The step and the sensitivity.** A number above zero, or the text of one. Zero, a negative number and anything else is 1. On a field of the type Integer or Big Integer the step is rounded to a whole number of at least 1. A field which was a stock Slider keeps that Slider's step (`stepInterval`), and the Meter uses it while its own step is empty; the options form shows it as the placeholder.
 - **The number of subdivisions.** A whole number, or the text of one. Below 2 it counts as 2. Anything else, such as 3.7, counts as not set, which is automatic.
@@ -94,11 +98,25 @@ With any visualization but `contiguous` the track is a row of pieces, and each p
 Two things follow from this, and both are meant:
 
 - **The look depends on the width.** The same field can have ten pills in half of the form, 25 in a field as wide as the form and five in a table. A number which is set is kept wherever it fits; set a small one, or give the meter a range of a few units, for a meter which should look the same everywhere.
-- **A coarse meter rounds.** Five pieces for 0 to 100 show 44 and 58 alike, as two filled, and nothing marks a value just above the minimum. The text beside the pieces is what says the value.
+- **A coarse meter rounds.** Five pieces for 0 to 100 show 44 and 58 alike, as two filled, and nothing marks a value just above the minimum. The text beside the pieces is what says the value. `grow` and `fade`, below, show something of what lies between two pieces.
+
+### Pieces which grow and fade in
+
+![Six meters in a form, each a little short of filling its next piece. Dots, pills, segments and bars which grow: the pieces which are not filled are small, dots and pills in both directions and segments and bars in their height, and the first of them is larger than the ones after it. Five pills of which the fourth is a paler shade of the filled ones. And segments with both: the next one is larger than the rest and tinted](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/grow-light.png)
+
+A row of pieces says how many are filled, and nothing about how far the value has come towards the next one. Two switches show that. They are separate, so a meter can have neither, one or both, and both are off until they are set.
+
+- **`grow`:** the pieces which are not filled are drawn small. Dots have half their diameter, pills six tenths of their length and their height, segments and bars their full width and a third of their height. The piece which comes next grows from that size to its full size while the value comes the half of a piece which fills it.
+- **`fade`:** the piece which comes next has the look of a filled piece laid over it, by `activeColoring`, the more the nearer the value is. Under it the piece is what it was, by `inactiveColoring`.
+- **Only the next piece changes.** A piece is filled once the value has come half of it, as before. Until then the next piece grows or fades in by how far the value has come of that half, so it arrives at its full size and colour at the very moment it is filled, and nothing jumps. At a value which is a whole number of pieces, such as 3 of 5, nothing is under way: three pieces are filled and the others are small, or plain.
+- **Nothing moves.** A small piece is drawn smaller about its middle, in the place it has anyway. The gaps, the number of pieces, the height of the field and where a press counts are the same with and without it: a press on the place of a small piece fills up to it.
+- **A short transition** of about a seventh of a second when the value changes by a press, a key or from outside. While the pointer drags the value the pieces follow it at once, and there is none for a user who has asked the system for less motion, nor when a form opens.
+- **`grow` is for the form.** The pieces of the display in a layout are too small to be drawn smaller: the display never grows them, whatever its interface does, and has no such option. `fade` works in both, and the display takes it from the interface like any other option.
+- **A field without a value** keeps its dashed outlines, and one bar has no pieces to grow.
 
 ### Colouring
 
-![Six meters at 62% with a red colour, amber from 40 and green from 80 (the colouring `blend` is not in this picture): one bar in amber on the plain track, the same with the track in faded amber, one bar which is red up to 40 and amber after it with the rest of the track in faded amber and faded green, one bar which blends from red over amber towards green and goes on, faded, to the end, ten pills in steps, and fifty thin bars which blend](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/coloring-light.png)
+![Eight meters at 62% with a red colour, amber from 40 and green from 80: one bar in amber on the plain track, the same with the track in faded amber, one bar in a colour between amber and green, ten pills in that colour with the rest faded, one bar which is red up to 40 and amber after it with the rest of the track in faded amber and faded green, one bar which blends from red over amber towards green and goes on, faded, to the end, ten pills in steps, and fifty thin bars which blend](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/coloring-light.png)
 
 The `color` and the `thresholds` say which colour a value has. The two colourings say where that shows.
 
@@ -128,19 +146,23 @@ The `color` and the `thresholds` say which colour a value has. The two colouring
 ### Values outside the range, and no value
 
 - **Beyond the range** the bar stays within its track, full or empty, and the text is not held back: 150 of 100 prints "150%", and -20 prints "-20%". The number is what says that the value is beyond the range.
-- **Just above the minimum** the bar shows a dot, as wide as the bar is high, so the smallest value can be told from none. A row of pieces has no such mark: of ten, a value below a twentieth of the range fills none, and the text is what tells it from zero.
+- **Just above the minimum** the bar shows a dot, as wide as the bar is high, so the smallest value can be told from none. A row of pieces has no such mark unless its pieces grow or fade in: of ten, a value below a twentieth of the range fills none, and the text is what tells it from zero.
 - **A field without a value** (`null`, as on a new item without a default) is not a field at zero: the track is a dashed outline without a fill, the text is a dash, and a screen reader hears "No value" in the language of the user. A value which is not a number, which only a field of another type could hold, is treated the same.
 
 ### Editing
 
+![Two meters in a form which can be edited. One bar with the focus of the keyboard: a ring around the track and a small dot inside the bar at the end of its fill. Five pills of which two are filled, with the pointer over the fourth: the first four have a thin ring](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/editing-light.png)
+
 A meter in a form can be set with the pointer and the keyboard, unless the field is read-only, disabled by a condition or by the permissions of the user, or shown where nothing can be edited, as in the comparison of two revisions. There it is the reading described above and nothing done to it changes anything.
 
-**With the pointer** (mouse, pen or finger, the main button only). A drag goes on when the pointer leaves the field. A finger which moves sideways edits, and one which moves up or down scrolls the page as before.
+**With the pointer** (mouse, pen or finger, the main button only). A drag goes on when the pointer leaves the field.
 
 - **`contiguous`:** a press sets the value under the pointer, and a drag follows it. Past either end of the track it is the minimum or the maximum.
-- **`segment`:** a press or a drag fills the pieces up to and including the one under the pointer, and the value is that many of them: the third of five pieces on 0 to 5 is 3. A pointer between two pieces counts for the one before it. Before the start of the first piece it is the minimum, beyond the last one the maximum. Packed dots are where the dots are, not the whole width of the field. While the pointer rests over the meter, the pieces it would fill are marked; during a drag nothing is marked, since the fill itself follows the pointer.
+- **`segment`:** a press or a drag fills the pieces up to and including the one under the pointer, and the value is that many of them: the third of five pieces on 0 to 5 is 3. A pointer between two pieces counts for the one before it. Before the start of the first piece it is the minimum, beyond the last one the maximum. Packed dots are where the dots are, not the whole width of the field. The pieces up to the pointer have a thin ring, while it rests over the meter and all through a drag, so the ring is always where the pointer is.
 - **`relative`:** a press changes nothing. Moving towards the end of the track raises the value and moving towards its start lowers it, by the share of the meter's width which the pointer has moved, times the sensitivity: at 1, one width covers the whole range. Holding Shift makes it ten times finer. The meter asks the browser to lock the pointer for the drag, so the cursor disappears and the movement has no edge to run into; the lock ends with the release of the button. Where the browser refuses the lock or has none, and for a finger, the same works as an ordinary drag.
 - **`automatic`,** the default, is `contiguous` for the one bar. For pills, segments, bars and dots it is `segment` where every piece stands for exactly one step, as five dots do on 0 to 5, and `contiguous` otherwise, as for ten pills on 0 to 100, where a piece is ten steps and filling by the piece could only ever give 10, 20, 30. It is never `relative`. Where `segment` is set by hand on such a meter, a press on a piece writes the value nearest to that piece's share which leaves exactly the pieces up to it filled.
+
+**With a finger** the same, with one difference: a finger which comes down writes nothing yet. A tap sets the value when the finger is lifted. A finger which moves sideways by a few pixels drags the value from there on. One which moves up or down scrolls the page as on any other part of it, and has then written nothing at all, so a scroll which happens to start on a meter cannot leave an edit behind. Two fingers zoom the page as elsewhere.
 
 **With the keyboard.** The meter is one tab stop.
 
@@ -152,21 +174,23 @@ A meter in a form can be set with the pointer and the keyboard, unless the field
 | Home, End | The least and the most which can be set. |
 | Escape | During a drag: puts back the value from before the press, and ends the drag. |
 
-In a right-to-left language Left and Right swap, as the track itself does.
+In a right-to-left language Left and Right swap, as the track itself does. A key counts in steps from the step the value is on, so every press moves the value, and by exactly one step or ten, also where the values are large and the steps fine, as for an amount of millions to the cent.
 
 **The value which is written.**
 
 - **On the steps.** The values which can be set are the minimum, the minimum plus one step, plus two, and so on, and the maximum, also where the steps miss it: steps of 3 from 0 to 10 give 0, 3, 6, 9 and 10. A step up from a value between two of them goes to the next one.
 - **Within the range,** always.
 - **A whole type keeps to whole numbers.** On a field of the type Integer or Big Integer whose limits are not whole, such as 0.5 to 5.5, the values which can be set are the whole numbers within the range, 1 to 5, and the steps are counted from the first of them. The bar is still drawn against the limits as they are; a screen reader is told the range which can be set.
-- **A step larger than the range** leaves two values, the two ends, and the nearer one is written. **A step so small that the range holds more than a thousand million of them** is no step: the value under the pointer is written as it is, to twelve digits.
+- **A step larger than the range** leaves two values, the two ends, and the nearer one is written. **A range which holds more steps than can be counted exactly,** more than nine thousand million million of them, has none: the value under the pointer is written as it is, to twelve digits. Anything less is on its steps: 0 to 2,000,000,000 with a step of 1 writes whole numbers.
 - **A plain number,** as the stock Slider writes one for every type. A step of 0.1 writes 0.3 and not 0.30000000000000004. A field of the type Integer or Big Integer gets a whole number.
 - **Only a change is written.** A click where the value already is leaves the item unchanged.
 - **A field without a value** gets one from the first press with `contiguous` and `segment`, from the first movement of a drag with `relative`, where a press alone changes nothing, and from the first key with all three. A value which was stored beyond the range is shown as it is, and comes into the range in the same way: with the first press, the first movement or the first key.
 - **Nothing clears the value.** **Clear Value** in the menu of the field's label does that.
 - Escape puts back exactly what the field held before the press, whatever that was.
 
-**What shows that a meter can be edited:** the cursor over the track, a dot inside the bar at the end of the fill while the pointer is over it, while it has the focus of the keyboard and during a drag, and a ring around the track while it has that focus. None of it takes any room: a meter which can be edited is as high as one which cannot, and its caption, its text and the note of the form are in the same places.
+**The target is taller than the track.** The track is 12px high. For a mouse a press up to 8px above it and in the 4px under it counts as a press on the track at the same place along it, 24px in all; the caption and the value text are never part of it. For a finger the whole area above the caption and the text counts. The target never leaves the meter's own area: where the area has less than 8px free above the track it is as high as what is free, and under a caption of several lines, where the track is at the top of the area, there is none above the track, so the label of the field keeps its own presses. A meter with neither caption nor text takes a press up to 8px under its track as well.
+
+**What shows that a meter can be edited:** the cursor over the track and beside it, a dot inside the bar at the end of the fill while the pointer is over it, while it has the focus of the keyboard and during a drag, a thin ring on the pieces up to the pointer where the pieces are filled by it, and a ring around the track while it has the keyboard's focus. None of it takes any room: a meter which can be edited is as high as one which cannot, and its caption, its text and the note of the form are in the same places.
 
 ### By value, in the form
 
@@ -179,7 +203,8 @@ The conditions of a field (Settings, Data Model, the field, **Conditions**) can 
 The **Meter** display (`meter`) is for the same field in a layout. It draws a bar of a fixed length, 4.5rem, and then the text, on one line.
 
 - **It is never edited.** `input`, `step` and `sensitivity` are options of the interface alone.
-- **It has the other options of the interface,** under the same keys: `min`, `max`, `label`, `indicator`, `indicatorFormat`, `visualization`, `subdivisions`, `dotsLayout`, `color`, `thresholds`, `activeColoring` and `inactiveColoring`.
+- **It never grows its pieces.** `grow` is an option of the interface alone too, and one which is set there does not reach the display.
+- **It has the other options of the interface,** under the same keys: `min`, `max`, `label`, `indicator`, `indicatorFormat`, `visualization`, `subdivisions`, `dotsLayout`, `fade`, `color`, `thresholds`, `activeColoring` and `inactiveColoring`.
 - **An option which was never set is taken from the interface of the field,** each on its own. A field which is set up with the Meter interface needs no display options at all, and its form and its layouts cannot disagree. The options form of the display shows what it takes over: the limits, the caption and the number of subdivisions as placeholders, the rest as the state of its inputs. Nothing of that is stored until an option is changed.
 - **An option which is set is the display's own,** whatever the interface has. So a field which had display options before, with a range, caption or colour other than its interface's, keeps drawing by them.
 - **An option which is emptied again** depends on which one it is, and the options form always shows what is drawn. Emptied limits, an emptied caption, an emptied number of subdivisions and an emptied dropdown of the visualization, of the layout of the dots or of a colouring are taken from the interface again, and their placeholders say so. Those dropdowns have a choice "Deselect" in the options form of the display for that. An emptied colour or list of thresholds stays empty and means none here: the primary colour, and no thresholds, also where the interface has some.
@@ -204,6 +229,14 @@ Built and tested against Directus 11.17.4. The `host` range starts at 11.15.0, b
 
 The browser tests run in Chrome. The form and the table were also looked at in Firefox and Safari's engine, where they draw the same; it has not been tried with a screen reader.
 
+### In a stock Repeater
+
+A Meter can be the interface of a field of a stock Repeater, and the Meter display can draw that field in the rows of the Repeater.
+
+- **The interface.** In the dialog where such a field is set up, every option of the Meter can be set; the ones which apply only sometimes (Subdivisions, Dots Layout, Grow, Fade In, Sensitivity) appear there as they do in the ordinary field settings, when the option they depend on is chosen. A meter in the drawer of a row is drawn by these options and writes plain numbers into the row.
+- **The display.** The same dialog has a group **Display**, which is closed at first. Choose **Meter** there and the rows of the Repeater draw the field as a meter, where they otherwise show the plain number. A row is drawn by the display's options from that dialog, and by the options of the interface for whatever those leave unset, as in a table.
+- **What that dialog does not tell the options forms** is the field: neither its type nor, for the form of the display, the options of its interface. So the Step input takes decimals there also for a whole type (the meter itself still rounds the step to a whole number), and the form of the display cannot show what an unset option comes to: its empty inputs say "As in the interface", and Subdivisions, Dots Layout and Fade In show until a visualization is chosen there which rules them out.
+
 ### Coming from the stock Slider or Input
 
 Directus keeps the options of a field when its interface changes. A field which was a Slider keeps its `minValue` and `maxValue`, and the Meter reads them wherever its own `min` and `max` are not set, so the range carries over; the options form shows them as the placeholders of the two limits. `min` and `max` of the stock Input are the Meter's own keys. The Slider's step, `stepInterval`, is the Meter's step while it has none of its own. The other options of both are ignored.
@@ -216,13 +249,13 @@ A field can end up with both pairs, for example one which was a Meter or an Inpu
 - No gesture types a number or clears the value. **Edit Raw Value** and **Clear Value** in the menu of the field's label do.
 - The relative method needs a browser which locks the pointer for the disappearing cursor; without one it is an ordinary drag, which ends at the edge of the screen.
 - Horizontal, in one height. There is no ring and no target marker.
-- A piece is filled or not: there is no half-filled piece. How many pieces a meter has depends on its width, and can differ between the form and a layout. Packed dots do not use the width of a wide field; spread ones do.
+- A piece is filled or not: there is no half-filled piece. `grow` and `fade` show the way to the next piece, with fixed small sizes and for the next piece only; the display does not grow pieces. How many pieces a meter has depends on its width, and can differ between the form and a layout. Packed dots do not use the width of a wide field; spread ones do.
 - The colours of the gradient are blended by the browser in sRGB, from stop to stop. There are no other ways to blend, and no stops but the colour and the thresholds.
 - The pieces are counted in pixels of the app's usual text size, 16 to the rem.
 - A threshold means "from this value upward". There are no other comparisons.
 - A minimum above the maximum is read as the two swapped, not as a meter which runs backwards.
 - The text has no prefix or suffix. A unit can go into the caption.
-- The names of the options "Value Text", "Thresholds", "Visualization", "Subdivisions", "Dots Layout", "Active Coloring", "Inactive Coloring", "Input Method", "Step" and "Sensitivity", the choices of their dropdowns, their notes, the notice in the options form of the display and the choice "Value / Maximum" are in English only. The caption, "No value" and the numbers follow the language of the user.
+- The names of the options "Value Text", "Thresholds", "Visualization", "Subdivisions", "Dots Layout", "Grow", "Fade In", "Active Coloring", "Inactive Coloring", "Input Method", "Step" and "Sensitivity", the choices of their dropdowns, their notes, the notice in the options form of the display and the choice "Value / Maximum" are in English only. The caption, "No value" and the numbers follow the language of the user.
 
 ## Development
 
@@ -241,7 +274,7 @@ The code is laid out as follows:
 - `src/interface.ts` declares the interface, `src/interface.vue` is the meter of the form with its template and styles, and `src/preview.ts` is the drawing in the interface picker.
 - `src/display.ts` declares the display with its text form, and `src/display.vue` draws it.
 - `src/options.ts` is the options form which both entries share.
-- `src/meter.ts` is everything which needs no browser: what the options and a value come to, how much of the track is filled, in how many pieces it is drawn and how many of them are filled, in which colour, and what the text says. It uses no Vue, DOM or Directus APIs, so the tests run it in Node.
+- `src/meter.ts` is everything which needs no browser: what the options and a value come to, how much of the track is filled, in how many pieces it is drawn and how many of them are filled, in which colour and at which size, what the text says, and which value a press or a key writes. It uses no Vue, DOM or Directus APIs, so the tests run it in Node.
 - `tests` holds the unit tests of `src/meter.ts` and `src/options.ts`, and `sandbox` the browser tests which run in a real Directus.
 
 ## License

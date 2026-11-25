@@ -16,6 +16,10 @@ import { optionFields } from './options';
  * field. The display takes from them whatever its own options do not set, so
  * a field is configured once, in its interface.
  *
+ * The dialog of a stock Repeater's field hands the options form a stand-in
+ * without `meta` instead of the field. The form is then told that the options
+ * of the interface are not known (`optionFields`).
+ *
  * Interfaces and displays are registered apart, so this id can be the id of
  * the interface, as the stock `boolean` interface and display share theirs.
  * It is stored in the schema of every project which uses the display: never
@@ -29,5 +33,5 @@ export default defineDisplay({
 	types: ['integer', 'bigInteger', 'float', 'decimal'],
 	component: DisplayComponent,
 	handler: (value, options, context) => textHandler(value, options, context, pageLanguage()),
-	options: ({ field }) => optionFields(field?.meta?.options ?? {}, true, field?.meta?.display_options),
+	options: ({ field }) => optionFields(field?.meta?.options ?? {}, true, undefined, field?.meta != null),
 });

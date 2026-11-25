@@ -16,6 +16,18 @@ const VISUALIZATIONS: Choice[] = [
 	{ text: 'Dots', value: 'dots' },
 ];
 
+/** What an empty input says in the form of a display which cannot see the options of its interface. */
+const FROM_INTERFACE = 'As in the interface';
+
+/** The visualizations which cut the track into pieces. */
+const PIECES = ['pills', 'segments', 'bars', 'dots'];
+
+/** The conditions of an option which applies only while the track is cut into pieces. Each rule has one key: the app passes over any other. */
+const SHOWN_FOR_PIECES = [
+	{ name: 'One bar', rule: { visualization: { _eq: 'contiguous' } }, hidden: true },
+	{ name: 'Pieces', rule: { visualization: { _in: PIECES } }, hidden: false },
+];
+
 const DOTS_LAYOUTS: Choice[] = [
 	{ text: 'Packed', value: 'packed' },
 	{ text: 'Spread', value: 'spread' },
@@ -61,10 +73,27 @@ const INACTIVE_COLORINGS: Choice[] = [
  * empty. What is drawn follows that: emptied limits and an emptied caption
  * are taken over again, an emptied colour or list of thresholds means none.
  *
- * `own` are the options of the entry as the form holds them at the moment,
- * which only decide which inputs there are: the number of subdivisions is
- * asked for while the track is cut into pieces, and the layout of the dots
- * while those pieces are dots.
+ * Five options apply only sometimes: the number of subdivisions, `grow` and
+ * `fade` while the track is cut into pieces, the layout of the dots while
+ * those pieces are dots, the sensitivity for the relative method. `grow` is
+ * an option of the interface alone: the pieces of a display never grow. They are always in the
+ * list, hidden, with conditions on the values of the form itself which show
+ * them. The form evaluates those wherever it is drawn. The list cannot be
+ * made to depend on the options as they are being edited: the ordinary field
+ * settings hand the function the field with its options, but the dialog in
+ * which a stock Repeater's fields are set up hands it a stand-in without any
+ * (`{ type: 'unknown' }`, in `system-interface-options` of Directus
+ * 11.17.4), and an option which is left out there can never be reached.
+ * `hidden` itself is what applies while the deciding option is not among the
+ * form's values, which for the display is what the interface has.
+ *
+ * That dialog also has a display with its options, in a group which starts
+ * closed, and hands the display's form the same stand-in. There the options
+ * of the interface are not to be had (`known` is false), so the form of the
+ * display cannot show what an unset option comes to: its placeholders say
+ * that the interface decides, its dropdowns start empty, and the number of
+ * subdivisions, `fade` and the layout of the dots show until the form's own
+ * visualization rules them out.
  *
  * The dropdowns of the look (`visualization`, `dotsLayout`, `activeColoring`,
  * `inactiveColoring`) fall back like the limits: an emptied one is taken from
@@ -76,13 +105,15 @@ const INACTIVE_COLORINGS: Choice[] = [
  * Directus 11.17.4). The names are the app's own strings where one says
  * exactly the same.
  */
-export function optionFields(fallback: unknown, display: boolean, own?: unknown, type?: unknown): Fields {
+export function optionFields(fallback: unknown, display: boolean, type?: unknown, known = true): Fields {
 	const base = readOptions(undefined, fallback);
 
-	// How the meter is drawn when nothing is set here, and how it is drawn as the form stands. The number of
-	// subdivisions is only asked for while the track has any: the app builds the form again when an option changes.
+	// How the meter is drawn when nothing is set here.
 	const baseLook = readLook(undefined, fallback);
-	const look = readLook(own, fallback);
+
+	// The form of a display which was not told its field: what an unset option comes to is not known here.
+	const blind = display && !known;
+	const unset = (text: string) => (blind ? FROM_INTERFACE : text);
 
 	// A dropdown of the look. It shows what it comes to while nothing is stored. In the form of the display it can
 	// be emptied, which hands the option back to the interface, and then shows what it comes to as its placeholder.
@@ -93,12 +124,10 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 		meta: {
 			width: 'half',
 			interface: 'select-dropdown',
-			options: display ? { choices, allowNone: true, placeholder: choices.find((choice) => choice.value === preset)?.text } : { choices },
+			options: display ? { choices, allowNone: true, placeholder: unset(choices.find((choice) => choice.value === preset)?.text ?? '') } : { choices },
 			note,
 		},
-		schema: {
-			default_value: preset,
-		},
+		...(blind ? {} : { schema: { default_value: preset } }),
 	});
 
 	const fields: Fields = [
@@ -110,7 +139,7 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 				width: 'half',
 				interface: 'input',
 				options: {
-					placeholder: String(base.min),
+					placeholder: unset(String(base.min)),
 				},
 			},
 		},
@@ -122,7 +151,7 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 				width: 'half',
 				interface: 'input',
 				options: {
-					placeholder: String(base.max),
+					placeholder: unset(String(base.max)),
 				},
 			},
 		},
@@ -134,7 +163,7 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 				width: 'full',
 				interface: 'system-input-translated-string',
 				options: {
-					placeholder: base.label ?? 'Enter a caption...',
+					placeholder: unset(base.label ?? 'Enter a caption...'),
 				},
 				note: display ? 'Shown when the mouse rests on the bar, and read out by screen readers.' : 'A caption under the bar.',
 			},
@@ -167,32 +196,79 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 						{ text: '$t:value', value: 'value' },
 						{ text: 'Value / Maximum', value: 'fraction' },
 					],
+					...(blind ? { placeholder: FROM_INTERFACE } : {}),
 				},
 			},
-			schema: {
-				default_value: base.indicatorFormat,
-			},
+			...(blind ? {} : { schema: { default_value: base.indicatorFormat } }),
 		},
 		dropdown('visualization', 'Visualization', VISUALIZATIONS, baseLook.visualization, 'One bar, or a row of pieces which are each filled or not.'),
-		...(look.visualization === 'contiguous'
+		{
+			field: 'subdivisions',
+			name: 'Subdivisions',
+			type: 'integer',
+			meta: {
+				width: 'half',
+				interface: 'input',
+				options: {
+					placeholder: unset(baseLook.subdivisions === null ? '$t:automatic' : String(baseLook.subdivisions)),
+					min: MIN_SUBDIVISIONS,
+				},
+				note: `How many pieces, at least ${MIN_SUBDIVISIONS}. The width is the ceiling: where they do not fit, fewer are drawn. Left empty: one for every unit of the range, or as many as fit.`,
+				hidden: !blind && baseLook.visualization === 'contiguous',
+				conditions: SHOWN_FOR_PIECES,
+			},
+		},
+		{
+			...dropdown('dotsLayout', 'Dots Layout', DOTS_LAYOUTS, baseLook.dotsLayout, 'Packed: from the start. Spread: from edge to edge.'),
+			meta: {
+				...dropdown('dotsLayout', 'Dots Layout', DOTS_LAYOUTS, baseLook.dotsLayout, 'Packed: from the start. Spread: from edge to edge.').meta,
+				hidden: !blind && baseLook.visualization !== 'dots',
+				conditions: [
+					{ name: 'Not dots', rule: { visualization: { _in: VISUALIZATIONS.map((choice) => choice.value).filter((value) => value !== 'dots') } }, hidden: true },
+					{ name: 'Dots', rule: { visualization: { _eq: 'dots' } }, hidden: false },
+				],
+			},
+		},
+		...(display
 			? []
-			: ([
+			: [
 					{
-						field: 'subdivisions',
-						name: 'Subdivisions',
-						type: 'integer',
+						field: 'grow',
+						name: 'Grow',
+						type: 'boolean' as const,
 						meta: {
-							width: 'half',
-							interface: 'input',
+							width: 'half' as const,
+							interface: 'boolean',
 							options: {
-								placeholder: baseLook.subdivisions === null ? '$t:automatic' : String(baseLook.subdivisions),
-								min: MIN_SUBDIVISIONS,
+								label: 'Grow the next piece',
 							},
-							note: `How many pieces, at least ${MIN_SUBDIVISIONS}. The width is the ceiling: where they do not fit, fewer are drawn. Left empty: one for every unit of the range, or as many as fit.`,
+							note: 'Pieces which are not filled are drawn small, and the next one grows as the value comes near it.',
+							hidden: baseLook.visualization === 'contiguous',
+							conditions: SHOWN_FOR_PIECES,
+						},
+						schema: {
+							default_value: false,
 						},
 					},
-				] satisfies Fields)),
-		...(look.visualization === 'dots' ? [dropdown('dotsLayout', 'Dots Layout', DOTS_LAYOUTS, baseLook.dotsLayout, 'Packed: from the start. Spread: from edge to edge.')] : []),
+				]),
+		{
+			field: 'fade',
+			name: 'Fade In',
+			type: 'boolean',
+			meta: {
+				width: 'half',
+				interface: 'boolean',
+				options: {
+					label: 'Fade in the next piece',
+				},
+				note: 'The next piece takes on its colour gradually, as the value comes near it.',
+				hidden: !blind && baseLook.visualization === 'contiguous',
+				conditions: SHOWN_FOR_PIECES,
+			},
+			schema: {
+				default_value: baseLook.fade,
+			},
+		},
 		{
 			field: 'color',
 			name: '$t:color',
@@ -262,8 +338,7 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 
 	if (!display) {
 		// How the meter is edited, which only the interface is. The step shows what it comes to while it is empty:
-		// the step a stock Slider left behind, or 1. The sensitivity is only asked for by the method which has one.
-		const editing = readEditing(own, type);
+		// the step a stock Slider left behind, or 1. The sensitivity is shown by the method which has one.
 		const base = readEditing({ stepInterval: (fallback as Record<string, unknown> | null)?.['stepInterval'] }, type);
 
 		return [
@@ -285,7 +360,7 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 			{
 				field: 'step',
 				name: 'Step',
-				type: editing.whole ? 'integer' : 'float',
+				type: base.whole ? 'integer' : 'float',
 				meta: {
 					width: 'half',
 					interface: 'input',
@@ -296,24 +371,22 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 					note: 'The distance between two values which can be set, counted from the minimum.',
 				},
 			},
-			...(editing.input === 'relative'
-				? ([
-						{
-							field: 'sensitivity',
-							name: 'Sensitivity',
-							type: 'float',
-							meta: {
-								width: 'half',
-								interface: 'input',
-								options: {
-									placeholder: '1',
-									min: 0,
-								},
-								note: 'At 1, moving the pointer by the width of the meter covers the whole range. Shift makes it ten times finer.',
-							},
-						},
-					] satisfies Fields)
-				: []),
+			{
+				field: 'sensitivity',
+				name: 'Sensitivity',
+				type: 'float',
+				meta: {
+					width: 'half',
+					interface: 'input',
+					options: {
+						placeholder: '1',
+						min: 0,
+					},
+					note: 'At 1, moving the pointer by the width of the meter covers the whole range. Shift makes it ten times finer.',
+					hidden: true,
+					conditions: [{ name: 'Relative', rule: { input: { _eq: 'relative' } }, hidden: false }],
+				},
+			},
 		];
 	}
 
@@ -326,7 +399,9 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 				interface: 'presentation-notice',
 				special: ['alias', 'no-data'],
 				options: {
-					text: 'An option which is not set here is taken from the interface of the field, and shown as it is set there. Emptied limits and an emptied label are taken from it again, as are the emptied dropdowns of the look and the colouring. An emptied colour or list of thresholds means none.',
+					text: blind
+						? 'An option which is not set here is taken from the interface of the field. This dialog cannot show what is set there: an empty input stands for it. An emptied colour or list of thresholds means none.'
+						: 'An option which is not set here is taken from the interface of the field, and shown as it is set there. Emptied limits and an emptied label are taken from it again, as are the emptied dropdowns of the look and the colouring. An emptied colour or list of thresholds means none.',
 				},
 			},
 		},

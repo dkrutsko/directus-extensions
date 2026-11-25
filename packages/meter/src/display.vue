@@ -2,7 +2,7 @@
 import { useStores } from '@directus/extensions-sdk';
 import { computed } from 'vue';
 import { useLanguage } from './i18n';
-import { DISPLAY_WIDTH, PIECE_SIZES, drawingOf, isEmpty, numberOf, pieceCount, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
+import { DISPLAY_WIDTH, PIECE_SIZES, drawingOf, fillScale, isEmpty, numberOf, pieceCount, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
 import type { Paint } from './meter';
 
 /**
@@ -43,6 +43,7 @@ const props = defineProps<{
 	visualization?: unknown;
 	subdivisions?: unknown;
 	dotsLayout?: unknown;
+	fade?: unknown;
 	activeColoring?: unknown;
 	inactiveColoring?: unknown;
 }>();
@@ -84,7 +85,7 @@ const tooltip = computed(() => tooltipOf(reading.value.text, options.value.label
 // layout, by the same rule as in the form.
 const look = computed(() => readLook(props, props.interfaceOptions));
 const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH));
-const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value));
+const drawing = computed(() => drawingOf({ ...look.value, grow: false }, options.value, reading.value, count.value, props.value));
 
 const dots = computed(() => drawing.value.pieces !== null && look.value.visualization === 'dots');
 const packed = computed(() => dots.value && look.value.dotsLayout !== 'spread');
@@ -109,12 +110,15 @@ const rootStyle = computed(() => {
 
 const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.scale === 'weak' ? 'md-paint md-weak' : 'md-paint');
 
+// What a surface is painted with, as an inline style: its one colour, or its place on the scale.
+const paintStyle = (paint: Paint, at: number) => (paint.color !== null ? { backgroundColor: paint.color } : paint.scale !== null ? { '--md-at': at } : undefined);
+
 // The fill of the one bar. Painted with the scale, it is the first part of an image as long as the bar.
 const fillStyle = computed(() => {
 	const { fill } = drawing.value;
 	const inlineSize = `${reading.value.fraction * 100}%`;
 
-	if (fill.scale !== null) return { inlineSize, '--md-n': 1 / reading.value.fraction };
+	if (fill.scale !== null) return { inlineSize, '--md-n': fillScale(reading.value.fraction) };
 	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
 });
 
@@ -161,6 +165,13 @@ const fillStyle = computed(() => {
 // 4.5rem, and not a multiple of the fill, so that no stop moves by a pixel
 // when the value changes.
 //
+// The pieces of a display never grow (`grow` is the interface's alone): they
+// are too small to be drawn smaller. The piece which fades in (`fade`) has
+// one child (`md-over`) which covers it, painted as the piece will be once it
+// is filled, at the opacity of how far the value has come into it. Only that
+// one piece has a child and the class `md-under`. There is no transition in a
+// display.
+//
 // In a display template the box is one piece, like the track: where it does
 // not fit the line, the ellipsis of the template stands for it. The number
 // itself is marked as running from the left (`dir="ltr"`): a number carries no
@@ -205,11 +216,16 @@ const fillStyle = computed(() => {
 				v-for="(piece, index) in drawing.pieces"
 				:key="index"
 				class="md-part"
-				:class="[{ 'md-on': piece.filled }, paintClass(piece.paint)]"
-				:style="
-					piece.paint.color !== null ? { backgroundColor: piece.paint.color } : piece.paint.scale !== null ? { '--md-at': piece.at } : undefined
-				"
-			/>
+				:class="[{ 'md-on': piece.filled, 'md-under': piece.over !== null }, paintClass(piece.paint)]"
+				:style="paintStyle(piece.paint, piece.at)"
+			>
+				<span
+					v-if="piece.over !== null"
+					class="md-over"
+					:class="paintClass(piece.over.paint)"
+					:style="{ ...paintStyle(piece.over.paint, piece.at), opacity: piece.over.opacity }"
+				/>
+			</span>
 		</span>
 		<span v-if="options.indicator" class="md-text">
 			<span dir="ltr" v-text="reading.text" />
@@ -327,6 +343,17 @@ const fillStyle = computed(() => {
 
 .md-on {
 	background-color: var(--theme--primary);
+}
+
+.md-under {
+	position: relative;
+}
+
+.md-over {
+	position: absolute;
+	inset: 0;
+	background-color: var(--theme--primary);
+	border-radius: inherit;
 }
 
 .md-track:not(:last-child),

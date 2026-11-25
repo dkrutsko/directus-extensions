@@ -17,7 +17,7 @@ describe('the options form of the interface', () => {
 	const fields = optionFields({}, false);
 
 	test('has its options, under their keys and in this order', () => {
-		expect(fields.map((field) => field.field)).toEqual(['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'color', 'thresholds', 'activeColoring', 'inactiveColoring', 'input', 'step']);
+		expect(fields.map((field) => field.field)).toEqual(['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'subdivisions', 'dotsLayout', 'grow', 'fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring', 'input', 'step', 'sensitivity']);
 	});
 
 	test('the limits are number inputs which hand over numbers, with the defaults as placeholders', () => {
@@ -77,7 +77,7 @@ describe('the options form of the display', () => {
 	const fields = optionFields(inherited, true);
 
 	test('starts with a notice which stores nothing, and has the same options', () => {
-		expect(fields.map((field) => field.field)).toEqual(['inherited', 'min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'color', 'thresholds', 'activeColoring', 'inactiveColoring']);
+		expect(fields.map((field) => field.field)).toEqual(['inherited', 'min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'subdivisions', 'dotsLayout', 'fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring']);
 		expect(fields[0]?.type).toBe('alias');
 		expect(fields[0]?.meta?.interface).toBe('presentation-notice');
 		expect(fields[0]?.meta?.special).toEqual(['alias', 'no-data']);
@@ -130,12 +130,38 @@ describe('the options form of the display', () => {
 	});
 });
 
+/**
+ * Whether the form shows a field for the values it holds, as the app's forms decide it (`applyConditions` in
+ * app/src/utils/apply-conditions.ts of Directus 11.17.4): the conditions of the field are gone through from the
+ * last to the first, the first whose rule the values meet says whether the field is hidden, and without one the
+ * field's own `hidden` holds. The values are the defaults of the form's fields with what was set laid over them;
+ * an option which was emptied is `null` there, which meets no rule.
+ */
+function shown(fields: ReturnType<typeof optionFields>, key: string, set: Record<string, unknown> = {}): boolean {
+	const defaults = Object.fromEntries(fields.filter((field) => field.schema?.default_value !== undefined).map((field) => [field.field, field.schema?.default_value]));
+	const values: Record<string, unknown> = { ...defaults, ...set };
+	const field = fieldOf(fields, key);
+	const conditions = [...((field.meta?.conditions ?? []) as { rule: Record<string, { _eq?: unknown; _in?: unknown[] }>; hidden?: boolean }[])].reverse();
+
+	const met = conditions.find((condition) => {
+		const entries = Object.entries(condition.rule);
+		if (entries.length !== 1) return false;
+
+		const [name, test] = entries[0]!;
+		return '_eq' in test ? values[name] === test._eq : (test._in ?? []).includes(values[name]);
+	});
+
+	return !(met ? met.hidden : field.meta?.hidden);
+}
+
 describe('the options of the look', () => {
 	const keys = (fields: ReturnType<typeof optionFields>) => fields.map((field) => field.field);
 	const choices = (fields: ReturnType<typeof optionFields>, key: string) => (fieldOf(fields, key).meta?.options?.['choices'] as { text: string; value: string }[]).map((choice) => choice.value);
-	const BASE = ['min', 'max', 'label', 'indicator', 'indicatorFormat'];
-	const COLOURS = ['color', 'thresholds', 'activeColoring', 'inactiveColoring'];
-	const EDITING = ['input', 'step'];
+	const BEFORE = ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'subdivisions', 'dotsLayout'];
+	const AFTER = ['fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring'];
+	// The interface has `grow`, which the display has not.
+	const LOOK = [...BEFORE, 'grow', ...AFTER];
+	const SHOWN = [...BEFORE, ...AFTER];
 
 	test('a dropdown with the five visualizations, which shows one bar until another is chosen', () => {
 		const fields = optionFields({}, false);
@@ -152,21 +178,58 @@ describe('the options of the look', () => {
 		expect(preset(fields, 'visualization')).toBe('contiguous');
 	});
 
-	test('the number of subdivisions is asked for only while the track is cut into pieces, the layout of the dots only for dots', () => {
-		expect(keys(optionFields({}, false))).toEqual([...BASE, 'visualization', ...COLOURS, ...EDITING]);
-		expect(keys(optionFields({}, false, {}))).toEqual([...BASE, 'visualization', ...COLOURS, ...EDITING]);
-		expect(keys(optionFields({}, false, { visualization: 'contiguous', subdivisions: 4, dotsLayout: 'spread' }))).toEqual([...BASE, 'visualization', ...COLOURS, ...EDITING]);
-		expect(keys(optionFields({}, false, { visualization: 'rings' }))).toEqual([...BASE, 'visualization', ...COLOURS, ...EDITING]);
+	test('every option is always in the list, whatever the field and whatever is set: none can be out of reach', () => {
+		// The ordinary field settings hand over the field; the dialog of a stock Repeater's fields hands over a
+		// stand-in without options or a type. The list is the same.
+		expect(keys(optionFields({}, false))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
+		expect(keys(optionFields({}, false, 'unknown'))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
+		expect(keys(optionFields({ visualization: 'dots', input: 'relative' }, false, 'integer'))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
+		expect(keys(optionFields({}, true))).toEqual(['inherited', ...SHOWN]);
+		expect(keys(optionFields({ visualization: 'dots' }, true))).toEqual(['inherited', ...SHOWN]);
+	});
+
+	test('the number of subdivisions shows only while the track is cut into pieces, the layout of the dots only for dots', () => {
+		const fields = optionFields({}, false);
+
+		// Nothing set, which is one bar: neither.
+		expect(shown(fields, 'subdivisions')).toBe(false);
+		expect(shown(fields, 'dotsLayout')).toBe(false);
+		expect(shown(fields, 'subdivisions', { visualization: 'contiguous', subdivisions: 4, dotsLayout: 'spread' })).toBe(false);
+		expect(shown(fields, 'dotsLayout', { visualization: 'contiguous', dotsLayout: 'spread' })).toBe(false);
 
 		for (const visualization of ['pills', 'segments', 'bars']) {
-			expect(keys(optionFields({}, false, { visualization }))).toEqual([...BASE, 'visualization', 'subdivisions', ...COLOURS, ...EDITING]);
+			expect(shown(fields, 'subdivisions', { visualization }), visualization).toBe(true);
+			expect(shown(fields, 'dotsLayout', { visualization }), visualization).toBe(false);
 		}
 
-		expect(keys(optionFields({}, false, { visualization: 'dots' }))).toEqual([...BASE, 'visualization', 'subdivisions', 'dotsLayout', ...COLOURS, ...EDITING]);
+		expect(shown(fields, 'subdivisions', { visualization: 'dots' })).toBe(true);
+		expect(shown(fields, 'dotsLayout', { visualization: 'dots' })).toBe(true);
+
+		// Every other option shows always: it has no condition and is not hidden.
+		for (const key of ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'color', 'thresholds', 'activeColoring', 'inactiveColoring', 'input', 'step']) {
+			expect(fieldOf(fields, key).meta?.hidden, key).toBeUndefined();
+			expect(fieldOf(fields, key).meta?.conditions, key).toBeUndefined();
+		}
+	});
+
+	test('the conditions are on the values of the form itself, one option each, so the form can decide them anywhere', () => {
+		const fields = optionFields({}, false);
+
+		expect(fieldOf(fields, 'subdivisions').meta?.conditions).toEqual([
+			{ name: 'One bar', rule: { visualization: { _eq: 'contiguous' } }, hidden: true },
+			{ name: 'Pieces', rule: { visualization: { _in: ['pills', 'segments', 'bars', 'dots'] } }, hidden: false },
+		]);
+
+		expect(fieldOf(fields, 'dotsLayout').meta?.conditions).toEqual([
+			{ name: 'Not dots', rule: { visualization: { _in: ['contiguous', 'pills', 'segments', 'bars'] } }, hidden: true },
+			{ name: 'Dots', rule: { visualization: { _eq: 'dots' } }, hidden: false },
+		]);
+
+		expect(fieldOf(fields, 'sensitivity').meta?.conditions).toEqual([{ name: 'Relative', rule: { input: { _eq: 'relative' } }, hidden: false }]);
 	});
 
 	test('a whole-number input from 2 upward with no largest, which says that the width is the ceiling', () => {
-		const field = fieldOf(optionFields({}, false, { visualization: 'pills' }), 'subdivisions');
+		const field = fieldOf(optionFields({}, false), 'subdivisions');
 
 		expect(field.name).toBe('Subdivisions');
 		expect(field.type).toBe('integer');
@@ -179,7 +242,7 @@ describe('the options of the look', () => {
 	});
 
 	test('the dropdowns of the layout of the dots and of the two colourings', () => {
-		const fields = optionFields({}, false, { visualization: 'dots' });
+		const fields = optionFields({}, false);
 
 		expect(choices(fields, 'dotsLayout')).toEqual(['packed', 'spread']);
 		expect(choices(fields, 'activeColoring')).toEqual(['value', 'blend', 'steps', 'gradient']);
@@ -208,31 +271,44 @@ describe('the options of the look', () => {
 	test('the form of the display shows what it takes over from the interface', () => {
 		const inherited = { visualization: 'dots', subdivisions: 4, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic' };
 
-		// Nothing of its own: the interface draws dots, so the number and the layout are asked for, with the interface's shown.
-		const fields = optionFields(inherited, true, {});
-		expect(keys(fields)).toEqual(['inherited', ...BASE, 'visualization', 'subdivisions', 'dotsLayout', ...COLOURS]);
+		// Nothing of its own: the interface draws dots, so the number and the layout show, with the interface's in them.
+		const fields = optionFields(inherited, true);
 		expect(preset(fields, 'visualization')).toBe('dots');
+		expect(shown(fields, 'subdivisions')).toBe(true);
+		expect(shown(fields, 'dotsLayout')).toBe(true);
 		expect(placeholder(fields, 'subdivisions')).toBe('4');
 		expect(preset(fields, 'dotsLayout')).toBe('spread');
 		expect(preset(fields, 'activeColoring')).toBe('gradient');
 		expect(preset(fields, 'inactiveColoring')).toBe('automatic');
 
 		// One bar of its own: no number and no layout.
-		expect(keys(optionFields(inherited, true, { visualization: 'contiguous' }))).toEqual(['inherited', ...BASE, 'visualization', ...COLOURS]);
+		expect(shown(fields, 'subdivisions', { visualization: 'contiguous' })).toBe(false);
+		expect(shown(fields, 'dotsLayout', { visualization: 'contiguous' })).toBe(false);
+
+		// Pills of its own: the number, and no layout.
+		expect(shown(fields, 'subdivisions', { visualization: 'pills' })).toBe(true);
+		expect(shown(fields, 'dotsLayout', { visualization: 'pills' })).toBe(false);
 
 		// Pills of its own on a field whose interface is one bar.
-		const own = optionFields({}, true, { visualization: 'pills' });
+		const own = optionFields({}, true);
 		expect(preset(own, 'visualization')).toBe('contiguous');
+		expect(shown(own, 'subdivisions')).toBe(false);
+		expect(shown(own, 'subdivisions', { visualization: 'pills' })).toBe(true);
 		expect(placeholder(own, 'subdivisions')).toBe('$t:automatic');
 	});
 
 	test('a dropdown of the display can be emptied, and then shows what it comes to', () => {
 		const inherited = { visualization: 'dots', dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic' };
+		const fields = optionFields(inherited, true);
 
-		// Emptied, which is stored as null: taken from the interface again.
-		const fields = optionFields(inherited, true, { visualization: null, dotsLayout: null, activeColoring: null, inactiveColoring: null });
+		// Emptied, which is stored as null: taken from the interface again, whose dots still want their number and layout.
+		const emptied = { visualization: null, dotsLayout: null, activeColoring: null, inactiveColoring: null };
+		expect(shown(fields, 'subdivisions', emptied)).toBe(true);
+		expect(shown(fields, 'dotsLayout', emptied)).toBe(true);
 
-		expect(keys(fields)).toContain('dotsLayout');
+		// Emptied over an interface which draws one bar: neither.
+		expect(shown(optionFields({}, true), 'subdivisions', emptied)).toBe(false);
+		expect(shown(optionFields({}, true), 'dotsLayout', emptied)).toBe(false);
 
 		for (const [key, text] of [
 			['visualization', 'Dots'],
@@ -245,7 +321,7 @@ describe('the options of the look', () => {
 		}
 
 		// With nothing in the interface, the placeholders are the defaults.
-		const bare = optionFields({}, true, { visualization: 'dots' });
+		const bare = optionFields({}, true);
 		expect(placeholder(bare, 'visualization')).toBe('Contiguous');
 		expect(placeholder(bare, 'dotsLayout')).toBe('Packed');
 		expect(placeholder(bare, 'activeColoring')).toBe('Value');
@@ -257,13 +333,11 @@ describe('the options of editing', () => {
 	const keys = (fields: ReturnType<typeof optionFields>) => fields.map((field) => field.field);
 
 	test('only the interface has them: a display is never edited', () => {
-		for (const own of [{}, { input: 'relative', step: 5, sensitivity: 2 }]) {
-			const display = keys(optionFields({ input: 'relative', step: 5 }, true, own, 'integer'));
+		const display = keys(optionFields({ input: 'relative', step: 5 }, true, 'integer'));
 
-			expect(display).not.toContain('input');
-			expect(display).not.toContain('step');
-			expect(display).not.toContain('sensitivity');
-		}
+		expect(display).not.toContain('input');
+		expect(display).not.toContain('step');
+		expect(display).not.toContain('sensitivity');
 	});
 
 	test('a dropdown with the four methods, which shows automatic until another is chosen', () => {
@@ -288,10 +362,12 @@ describe('the options of editing', () => {
 			['float', 'float'],
 			['decimal', 'float'],
 			[undefined, 'float'],
+			// The dialog of a stock Repeater's fields does not say the type of the field.
+			['unknown', 'float'],
 			['integer', 'integer'],
 			['bigInteger', 'integer'],
 		] as const) {
-			const field = fieldOf(optionFields({}, false, {}, type), 'step');
+			const field = fieldOf(optionFields({}, false, type), 'step');
 
 			expect(field.name).toBe('Step');
 			expect(field.type, String(type)).toBe(kind);
@@ -302,27 +378,146 @@ describe('the options of editing', () => {
 	});
 
 	test('the step a stock Slider left behind is shown as what an empty step comes to', () => {
-		expect(placeholder(optionFields({ stepInterval: 5 }, false, {}, 'integer'), 'step')).toBe('5');
-		expect(placeholder(optionFields({ stepInterval: 0.5 }, false, {}, 'float'), 'step')).toBe('0.5');
-		expect(placeholder(optionFields({ stepInterval: 0.5 }, false, {}, 'integer'), 'step')).toBe('1');
-		expect(placeholder(optionFields({ stepInterval: 'abc' }, false, {}, 'float'), 'step')).toBe('1');
-		expect(placeholder(optionFields({ stepInterval: 5 }, false, { step: 2 }, 'integer'), 'step')).toBe('5');
+		expect(placeholder(optionFields({ stepInterval: 5 }, false, 'integer'), 'step')).toBe('5');
+		expect(placeholder(optionFields({ stepInterval: 0.5 }, false, 'float'), 'step')).toBe('0.5');
+		expect(placeholder(optionFields({ stepInterval: 0.5 }, false, 'integer'), 'step')).toBe('1');
+		expect(placeholder(optionFields({ stepInterval: 'abc' }, false, 'float'), 'step')).toBe('1');
 	});
 
-	test('the sensitivity is asked for only by the relative method', () => {
-		expect(keys(optionFields({}, false, {}))).not.toContain('sensitivity');
-		expect(keys(optionFields({}, false, { input: 'automatic', sensitivity: 2 }))).not.toContain('sensitivity');
-		expect(keys(optionFields({}, false, { input: 'contiguous' }))).not.toContain('sensitivity');
-		expect(keys(optionFields({}, false, { input: 'segment' }))).not.toContain('sensitivity');
-		expect(keys(optionFields({}, false, { input: 'drag' }))).not.toContain('sensitivity');
+	test('the sensitivity shows only for the relative method', () => {
+		const fields = optionFields({}, false);
 
-		const fields = optionFields({}, false, { input: 'relative' });
 		expect(keys(fields).slice(-3)).toEqual(['input', 'step', 'sensitivity']);
+		expect(shown(fields, 'sensitivity')).toBe(false);
+		expect(shown(fields, 'sensitivity', { input: 'automatic', sensitivity: 2 })).toBe(false);
+		expect(shown(fields, 'sensitivity', { input: 'contiguous' })).toBe(false);
+		expect(shown(fields, 'sensitivity', { input: 'segment' })).toBe(false);
+		expect(shown(fields, 'sensitivity', { input: 'drag' })).toBe(false);
+		expect(shown(fields, 'sensitivity', { input: 'relative' })).toBe(true);
 
 		const field = fieldOf(fields, 'sensitivity');
 		expect(field.name).toBe('Sensitivity');
 		expect(field.type).toBe('float');
 		expect(field.meta?.interface).toBe('input');
 		expect(field.meta?.options).toEqual({ placeholder: '1', min: 0 });
+	});
+});
+
+describe('the options form of a display which is not told its field', () => {
+	// The dialog of a stock Repeater's field hands the form a stand-in without the options of the interface.
+	const blind = optionFields({}, true, undefined, false);
+	const told = optionFields({}, true);
+
+	test('has the same options under the same keys', () => {
+		expect(blind.map((field) => field.field)).toEqual(told.map((field) => field.field));
+	});
+
+	test('claims nothing about what an unset option comes to: the placeholders say that the interface decides', () => {
+		for (const key of ['min', 'max', 'label', 'indicatorFormat', 'visualization', 'subdivisions', 'dotsLayout', 'activeColoring', 'inactiveColoring']) {
+			expect(placeholder(blind, key), key).toBe('As in the interface');
+		}
+
+		expect(placeholder(told, 'max')).toBe('100');
+		expect(placeholder(told, 'visualization')).toBe('Contiguous');
+	});
+
+	test('its dropdowns start empty, so nothing is shown as chosen which is not', () => {
+		for (const key of ['indicatorFormat', 'visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring']) {
+			expect(fieldOf(blind, key).schema, key).toBeUndefined();
+			expect(preset(told, key), key).toBeDefined();
+		}
+
+		for (const key of ['visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring']) expect(fieldOf(blind, key).meta?.options?.['allowNone'], key).toBe(true);
+	});
+
+	test('the number of subdivisions and the layout of the dots show until the visualization of the form rules them out', () => {
+		expect(shown(blind, 'subdivisions')).toBe(true);
+		expect(shown(blind, 'dotsLayout')).toBe(true);
+
+		expect(shown(blind, 'subdivisions', { visualization: 'contiguous' })).toBe(false);
+		expect(shown(blind, 'dotsLayout', { visualization: 'contiguous' })).toBe(false);
+
+		for (const shape of ['pills', 'segments', 'bars']) {
+			expect(shown(blind, 'subdivisions', { visualization: shape }), shape).toBe(true);
+			expect(shown(blind, 'dotsLayout', { visualization: shape }), shape).toBe(false);
+		}
+
+		expect(shown(blind, 'subdivisions', { visualization: 'dots' })).toBe(true);
+		expect(shown(blind, 'dotsLayout', { visualization: 'dots' })).toBe(true);
+
+		// A visualization which was chosen and emptied again is the interface's once more.
+		expect(shown(blind, 'subdivisions', { visualization: null })).toBe(true);
+		expect(shown(blind, 'dotsLayout', { visualization: null })).toBe(true);
+
+		// Told its field, the form goes by the interface: one bar there, and neither shows.
+		expect(shown(told, 'subdivisions')).toBe(false);
+		expect(shown(told, 'dotsLayout')).toBe(false);
+	});
+
+	test('the notice says that the dialog cannot show what the interface has', () => {
+		expect(String(fieldOf(blind, 'inherited').meta?.options?.['text'])).toContain('cannot show what is set there');
+		expect(String(fieldOf(told, 'inherited').meta?.options?.['text'])).toContain('shown as it is set there');
+	});
+
+	test('the form of the interface is the same whether or not it is told', () => {
+		expect(optionFields({}, false, 'unknown', false)).toEqual(optionFields({}, false, 'unknown'));
+	});
+});
+
+describe('the options which grow the pieces and fade the next one in', () => {
+	test('two toggles which are off until they are set, each with a note', () => {
+		const fields = optionFields({}, false);
+
+		for (const [key, name] of [
+			['grow', 'Grow'],
+			['fade', 'Fade In'],
+		] as const) {
+			const field = fieldOf(fields, key);
+
+			expect(field.name).toBe(name);
+			expect(field.type).toBe('boolean');
+			expect(field.meta?.interface).toBe('boolean');
+			expect(field.meta?.width).toBe('half');
+			expect(String(field.meta?.note).length).toBeGreaterThan(20);
+			expect(String(field.meta?.note)).not.toContain('\n');
+			expect(preset(fields, key)).toBe(false);
+		}
+	});
+
+	test('they show only while the track is cut into pieces', () => {
+		const fields = optionFields({}, false);
+
+		for (const key of ['grow', 'fade']) {
+			expect(shown(fields, key), key).toBe(false);
+			expect(shown(fields, key, { visualization: 'contiguous', [key]: true }), key).toBe(false);
+			for (const shape of ['pills', 'segments', 'bars', 'dots']) expect(shown(fields, key, { visualization: shape }), `${key} ${shape}`).toBe(true);
+		}
+
+		// A field which already draws pieces shows them from the start.
+		expect(shown(optionFields({ visualization: 'dots' }, false), 'grow')).toBe(true);
+	});
+
+	test('only the interface grows its pieces: the display has no such option', () => {
+		for (const fields of [optionFields({}, true), optionFields({ visualization: 'pills', grow: true }, true), optionFields({}, true, undefined, false)]) {
+			expect(fields.map((field) => field.field)).not.toContain('grow');
+			expect(fields.map((field) => field.field)).toContain('fade');
+		}
+	});
+
+	test('the display fades as the interface does until it is set, and shows that', () => {
+		expect(preset(optionFields({ fade: true }, true), 'fade')).toBe(true);
+		expect(preset(optionFields({ fade: false }, true), 'fade')).toBe(false);
+		expect(preset(optionFields({}, true), 'fade')).toBe(false);
+
+		// With pieces on the interface it shows, with one bar there it does not, and the form's own visualization decides once it is set.
+		expect(shown(optionFields({ visualization: 'pills' }, true), 'fade')).toBe(true);
+		expect(shown(optionFields({}, true), 'fade')).toBe(false);
+		expect(shown(optionFields({}, true), 'fade', { visualization: 'bars' })).toBe(true);
+		expect(shown(optionFields({ visualization: 'pills' }, true), 'fade', { visualization: 'contiguous' })).toBe(false);
+
+		// Not told its field, it shows until the form's own visualization rules it out.
+		const blind = optionFields({}, true, undefined, false);
+		expect(shown(blind, 'fade')).toBe(true);
+		expect(shown(blind, 'fade', { visualization: 'contiguous' })).toBe(false);
 	});
 });
