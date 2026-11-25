@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
-import { canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
+import { useRatio } from './ratio';
+import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
 import type { Paint, Piece, PieceDrawing } from './meter';
 
 /**
@@ -113,18 +114,27 @@ onBeforeUnmount(() => {
 	observer = null;
 });
 
-// The width is read here and nowhere else. A computed value which comes to
+// Bars are drawn in whole device pixels, a bar as wide as every other and a gap as every other, and what the
+// track is wider than that stays empty at its end (`barFit`). The two sizes are numbers which change only when a
+// bar gets a device pixel wider or narrower, so like the count they do not wake the drawing with every pixel of
+// the width.
+const ratio = useRatio();
+const fit = computed(() => (look.value.visualization === 'bars' && count.value >= 2 ? barFit('form', count.value, width.value, ratio.value) : null));
+const barSize = computed(() => fit.value?.bar ?? null);
+const barGap = computed(() => fit.value?.gap ?? null);
+
+// The width is read here, for the bars above, and nowhere else. A computed value which comes to
 // the same number does not wake what depends on it, so the meter is drawn
 // again only when the number of pieces changes, not with every pixel.
 const look = computed(() => readLook(props));
-const count = computed(() => pieceCount(look.value, options.value, 'form', width.value));
+const count = computed(() => pieceCount(look.value, options.value, 'form', width.value, ratio.value));
 
 // Over how many pieces a piece grows or fades in before it is filled: by the number of `grow`, and by that of 1
 // where the pieces only fade in. For thin bars it also depends on how wide a bar is, and so on the width; that part
 // is a number of half pieces, which like the count changes only now and then, and it is asked for only where pieces
 // grow or fade in, so a meter without that is still drawn again for nothing but its count.
 const reach = computed(() =>
-	look.value.grow > 0 || look.value.fade ? reachOf(look.value.visualization, 'form', count.value, width.value, look.value.grow > 0 ? look.value.grow : 1) : undefined,
+	look.value.grow > 0 || look.value.fade ? reachOf(look.value.visualization, 'form', count.value, width.value, look.value.grow > 0 ? look.value.grow : 1, ratio.value) : undefined,
 );
 
 // Where the pointer is along the track while it drags the value, as a fraction of the range: by its place for the
@@ -180,7 +190,7 @@ onBeforeUnmount(() => cancelAnimationFrame(easing));
 const lineStyle = computed(() => {
 	const { pieces, track } = drawing.value;
 
-	if (pieces !== null) return { '--mt-n': pieces.length };
+	if (pieces !== null) return barSize.value === null ? { '--mt-n': pieces.length } : { '--mt-n': pieces.length, '--mt-bar': `${barSize.value}px`, '--mt-gap': `${barGap.value}px` };
 	return track.color !== null ? { backgroundColor: track.color } : undefined;
 });
 
@@ -234,7 +244,7 @@ function frame(element: HTMLElement) {
 	const rtl = getComputedStyle(element).direction === 'rtl';
 	const visualization = look.value.visualization;
 	const pieces: Piece[] =
-		drawing.value.pieces !== null && visualization !== 'contiguous' ? pieceGeometry(visualization, 'form', drawing.value.pieces.length, box.width, look.value.dotsLayout) : [];
+		drawing.value.pieces !== null && visualization !== 'contiguous' ? pieceGeometry(visualization, 'form', drawing.value.pieces.length, box.width, look.value.dotsLayout, ratio.value) : [];
 	const length = pieces.length ? pieces[pieces.length - 1]!.end : box.width;
 
 	return { box, rtl, pieces, length };
@@ -584,7 +594,7 @@ const lineClass = computed(() => {
 			: [
 					'mt-strip',
 					`mt-${look.value.visualization}`,
-					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value },
+					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-fitted': barSize.value !== null, 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value },
 				];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
@@ -617,7 +627,13 @@ onBeforeUnmount(() => {
 //   container, so the first piece is at the start side in either direction.
 //   Pills, segments and bars share the width of the field equally: pills
 //   0.25rem apart with both ends round, segments 0.1875rem apart with only
-//   the two outer ends of the row round, bars 0.125rem apart and square. Dots
+//   the two outer ends of the row round, bars 0.125rem apart and square. Bars
+//   do not share the width in the end: sharing gives each a fraction of a
+//   pixel, and the browser, which puts every edge on a device pixel, draws
+//   some a pixel wider than others. The component works out a bar and a gap
+//   in whole device pixels (`barFit` in meter.ts) and hands them to the row
+//   as `--mt-bar` and `--mt-gap` (`mt-fitted`); the bars have that size, and
+//   what is left of the track is empty at its end side. Dots
 //   are circles as high as the track, which do not stretch: 0.125rem apart
 //   from the start side, or spread from edge to edge. The gaps and the dot
 //   are those of `PIECE_SIZES` in meter.ts, by which the pieces are counted,
@@ -835,6 +851,15 @@ onBeforeUnmount(() => {
 
 .mt-bars {
 	gap: 0.125rem;
+}
+
+.mt-fitted {
+	gap: var(--mt-gap);
+}
+
+.mt-fitted .mt-part {
+	flex: none;
+	inline-size: var(--mt-bar);
 }
 
 .mt-dots {

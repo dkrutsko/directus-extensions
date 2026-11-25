@@ -206,7 +206,7 @@ export const PIECE_SIZES: Record<Place, Record<Shape, PieceSize>> = {
 	form: {
 		pills: { piece: 20, gap: 4 },
 		segments: { piece: 14, gap: 3 },
-		bars: { piece: 3, gap: 2 },
+		bars: { piece: 4, gap: 2 },
 		dots: { piece: 12, gap: 2 },
 	},
 	display: {
@@ -251,7 +251,7 @@ export const MAX_GROW = 20;
 
 /**
  * How far ahead of the fill thin bars grow and fade in at the least, in
- * pixels of the track for each 1 of `grow`: about three bars at their
+ * pixels of the track for each 1 of `grow`: two and a half bars at their
  * narrowest in the form, and three in the display. Every other shape, and
  * bars which are wider than that, go by the number of pieces alone.
  */
@@ -672,14 +672,42 @@ export function wantedCount(look: Pick<Look, 'subdivisions'>, range: Range): num
 }
 
 /**
+ * The least a bar and its gap may be on a screen of `ratio` device pixels to
+ * the CSS pixel, in whole device pixels: the sizes of `PIECE_SIZES`, rounded
+ * up where the ratio makes them a fraction. `scale` is the ratio as it is
+ * used, 1 for one which is none.
+ */
+function leastBar(place: Place, ratio: number): { bar: number; gap: number; scale: number } {
+	const scale = Number.isFinite(ratio) && ratio > 0 ? ratio : 1;
+	const { piece, gap } = PIECE_SIZES[place].bars;
+
+	return { bar: Math.max(1, Math.ceil(piece * scale - 1e-6)), gap: Math.max(1, Math.ceil(gap * scale - 1e-6)), scale };
+}
+
+/** A width in whole device pixels. A measured width may be a hair under the whole number it stands for. */
+const deviceWidth = (width: number, scale: number) => Math.floor(width * scale + 1e-4);
+
+/**
  * How many pieces of a visualization fit into a track of `width` pixels: each
  * at its smallest, with the gaps between them. Never more than the cap of the
  * package. A track without a width, as in a tab which is not shown, has room
  * for none.
+ *
+ * Bars are counted in whole device pixels, for the `ratio` of the screen,
+ * since that is how they are drawn (`barFit`): the least bar and the gap,
+ * each rounded up to a whole device pixel, and as many of them as the track
+ * has whole device pixels for.
  */
-export function fitCount(visualization: Shape, place: Place, width: number): number {
+export function fitCount(visualization: Shape, place: Place, width: number, ratio = 1): number {
 	const { piece, gap } = PIECE_SIZES[place][visualization];
 	if (!(width > 0)) return 0;
+
+	if (visualization === 'bars') {
+		const least = leastBar(place, ratio);
+		const bars = Math.floor((deviceWidth(width, least.scale) + least.gap) / (least.bar + least.gap));
+
+		return Number.isFinite(bars) ? Math.min(MAX_PIECES, Math.max(0, bars)) : MAX_PIECES;
+	}
 
 	// A measured width may be a hair under the whole number it stands for.
 	const count = Math.floor((width + gap) / (piece + gap) + 1e-6);
@@ -694,13 +722,20 @@ export function fitCount(visualization: Shape, place: Place, width: number): num
  * A number which nothing divides (a prime), and no wanted number at all, give
  * as many as fit. With room for fewer than two there are no pieces, which is
  * 0: the meter is one bar then.
+ *
+ * Bars do not `divide`: where what is wanted does not fit, as many are drawn
+ * as fit. Bars are all drawn at one whole number of device pixels, so a
+ * number which divides what is wanted would leave the rest of the track
+ * empty: fifty for a hundred where 57 fit leave an eighth of it. With as many
+ * as fit, only the bar which would be cut off is missing.
  */
-export function drawnCount(wanted: number | null, fit: number): number {
+export function drawnCount(wanted: number | null, fit: number, divide = true): number {
 	const room = Math.min(MAX_PIECES, Math.floor(fit));
 
 	if (!(room >= MIN_SUBDIVISIONS)) return 0;
 	if (wanted === null || !(wanted >= MIN_SUBDIVISIONS)) return room;
 	if (wanted <= room) return wanted;
+	if (!divide) return room;
 
 	for (let count = room; count >= MIN_SUBDIVISIONS; count--) {
 		if (wanted % count === 0) return count;
@@ -713,30 +748,100 @@ export function drawnCount(wanted: number | null, fit: number): number {
  * How many pieces a meter is cut into in a track of `width` pixels: 0 for one
  * bar, which is what `contiguous` is and what is left where fewer than two
  * pieces fit. The display hands over its fixed width, so every row of a
- * layout comes to the same number.
+ * layout comes to the same number. `ratio` is that of the screen, by which
+ * bars are counted.
  */
-export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number): number {
+export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number, ratio = 1): number {
 	if (look.visualization === 'contiguous') return 0;
-	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width));
+	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width, ratio), look.visualization !== 'bars');
+}
+
+/** How wide a bar and the gap to the next one are drawn, and how long the row of bars is with them, in CSS pixels. */
+export interface BarFit {
+	bar: number;
+	gap: number;
+	length: number;
+}
+
+/**
+ * The sizes at which `count` bars are drawn in a track of `width` CSS pixels
+ * on a screen with `ratio` device pixels to the CSS pixel: a bar and a gap
+ * which are each a whole number of device pixels, so that every bar is drawn
+ * as wide as every other and every gap as every other. Bars which share the
+ * width of the track come to a fraction of a pixel each (342px for fifty is
+ * 4.88px a bar), and the browser, which puts every edge on a whole device
+ * pixel, then draws some of them a pixel wider than others.
+ *
+ * Neither is less than its least size (`PIECE_SIZES`, rounded up to whole
+ * device pixels), which is what the bars are counted with (`fitCount`). Of
+ * the bars and gaps which fit the count, the pair with the longest row is
+ * taken: the widest bar for the least gap, or for a gap which is a device
+ * pixel or two wider where that uses more of the track; a gap is never more
+ * than twice its least. What is left over stays empty at the end side of the
+ * track: `length` is how long the row is. For as many bars as fit that is
+ * less than one bar and its gap; for a number which was asked for and which
+ * fits, it can be nearly a device pixel for each bar.
+ *
+ * `null` where there is nothing to fit. A count which does not fit at the
+ * least sizes, which only a caller with a count of its own can ask for, gets
+ * thinner gaps and bars down to one device pixel, and `null` where not even
+ * those fit: the bars then share the width as the other shapes do.
+ */
+export function barFit(place: Place, count: number, width: number, ratio = 1): BarFit | null {
+	if (!(count >= 1) || !(width > 0) || !Number.isFinite(width) || !Number.isFinite(count)) return null;
+
+	const least = leastBar(place, ratio);
+	const scale = least.scale;
+	const bars = Math.floor(count);
+	const room = deviceWidth(width, scale);
+	const sized = (bar: number, gap: number): BarFit => ({ bar: bar / scale, gap: gap / scale, length: (bars * bar + (bars - 1) * gap) / scale });
+
+	// The longest row of bars and gaps which are not less than their least sizes.
+	let best: { bar: number; gap: number; length: number } | null = null;
+
+	for (let gap = least.gap; gap <= 2 * least.gap; gap++) {
+		const bar = Math.floor((room - (bars - 1) * gap) / bars);
+		if (bar < least.bar) break;
+
+		const length = bars * bar + (bars - 1) * gap;
+		if (best === null || length > best.length) best = { bar, gap, length };
+	}
+
+	if (best !== null) return sized(best.bar, best.gap);
+
+	// More bars than fit at the least sizes: thinner ones, down to a device pixel.
+	let gap = least.gap;
+	let bar = Math.floor((room - (bars - 1) * gap) / bars);
+
+	while (bar < 1 && gap > 1) {
+		gap--;
+		bar = Math.floor((room - (bars - 1) * gap) / bars);
+	}
+
+	return bar < 1 ? null : sized(bar, gap);
 }
 
 /**
  * Where each of `count` pieces starts and ends in a track of `width` pixels,
- * from the start side, which is the right in a right-to-left page. Pills,
- * segments and bars share the width equally, with their gap between them.
- * Dots keep their size: packed they stand from the start with their gap,
- * spread the first is at the start edge, the last at the end edge, and the
- * gaps between are equal. The styles of the components lay the pieces out by
- * the same rules; this is the same thing as numbers, for whatever has to find
- * the piece under a point.
+ * from the start side, which is the right in a right-to-left page. Pills and
+ * segments share the width equally, with their gap between them. Bars are
+ * each a whole number of device pixels wide (`barFit`, for the `ratio` of the
+ * screen), from the start, and end before the track does where its width is
+ * not used up. Dots keep their size: packed they stand from the start with
+ * their gap, spread the first is at the start edge, the last at the end edge,
+ * and the gaps between are equal. The styles of the components lay the pieces
+ * out by the same rules; this is the same thing as numbers, by which the
+ * pointer finds the piece under it and the length which stands for the whole
+ * range.
  */
-export function pieceGeometry(visualization: Shape, place: Place, count: number, width: number, dotsLayout: DotsLayout = DEFAULT_DOTS_LAYOUT): Piece[] {
+export function pieceGeometry(visualization: Shape, place: Place, count: number, width: number, dotsLayout: DotsLayout = DEFAULT_DOTS_LAYOUT, ratio = 1): Piece[] {
 	const { piece, gap } = PIECE_SIZES[place][visualization];
 	if (!(count >= 1) || !(width > 0)) return [];
 
 	const dots = visualization === 'dots';
-	const size = dots ? piece : (width - gap * (count - 1)) / count;
-	const between = dots && dotsLayout === 'spread' && count > 1 ? (width - count * size) / (count - 1) : gap;
+	const fit = visualization === 'bars' ? barFit(place, count, width, ratio) : null;
+	const size = fit !== null ? fit.bar : dots ? piece : (width - gap * (count - 1)) / count;
+	const between = fit !== null ? fit.gap : dots && dotsLayout === 'spread' && count > 1 ? (width - count * size) / (count - 1) : gap;
 
 	return Array.from({ length: count }, (_, index) => {
 		const start = index * (size + between);
@@ -1092,15 +1197,18 @@ export function growOf(value: unknown): number {
  * at least `BAR_REACH` pixels of the track for each 1 of `grow`: the next few
  * bars form a short ramp in front of the fill. That part is counted in half
  * pieces, so that it changes with the number of bars and not with every pixel
- * of the width. `width` is that of the row and `count` the number of bars.
+ * of the width. `width` is that of the track, `count` the number of bars and
+ * `ratio` that of the screen, by which the bars are drawn (`barFit`).
  */
-export function reachOf(visualization: Visualization, place: Place, count: number, width: number, grow = 1): number {
+export function reachOf(visualization: Visualization, place: Place, count: number, width: number, grow = 1, ratio = 1): number {
 	const amount = Number.isFinite(grow) && grow > 0 ? Math.min(MAX_GROW, grow) : 0;
 	const pieces = amount <= 1 ? amount / 2 : amount - FILLED_FROM;
 
 	if (visualization !== 'bars' || !(count >= 1) || !(width > 0)) return pieces;
 
-	const pitch = (width + PIECE_SIZES[place].bars.gap) / count;
+	// From one bar to the next, as they are drawn.
+	const fit = barFit(place, count, width, ratio);
+	const pitch = fit !== null ? fit.bar + fit.gap : (width + PIECE_SIZES[place].bars.gap) / count;
 	const track = Math.round((2 * amount * BAR_REACH[place]) / pitch) / 2;
 
 	return Number.isFinite(track) ? Math.max(pieces, track) : pieces;

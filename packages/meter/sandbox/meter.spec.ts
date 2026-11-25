@@ -494,7 +494,7 @@ test.beforeAll(async ({ api }) => {
 			live('grow_segments', { visualization: 'segments', max: 5, step: 0.1, grow: 1, fade: true, input: 'segment', color: GREEN, indicatorFormat: 'value' }, {}, 'float'),
 			live('fade_pills', { visualization: 'pills', max: 5, step: 0.1, fade: true, color: GREEN, indicatorFormat: 'value' }, {}, 'float'),
 			// Thin bars for a hundred whole numbers, fifty of them in half of the form, which grow and fade in.
-			live('grow_bars', { visualization: 'bars', grow: 1, fade: true, color: GREEN }),
+			live('grow_bars', { visualization: 'bars', subdivisions: 50, grow: 1, fade: true, color: GREEN }),
 			// Coarse steps: five segments of twenty for a hundred in steps of ten, by the place under the pointer
 			// and by how far it moves. A tenth of the track is one step, 34px in half of the form.
 			live('grow_coarse', { visualization: 'segments', subdivisions: 5, step: 10, grow: 1, fade: true, color: GREEN }),
@@ -504,7 +504,7 @@ test.beforeAll(async ({ api }) => {
 			live('grow_three', { visualization: 'dots', max: 8, step: 0.1, grow: 3, indicatorFormat: 'value' }, {}, 'float'),
 			live('grow_true', { visualization: 'dots', max: 5, step: 0.1, grow: true, indicatorFormat: 'value' }, {}, 'float'),
 			// A long ramp on thin bars: fifty bars for a hundred, up to four growing by the pieces and more by the pixels.
-			live('grow_four', { visualization: 'bars', grow: 4 }),
+			live('grow_four', { visualization: 'bars', subdivisions: 50, grow: 4 }),
 		],
 	});
 
@@ -1630,9 +1630,10 @@ async function expectFilledPieces(row: Locator, count: number, filled: number) {
 
 // The rule by which the pieces are counted, written out again here: how narrow a piece of each shape may get and
 // how far it is from the next, in the form and in the display; how many of those fit a width; and how many are
-// drawn when a number is wanted, or none is.
+// drawn when a number is wanted, or none is. Bars take no number which divides the wanted one: what is wanted
+// where it fits, else as many as fit.
 const SIZES = {
-	form: { pills: [20, 4], segments: [14, 3], bars: [3, 2], dots: [12, 2] },
+	form: { pills: [20, 4], segments: [14, 3], bars: [4, 2], dots: [12, 2] },
 	display: { pills: [8, 2], segments: [6, 2], bars: [2, 1], dots: [6, 1] },
 } as const;
 
@@ -1640,10 +1641,11 @@ type Shape = keyof (typeof SIZES)['form'];
 
 const fits = (width: number, [piece, gap]: readonly [number, number]) => Math.floor((width + gap) / (piece + gap));
 
-const drawn = (wanted: number | null, fit: number) => {
+const drawn = (wanted: number | null, fit: number, divide = true) => {
 	if (fit < 2) return 0;
 	if (wanted === null) return fit;
 	if (wanted <= fit) return wanted;
+	if (!divide) return fit;
 
 	for (let count = fit; count >= 2; count--) if (wanted % count === 0) return count;
 	return fit;
@@ -1811,24 +1813,35 @@ test('each visualization has its shape: which corners are round, how far the pie
 	const ROUND = '6px';
 	const SQUARE = '0px';
 
-	// Pills, segments and bars: as high as the track, equal widths from one edge of the field to the other.
+	// Pills, segments and bars: as high as the track, equal widths from one edge of the field to the other. Five
+	// bars are 3px apart, which fills this width to the pixel where 2px would leave four over.
 	for (const [name, gap] of [
 		['pill_auto', 4],
 		['pill_hundred', 4],
 		['pill_set', 4],
 		['seg_auto', 3],
 		['seg_hundred', 3],
-		['bar_auto', 2],
+		['bar_auto', 3],
 		['bar_hundred', 2],
 	] as const) {
 		const area = await edges(meter(page, name));
 		const all = await pieces(strip(page, name));
 
 		expect(all[0]!.left, name).toBe(area.left);
-		expect(Math.abs(all.at(-1)!.right - area.right), name).toBeLessThan(0.5);
 		expect(Math.max(...all.map((piece) => piece.width)) - Math.min(...all.map((piece) => piece.width)), name).toBeLessThan(0.5);
 		expect(all.map((piece) => piece.height)).toEqual(all.map(() => 12));
 		all.slice(1).forEach((piece, index) => expect(Math.abs(piece.left - all[index]!.right - gap), name).toBeLessThan(0.5));
+
+		// Pills and segments reach the end of the field. Bars are each a whole number of pixels wide, all the same,
+		// and what the field is wider than the row, less than a pixel for each bar, is empty at its end.
+		if (name.startsWith('bar_')) {
+			expect([...new Set(all.map((piece) => piece.width))], name).toHaveLength(1);
+			expect(Number.isInteger(all[0]!.width), name).toBe(true);
+			expect(area.right - all.at(-1)!.right, name).toBeGreaterThanOrEqual(0);
+			expect(area.right - all.at(-1)!.right, name).toBeLessThan(all.length);
+		} else {
+			expect(Math.abs(all.at(-1)!.right - area.right), name).toBeLessThan(0.5);
+		}
 	}
 
 	// Pills: every piece round at both ends.
@@ -1850,7 +1863,7 @@ test('each visualization has its shape: which corners are round, how far the pie
 	expect(bars.map((piece) => piece.corners)).toEqual(bars.map(() => [SQUARE, SQUARE, SQUARE, SQUARE]));
 	expect(bars.length).toBeGreaterThan((await pieces(strip(page, 'seg_hundred'))).length);
 	expect((await pieces(strip(page, 'seg_hundred'))).length).toBeGreaterThan((await pieces(strip(page, 'pill_hundred'))).length);
-	expect(bars[0]!.width).toBeGreaterThanOrEqual(3);
+	expect(bars[0]!.width).toBeGreaterThanOrEqual(4);
 
 	// Dots: circles as high as the track, 2px apart, from the start of the field. In a field as wide as the form
 	// they are the same circles.
@@ -1875,7 +1888,7 @@ test('each visualization has its shape: which corners are round, how far the pie
 	}
 });
 
-test('the number of pieces follows the width of the field: what is wanted where it fits, else a number which divides it, else as many as fit', async ({ page }) => {
+test('the number of pieces follows the width of the field: what is wanted where it fits, else a number which divides it, else as many as fit, and bars without the middle rule', async ({ page }) => {
 	await openItem(page, COLLECTION, ids['First']!);
 	await expect(text(page, 'pill_hundred')).toHaveText('44%');
 
@@ -1902,32 +1915,33 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	const expectRule = () =>
 		expect(async () => {
 			for (const [name, shape, wanted] of CASES) {
-				expect(await countOf(name), name).toBe(drawn(wanted, fits(await widthOf(name), SIZES.form[shape])));
+				expect(await countOf(name), name).toBe(drawn(wanted, fits(await widthOf(name), SIZES.form[shape]), shape !== 'bars'));
 			}
 		}).toPass({ timeout: 5000 });
 
 	await expectRule();
 
 	// A range of a hundred never draws a number which does not divide a hundred, and a different one for each shape.
+	// Bars are the exception: a hundred do not fit, so as many as fit are drawn, 57 in this width.
 	const half = await widthOf('pill_hundred');
 	expect(half).toBeGreaterThan(300);
 	expect(half).toBeLessThan(400);
 	expect(await countOf('pill_hundred')).toBe(10);
 	expect(await countOf('seg_hundred')).toBe(20);
-	expect(await countOf('bar_hundred')).toBe(50);
+	expect(await countOf('bar_hundred')).toBe(57);
 	expect(await countOf('dot_hundred')).toBe(20);
 	expect(await countOf('look_wide')).toBe(50);
 
-	// 62 of a hundred fills the nearest whole number of whatever is drawn: 12 of 20, 31 of 50.
+	// 62 of a hundred fills the nearest whole number of whatever is drawn: 12 of 20, 35 of 57.
 	await expectFilledPieces(strip(page, 'seg_hundred'), 20, 12);
-	await expectFilledPieces(strip(page, 'bar_hundred'), 50, 31);
+	await expectFilledPieces(strip(page, 'bar_hundred'), 57, 35);
 
 	// No number wanted: as many as fit, each no narrower than its smallest.
 	expect(await countOf('pill_free')).toBe(fits(half, SIZES.form.pills));
 	expect(await countOf('dot_free')).toBe(fits(half, SIZES.form.dots));
 	expect((await pieces(strip(page, 'pill_free')))[0]!.width).toBeGreaterThanOrEqual(20);
 	expect((await pieces(strip(page, 'seg_free')))[0]!.width).toBeGreaterThanOrEqual(14);
-	expect((await pieces(strip(page, 'bar_free')))[0]!.width).toBeGreaterThanOrEqual(3);
+	expect((await pieces(strip(page, 'bar_free')))[0]!.width).toBeGreaterThanOrEqual(4);
 
 	// A number which is set and fits is drawn as set: twelve pills. Thirty dots do not fit, so fifteen are drawn.
 	expect(await countOf('pill_many')).toBe(12);
@@ -1943,7 +1957,7 @@ test('the number of pieces follows the width of the field: what is wanted where 
 	await expect.poll(() => widthOf('bar_free')).toBeLessThan(half - 50);
 	await expectRule();
 	expect(await countOf('bar_free')).toBeLessThan(before);
-	expect(100 % (await countOf('bar_hundred'))).toBe(0);
+	expect(await countOf('bar_hundred')).toBe(await countOf('bar_free'));
 	expect(100 % (await countOf('seg_hundred'))).toBe(0);
 
 	await page.setViewportSize({ width: 1440, height: 900 });
@@ -2047,16 +2061,16 @@ test('a width which changes without changing the number of pieces changes nothin
 		expect(await changed('pill_many'), `${width}px`).toBe(0);
 	}
 
-	// As many bars as fit, one for every 5px: 68 from 338px to 342px, and 67 below that.
-	expect(await countOf('bar_free')).toBe(68);
-	for (const width of [341, 339, 338]) {
+	// As many bars as fit, one for every 6px: 57 from 340px to 342px, and 56 below that.
+	expect(await countOf('bar_free')).toBe(57);
+	for (const width of [341, 340]) {
 		await squeezeTo('bar_free', width);
-		expect(await countOf('bar_free')).toBe(68);
+		expect(await countOf('bar_free')).toBe(57);
 		expect(await changed('bar_free'), `${width}px`).toBe(0);
 	}
 
-	await squeezeTo('bar_free', 337);
-	await expect(strip(page, 'bar_free').locator('> *')).toHaveCount(67);
+	await squeezeTo('bar_free', 339);
+	await expect(strip(page, 'bar_free').locator('> *')).toHaveCount(56);
 	expect(await changed('bar_free')).toBeGreaterThan(0);
 
 	// One bar has no number of pieces which could change: it is never drawn again for a width.
@@ -2198,11 +2212,11 @@ test('the display draws the pieces in the table: the same number in every row, b
 	await expectFilledPieces(row('First', 'pill_set'), 4, 2);
 	await expectFilledPieces(row('First', 'dot_set'), 4, 2);
 
-	// A range of a hundred in a bar of 72px: five pills, five segments, twenty bars and five dots, each a number
-	// which divides a hundred. 44 fills two of five, 62 three of five and twelve of twenty, 98 all ten dots.
+	// A range of a hundred in a bar of 72px: five pills, five segments and ten dots, each a number which divides a
+	// hundred, and as many bars as fit, 24. 44 fills two of five, 62 three of five and fifteen of 24, 98 all ten dots.
 	await expectFilledPieces(row('First', 'pill_hundred'), 5, 2);
 	await expectFilledPieces(row('First', 'seg_hundred'), 5, 3);
-	await expectFilledPieces(row('First', 'bar_hundred'), 20, 12);
+	await expectFilledPieces(row('First', 'bar_hundred'), 24, 15);
 	await expectFilledPieces(row('First', 'dot_hundred'), 10, 10);
 	await expectFilledPieces(row('Second', 'pill_hundred'), 5, 2);
 	await expectFilledPieces(row('Second', 'dot_hundred'), 10, 0);
@@ -4045,8 +4059,8 @@ test.describe('a meter which can be edited', () => {
 		await line(page, 'grow_bars').scrollIntoViewIfNeeded();
 		await expect(text(page, 'grow_bars')).toHaveText('40%');
 
-		// Fifty bars in half of the form, one for every two units: no whole value ever lies in the last half
-		// of a bar, which is where a pill or a segment grows.
+		// Fifty bars in half of the form, the number which is set, one for every two units: no whole value ever
+		// lies in the last half of a bar, which is where a pill or a segment grows.
 		await expect(line(page, 'grow_bars').locator('> *')).toHaveCount(50);
 
 		const state = () =>
@@ -4081,15 +4095,16 @@ test.describe('a meter which can be edited', () => {
 			expect(now.heights.slice(0, filled), String(value)).toEqual(Array.from({ length: filled }, () => 12));
 			expect(now.widths, String(value)).toEqual(empty.widths);
 
-			// In front of the fill a ramp of two bars' reach: at an even value the next bar is three quarters of
-			// the way from small to full and the one after it a quarter; at an odd value, which has just filled
-			// a bar, the next is half way. Everything after that is small. What fades in has the same shares.
-			// The ramp comes out of the start of the scale: at 1 a bar is filled and none has started, at 2
-			// the next is two thirds of the way, and from 3 on it has its whole reach.
+			// In front of the fill a ramp of two and a half bars' reach, fifteen pixels of bars which are 6px
+			// apart: at an even value the next bar is four fifths of the way from small to full and the one
+			// after it two fifths; at an odd value, which has just filled a bar, three fifths and one fifth.
+			// Everything after that is small. What fades in has the same shares. The ramp comes out of the
+			// start of the scale: at 1 a bar is filled and none has started, at 2 the next is two thirds of
+			// the way, at 3 half way, and from 4 on it has its whole reach.
 			const ahead = now.heights.slice(filled);
 			const fading = now.over.slice(filled);
-			const ramp = value === 1 ? [] : value === 2 ? [9.3] : value % 2 === 0 ? [10, 6] : [8];
-			const shares = value === 1 ? [] : value === 2 ? [0.6667] : value % 2 === 0 ? [0.75, 0.25] : [0.5];
+			const ramp = value === 1 ? [] : value === 2 ? [9.3] : value === 3 ? [8] : value % 2 === 0 ? [10.4, 7.2] : [8.8, 5.6];
+			const shares = value === 1 ? [] : value === 2 ? [0.6667] : value === 3 ? [0.5] : value % 2 === 0 ? [0.8, 0.4] : [0.6, 0.2];
 
 			expect(ahead.slice(0, ramp.length), String(value)).toEqual(ramp.slice(0, ahead.length));
 			expect(ahead.slice(ramp.length), String(value)).toEqual(ahead.slice(ramp.length).map(() => 4));
@@ -4110,12 +4125,13 @@ test.describe('a meter which can be edited', () => {
 		const segments = await pieces(line(page, 'grow_segments'));
 		expect(segments.map((piece) => Number(piece.height.toFixed(1)))).toEqual([12, 12, 12, 4, 4]);
 
-		// The display in the table fades by the same rule at its own size: twenty bars of 3.65px for the same
-		// field, 2.5 of which are its reach. At 40 eight are filled; the next is at 0.8 and the one after at 0.4.
+		// The display in the table fades by the same rule at its own size: fifty bars do not fit its 72px, so it
+		// draws as many as do, 24 bars 3px apart, three of which are its reach. 40 is 9.6 of them: ten are
+		// filled, and the next three are at 0.7, 0.37 and 0.03.
 		await page.goto(`/admin/content/${EDIT}`);
 		await expect(page.locator('table tbody tr.table-row')).toHaveCount(1);
 		const shown = page.locator('table tbody tr.table-row').first().locator('.meter-display').nth(GROWN.length).locator('.md-strip');
-		await expect(shown.locator('> *')).toHaveCount(20);
+		await expect(shown.locator('> *')).toHaveCount(24);
 
 		const table = await shown.evaluate((element) =>
 			Array.from(element.children).map((part) => ({
@@ -4124,9 +4140,9 @@ test.describe('a meter which can be edited', () => {
 				over: part.firstElementChild === null ? 0 : Number(getComputedStyle(part.firstElementChild).opacity),
 			})),
 		);
-		expect(table.filter((part) => part.filled)).toHaveLength(8);
+		expect(table.filter((part) => part.filled)).toHaveLength(10);
 		expect([...new Set(table.map((part) => part.height))]).toHaveLength(1);
-		expect(table.map((part) => part.over)).toEqual([...Array.from({ length: 8 }, () => 0), 0.8, 0.4, ...Array.from({ length: 10 }, () => 0)]);
+		expect(table.map((part) => part.over)).toEqual([...Array.from({ length: 10 }, () => 0), 0.7, 0.3667, 0.0333, ...Array.from({ length: 11 }, () => 0)]);
 	});
 
 	test('while the pointer drags the value, pieces grow and fade in by where the pointer is, not by the steps of the value', async ({ page }) => {
@@ -4346,12 +4362,12 @@ test.describe('a meter which can be edited', () => {
 			await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', String(value));
 		};
 
-		// Well away from the start the ramp has its full reach: twenty bars filled, and eight more on their way,
-		// each lower than the one before it.
+		// Well away from the start the ramp has its full reach, sixty pixels of bars which are 6px apart: twenty
+		// bars filled, and ten more on their way, each lower than the one before it.
 		const full = await heights();
 		expect(full.slice(0, 20)).toEqual(Array.from({ length: 20 }, () => 12));
 		const ramp = full.slice(20).filter((height) => height > 4.05);
-		expect(ramp).toHaveLength(8);
+		expect(ramp).toHaveLength(10);
 		for (let index = 1; index < ramp.length; index++) expect(ramp[index]!).toBeLessThan(ramp[index - 1]!);
 
 		// At the minimum the meter is empty: fifty small bars.
@@ -4897,11 +4913,19 @@ test.describe('a meter which can be edited', () => {
 			const start = await pointAt(page, name, 0.45);
 			const seen: { value: number; row: number[][] }[] = [];
 
-			await page.mouse.move(start.x, start.y);
+			// The length along which the value is spread: the track, and for bars the row of bars as it is drawn,
+			// which ends a little before the track does.
+			const left = start.x - start.width * 0.45;
+			const span = await line(page, name).evaluate((element) => {
+				const last = element.classList.contains('mt-bars') ? element.lastElementChild : null;
+				return (last ?? element).getBoundingClientRect().right - element.getBoundingClientRect().left;
+			});
+
+			await page.mouse.move(left + span * 0.45, start.y);
 			await page.mouse.down();
 
 			for (let value = 45; value <= 100; value++) {
-				await page.mouse.move(start.x + (start.width * (value - 45)) / 100, start.y);
+				await page.mouse.move(left + (span * value) / 100, start.y);
 				await expect(text(page, name)).toHaveText(`${value}%`);
 				seen.push({ value, row: await pixels(page, start.x - start.width * 0.45, start.y, start.width) });
 			}
@@ -4945,6 +4969,88 @@ test.describe('a meter which can be edited', () => {
 		}
 
 		await expect(edited(page)).toHaveCount(4);
+	});
+
+	test('bars in a right-to-left page: the row starts at the right, what is left of the track is at the left, and the pointer goes by the bars', async ({ page }) => {
+		await turn(page, 'rtl');
+		await expect(meter(page, 'ring_bars')).toHaveCSS('direction', 'rtl');
+
+		// Where the bars of a row are, in the order of the document: the first one is the one at the start.
+		const barsOf = (name: string) =>
+			line(page, name).evaluate((element) => {
+				const track = element.getBoundingClientRect();
+				return {
+					left: track.left,
+					right: track.right,
+					y: track.top + track.height / 2,
+					bars: Array.from(element.children).map((bar) => {
+						const box = bar.getBoundingClientRect();
+						return { left: box.left, right: box.right };
+					}),
+				};
+			});
+
+		// Filled by the piece: forty bars for forty, each 6px wide and 2px from the next, 318px of the 342px.
+		await line(page, 'ring_bars').scrollIntoViewIfNeeded();
+		await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '20');
+		const forty = await barsOf('ring_bars');
+		expect(forty.bars).toHaveLength(40);
+		expect(forty.right - forty.left).toBe(342);
+
+		// The first bar ends at the right edge of the track, each next one is to the left of the one before it,
+		// and the 24px which the row is shorter than the track are empty at the left.
+		expect(forty.bars[0]!.right).toBeCloseTo(forty.right, 3);
+		for (const [index, bar] of forty.bars.entries()) {
+			expect(bar.right - bar.left, `bar ${index}`).toBeCloseTo(6, 3);
+			expect(forty.right - bar.right, `bar ${index}`).toBeCloseTo(index * 8, 3);
+		}
+		expect(forty.bars.at(-1)!.left - forty.left).toBeCloseTo(24, 3);
+
+		const middle = (bar: { left: number; right: number }) => (bar.left + bar.right) / 2;
+
+		// A press on the first bar, at the right, fills one bar; on the last bar, the maximum; and in the empty
+		// rest to the left of it, which is past the end, the maximum too.
+		await page.mouse.click(middle(forty.bars[0]!), forty.y);
+		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '1');
+		await expect(line(page, 'ring_bars').locator('.mt-on')).toHaveCount(1);
+		await page.mouse.click(middle(forty.bars.at(-1)!), forty.y);
+		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '40');
+		await page.mouse.click(middle(forty.bars[9]!), forty.y);
+		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '10');
+		await page.mouse.click(forty.left + 3, forty.y);
+		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '40');
+		await expect(line(page, 'ring_bars').locator('.mt-on')).toHaveCount(40);
+
+		// The tint is on the bars from the right up to the pointer, and on all of them from the empty rest.
+		await page.mouse.move(forty.bars[29]!.right - 1, forty.y);
+		await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(30);
+		expect(await line(page, 'ring_bars').evaluate((element) => Array.from(element.children).findIndex((bar) => !bar.classList.contains('mt-hint')))).toBe(30);
+		await page.mouse.move(forty.left + 3, forty.y);
+		await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(40);
+		await page.mouse.move(5, 5);
+
+		// By the place, fifty bars which are set for a hundred: the row of bars, 298px from the right edge,
+		// stands for the whole range. Its left end and the empty 44px beyond it are the maximum, its middle 50,
+		// a quarter of it from the right 25, and the right edge the minimum.
+		await line(page, 'grow_four').scrollIntoViewIfNeeded();
+		await expect(line(page, 'grow_four')).toHaveClass(/mt-by-contiguous/);
+		const fifty = await barsOf('grow_four');
+		expect(fifty.bars).toHaveLength(50);
+		const length = fifty.right - fifty.bars.at(-1)!.left;
+		expect(length).toBeCloseTo(298, 3);
+		expect(fifty.bars.at(-1)!.left - fifty.left).toBeCloseTo(44, 3);
+
+		await page.mouse.click(fifty.right - length / 2, fifty.y);
+		await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '50');
+		await page.mouse.click(fifty.right - length + 0.5, fifty.y);
+		await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '100');
+		await page.mouse.click(fifty.right - length * 0.25, fifty.y);
+		await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '25');
+		await page.mouse.click(fifty.left + 3, fifty.y);
+		await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '100');
+		await page.mouse.click(fifty.right - 0.5, fifty.y);
+		await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '0');
 	});
 
 	test('in the comparison of two revisions no meter can be edited', async ({ page, api }) => {
@@ -5070,6 +5176,234 @@ test.describe('a meter which can be edited', () => {
 		// Put the field back, for the tests which count on its step of 5.
 		await api.patch(`/fields/${EDIT}/fives`, { meta: { options: { stepInterval: 5 } } });
 	});
+});
+
+// Bars are drawn in whole device pixels, so that every bar is as wide as every other. That has to be looked at on
+// a screen which really has the device pixels: a page which is only told to pretend a ratio (`deviceScaleFactor`
+// of a context) is laid out in whole CSS pixels and enlarged afterwards, and draws a bar of four and a half pixels
+// as four and as five by turns. So each of these tests starts a browser of its own with the ratio forced.
+test.describe('bars are all drawn alike', () => {
+	// The runs of a row of pixels: what is not the page's background is a bar, what is is a gap.
+	const runsOf = (row: number[][], paper: number[]) => {
+		const runs: { bar: boolean; length: number }[] = [];
+
+		for (const colour of row) {
+			const bar = Math.max(...colour.map((channel, index) => Math.abs(channel - paper[index]!))) > 10;
+			if (runs.length && runs.at(-1)!.bar === bar) runs.at(-1)!.length++;
+			else runs.push({ bar, length: 1 });
+		}
+
+		return runs;
+	};
+
+	// The bars of a row as they are drawn, from a row of pixels through their middle: the widths of the bars, of the
+	// gaps between them and of what is empty after the last one up to the end of the track, in device pixels.
+	const drawnBars = async (page: Page, row: Locator, ratio: number) => {
+		await row.scrollIntoViewIfNeeded();
+		const area = (await row.boundingBox())!;
+		const paper = rgb(await token(page, '--theme--background'));
+		const line = await pixels(page, area.x, area.y + area.height / 2, Math.ceil(area.width));
+		const runs = runsOf(line.slice(0, Math.round(area.width * ratio)), paper);
+		const empty = runs.at(-1)!.bar ? 0 : runs.pop()!.length;
+
+		return { bars: runs.filter((run) => run.bar).map((run) => run.length), gaps: runs.filter((run) => !run.bar).map((run) => run.length), empty, room: Math.round(area.width * ratio) };
+	};
+
+	// The same from the boxes, in device pixels: where each bar starts and how wide it is.
+	const laidBars = (row: Locator, ratio: number) =>
+		row.evaluate((element, scale) => {
+			const from = element.getBoundingClientRect().left;
+			return Array.from(element.children).map((bar) => {
+				const box = bar.getBoundingClientRect();
+				return { start: (box.left - from) * scale, width: box.width * scale };
+			});
+		}, ratio);
+
+	// The rule for bars, written out again: the least bar and gap in whole device pixels, how many of those fit a
+	// width, and for a number of bars the gap, from the least to twice the least, and the largest bar beside it
+	// which leave the least of the track empty.
+	const least = (place: 'form' | 'display', ratio: number) => {
+		const [piece, space] = SIZES[place].bars;
+		return { bar: Math.ceil(piece * ratio), gap: Math.ceil(space * ratio) };
+	};
+
+	const most = (place: 'form' | 'display', width: number, ratio: number) => {
+		const { bar, gap } = least(place, ratio);
+		return Math.floor((Math.floor(width * ratio) + gap) / (bar + gap));
+	};
+
+	const sized = (place: 'form' | 'display', count: number, width: number, ratio: number) => {
+		const small = least(place, ratio);
+		const room = Math.floor(width * ratio);
+		let best = { bar: 0, gap: 0, length: 0 };
+
+		for (let gap = small.gap; gap <= 2 * small.gap; gap++) {
+			const bar = Math.floor((room - (count - 1) * gap) / count);
+			if (bar < small.bar) break;
+
+			const length = count * bar + (count - 1) * gap;
+			if (length > best.length) best = { bar, gap, length };
+		}
+
+		return best;
+	};
+
+	for (const ratio of [1, 1.5, 2]) {
+		test(`on a screen of ${ratio} device pixels to the pixel every bar is as wide as every other, in the form and in the table, and the pointer goes by the bars`, async ({ playwright }) => {
+			const browser = await playwright.chromium.launch({ args: [`--force-device-scale-factor=${ratio}`, `--window-size=${Math.round(1440 * ratio)},${Math.round(900 * ratio)}`] });
+
+			try {
+				const context = await browser.newContext({ baseURL: BASE_URL, viewport: null });
+				await context.addCookies([{ name: 'license-banner-dismissed', value: 'true', url: BASE_URL }]);
+				expect((await context.request.post('/auth/login', { data: { ...ADMIN, mode: 'session' } })).ok()).toBe(true);
+
+				const page = await context.newPage();
+				const errors: string[] = [];
+				page.on('pageerror', (error) => errors.push(String(error)));
+
+				// The owner's case: a hundred in half of the form, 342px. A hundred bars do not fit, so as many as
+				// fit are drawn, 57 on each of these screens, where fifty used to be.
+				await openItem(page, COLLECTION, ids['First']!);
+				await expect(text(page, 'bar_hundred')).toHaveText('62%');
+				await expect(page.locator('.hydrating')).toHaveCount(0);
+				expect(await page.evaluate(() => window.devicePixelRatio)).toBe(ratio);
+
+				const row = strip(page, 'bar_hundred');
+				const count = most('form', 342, ratio);
+				expect(count).toBe(57);
+				await expect(row.locator('> *')).toHaveCount(count);
+				expect((await row.boundingBox())!.width).toBe(342);
+
+				// As drawn: bars of one width and gaps of one width, the least which the rule allows, 4px and 2px,
+				// and less than one more bar with its gap empty at the end of the track: 2px.
+				const { bar, gap } = sized('form', count, 342, ratio);
+				expect([bar, gap]).toEqual([4 * ratio, 2 * ratio]);
+				const drawn = await drawnBars(page, row, ratio);
+
+				expect([...new Set(drawn.bars)], `bars drawn ${drawn.bars.join(' ')}`).toEqual([bar]);
+				expect(drawn.bars).toHaveLength(count);
+				expect([...new Set(drawn.gaps)], `gaps drawn ${drawn.gaps.join(' ')}`).toEqual([gap]);
+				expect(drawn.gaps).toHaveLength(count - 1);
+				expect(drawn.empty).toBe(drawn.room - (count * bar + (count - 1) * gap));
+				expect(drawn.empty).toBeLessThan(bar + gap);
+				expect(drawn.empty).toBe(2 * ratio);
+
+				// As laid out: every box starts on a whole device pixel and is that many wide.
+				const laid = await laidBars(row, ratio);
+				for (const [index, box] of laid.entries()) {
+					expect(box.width, `bar ${index}`).toBeCloseTo(bar, 3);
+					expect(box.start, `bar ${index}`).toBeCloseTo(index * (bar + gap), 3);
+				}
+
+				// No number wanted draws the same row. Five bars, a number which fits, are drawn as five, with
+				// the bar and the gap which fill the track best: all of it but a device pixel at most.
+				const free = await drawnBars(page, strip(page, 'bar_free'), ratio);
+				expect(free.bars, 'bar_free').toEqual(drawn.bars);
+				expect(free.gaps, 'bar_free').toEqual(drawn.gaps);
+
+				const five = await drawnBars(page, strip(page, 'bar_auto'), ratio);
+				const wide = sized('form', 5, 342, ratio);
+				expect([wide.bar, wide.gap]).toEqual(ratio === 1 ? [66, 3] : ratio === 1.5 ? [100, 3] : [132, 6]);
+				expect(five.bars, `five: ${five.bars.join(' ')}`).toEqual(Array.from({ length: 5 }, () => wide.bar));
+				expect(five.gaps, `five: ${five.gaps.join(' ')}`).toEqual(Array.from({ length: 4 }, () => wide.gap));
+				expect(five.empty).toBeLessThanOrEqual(1);
+
+				// Pills and segments still share the whole width of the field.
+				for (const name of ['pill_hundred', 'seg_hundred']) {
+					const all = await pieces(strip(page, name));
+					const area = await edges(meter(page, name));
+					expect(Math.abs(all.at(-1)!.right - area.right), name).toBeLessThan(0.5);
+				}
+
+				// The display in the table: as many bars as fit its 72px for the same field, 24 or 22, each as
+				// wide as every other, and less than a bar and its gap empty after them.
+				await page.goto(`/admin/content/${COLLECTION}?bookmark=${looks}`);
+				await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+				const shown = table(page, LOOKS).display('First', 'bar_hundred').locator('.md-strip');
+				const few = most('display', 72, ratio);
+				expect(few).toBe(ratio === 1.5 ? 22 : 24);
+				await expect(shown.locator('> *')).toHaveCount(few);
+				expect((await shown.boundingBox())!.width).toBe(72);
+
+				const thin = sized('display', few, 72, ratio);
+				expect([thin.bar, thin.gap]).toEqual(ratio === 1 ? [2, 1] : ratio === 1.5 ? [3, 2] : [4, 2]);
+				const cell = await drawnBars(page, shown, ratio);
+				expect([...new Set(cell.bars)], `bars drawn ${cell.bars.join(' ')}`).toEqual([thin.bar]);
+				expect(cell.bars).toHaveLength(few);
+				expect([...new Set(cell.gaps)], `gaps drawn ${cell.gaps.join(' ')}`).toEqual([thin.gap]);
+				expect(cell.empty).toBe(Math.floor(72 * ratio) - (few * thin.bar + (few - 1) * thin.gap));
+				expect(cell.empty).toBeLessThan(thin.bar + thin.gap);
+
+				// Fifty bars which are set, in the same width: fifty fit, so fifty are drawn, each of one width
+				// and each gap of one width, the largest which fit fifty. What is left is less than a device
+				// pixel for each bar, which here is most of what it can be.
+				await openEdit(page);
+				await line(page, 'grow_four').scrollIntoViewIfNeeded();
+				await expect(line(page, 'grow_four').locator('> *')).toHaveCount(50);
+				expect((await line(page, 'grow_four').boundingBox())!.width).toBe(342);
+				await page.mouse.move(5, 5);
+
+				const set = sized('form', 50, 342, ratio);
+				expect([set.bar, set.gap]).toEqual(ratio === 1 ? [4, 2] : ratio === 1.5 ? [7, 3] : [9, 4]);
+				const wanted = await drawnBars(page, line(page, 'grow_four'), ratio);
+				expect([...new Set(wanted.bars)], `bars drawn ${wanted.bars.join(' ')}`).toEqual([set.bar]);
+				expect(wanted.bars).toHaveLength(50);
+				expect([...new Set(wanted.gaps)], `gaps drawn ${wanted.gaps.join(' ')}`).toEqual([set.gap]);
+				expect(wanted.gaps).toHaveLength(49);
+				expect(wanted.empty).toBe(wanted.room - (50 * set.bar + 49 * set.gap));
+				expect(wanted.empty).toBeLessThan(50);
+
+				// The pointer goes by the bars as they are drawn. By the piece, forty bars for forty: a press on
+				// the last bar is the maximum, and so is one in the empty rest of the track after it.
+				await line(page, 'ring_bars').scrollIntoViewIfNeeded();
+				await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-segment/);
+				const forty = (await line(page, 'ring_bars').boundingBox())!;
+				const boxes = await laidBars(line(page, 'ring_bars'), 1);
+				const last = boxes.at(-1)!;
+				expect(forty.width - (last.start + last.width)).toBeGreaterThan(3);
+
+				await page.mouse.click(forty.x + boxes[9]!.start + boxes[9]!.width / 2, forty.y + 6);
+				await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '10');
+				await page.mouse.click(forty.x + last.start + last.width / 2, forty.y + 6);
+				await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '40');
+				await page.mouse.click(forty.x + boxes[19]!.start + 1, forty.y + 6);
+				await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '20');
+				await page.mouse.click(forty.x + forty.width - 3, forty.y + 6);
+				await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '40');
+
+				// The tint is on the bars up to the pointer, and on all of them from the empty rest.
+				await page.mouse.move(forty.x + boxes[29]!.start + 1, forty.y + 6);
+				await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(30);
+				await page.mouse.move(forty.x + forty.width - 3, forty.y + 6);
+				await expect(line(page, 'ring_bars').locator('.mt-hint')).toHaveCount(40);
+				await page.mouse.move(5, 5);
+
+				// By the place, fifty bars for a hundred: the row of bars stands for the whole range. Its end and
+				// the empty rest after it are the maximum, its middle is 50, and its start the minimum.
+				await line(page, 'grow_four').scrollIntoViewIfNeeded();
+				await expect(line(page, 'grow_four')).toHaveClass(/mt-by-contiguous/);
+				const fifty = (await line(page, 'grow_four').boundingBox())!;
+				const bars = await laidBars(line(page, 'grow_four'), 1);
+				const length = bars.at(-1)!.start + bars.at(-1)!.width;
+				expect(fifty.width - length).toBeGreaterThan(8);
+
+				await page.mouse.click(fifty.x + length / 2, fifty.y + 6);
+				await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '50');
+				await page.mouse.click(fifty.x + length - 0.5, fifty.y + 6);
+				await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '100');
+				await page.mouse.click(fifty.x + length * 0.25, fifty.y + 6);
+				await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '25');
+				await page.mouse.click(fifty.x + fifty.width - 3, fifty.y + 6);
+				await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '100');
+				await page.mouse.click(fifty.x + 0.5, fifty.y + 6);
+				await expect(line(page, 'grow_four')).toHaveAttribute('aria-valuenow', '0');
+
+				expect(errors).toEqual([]);
+			} finally {
+				await browser.close();
+			}
+		});
+	}
 });
 
 // A meter as a field of a stock Repeater. The dialog in which such a field is set up is not the ordinary field

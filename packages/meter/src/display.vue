@@ -2,7 +2,8 @@
 import { useStores } from '@directus/extensions-sdk';
 import { computed } from 'vue';
 import { useLanguage } from './i18n';
-import { DISPLAY_WIDTH, PIECE_SIZES, drawingOf, fillScale, isEmpty, numberOf, pieceCount, reachOf, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
+import { useRatio } from './ratio';
+import { DISPLAY_WIDTH, PIECE_SIZES, barFit, drawingOf, fillScale, isEmpty, numberOf, pieceCount, reachOf, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
 import type { Paint } from './meter';
 
 /**
@@ -84,12 +85,19 @@ const tooltip = computed(() => tooltipOf(reading.value.text, options.value.label
 // length, so the number of pieces which fit is the same in every row of a
 // layout, by the same rule as in the form.
 const look = computed(() => readLook(props, props.interfaceOptions));
-const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH));
+
+// The ratio of the screen, by which bars are counted and drawn: one value which every display of the page shares,
+// so no row watches anything.
+const ratio = useRatio();
+const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH, ratio.value));
 const drawing = computed(() =>
-	drawingOf({ ...look.value, grow: 0 }, options.value, reading.value, count.value, props.value, { reach: reachOf(look.value.visualization, 'display', count.value, DISPLAY_WIDTH) }),
+	drawingOf({ ...look.value, grow: 0 }, options.value, reading.value, count.value, props.value, { reach: reachOf(look.value.visualization, 'display', count.value, DISPLAY_WIDTH, 1, ratio.value) }),
 );
 
 const dots = computed(() => drawing.value.pieces !== null && look.value.visualization === 'dots');
+
+// Bars are drawn in whole device pixels, as in the form (`barFit`).
+const fit = computed(() => (look.value.visualization === 'bars' && count.value >= 2 ? barFit('display', count.value, DISPLAY_WIDTH, ratio.value) : null));
 const packed = computed(() => dots.value && look.value.dotsLayout !== 'spread');
 
 // On the root: the colour stops of the scale, for whichever surfaces paint
@@ -150,7 +158,11 @@ const fillStyle = computed(() => {
 // unbreakable piece like it and as long as it, 4.5rem. Pills, segments and
 // bars share that length equally: pills 0.125rem apart with both ends round,
 // segments 0.125rem apart with only the two outer ends of the row round, bars
-// 0.0625rem apart and square. Dots are 0.375rem across, smaller than the bar
+// 0.0625rem apart and square. Bars do not share the length in the end: each
+// is a whole number of device pixels wide, and so is each gap (`barFit` in
+// meter.ts, handed to the row as `--md-bar-size` and `--md-gap`, with the
+// class `md-fitted`), so that every bar is drawn as wide as every other; what
+// is left of the 4.5rem is empty at the end side. Dots are 0.375rem across, smaller than the bar
 // is high so that ten of them fit: packed they are 0.0625rem apart from the
 // start, and the row is as long as its dots, which the root is told
 // (`--md-bar`) for the room of the text; spread they stand from one end of
@@ -211,8 +223,8 @@ const fillStyle = computed(() => {
 		<span
 			v-else
 			class="md-strip"
-			:class="[`md-${look.visualization}`, { 'md-packed': packed, 'md-spread': dots && !packed }]"
-			:style="{ '--md-n': drawing.pieces.length }"
+			:class="[`md-${look.visualization}`, { 'md-packed': packed, 'md-spread': dots && !packed, 'md-fitted': fit !== null }]"
+			:style="fit === null ? { '--md-n': drawing.pieces.length } : { '--md-n': drawing.pieces.length, '--md-bar-size': `${fit.bar}px`, '--md-gap': `${fit.gap}px` }"
 		>
 			<span
 				v-for="(piece, index) in drawing.pieces"
@@ -276,6 +288,15 @@ const fillStyle = computed(() => {
 
 .md-bars {
 	gap: 0.0625rem;
+}
+
+.md-fitted {
+	gap: var(--md-gap);
+}
+
+.md-fitted .md-part {
+	flex: none;
+	inline-size: var(--md-bar-size);
 }
 
 .md-dots {
