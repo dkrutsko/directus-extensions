@@ -84,7 +84,7 @@ const tooltip = computed(() => tooltipOf(reading.value.text, options.value.label
 // layout, by the same rule as in the form.
 const look = computed(() => readLook(props, props.interfaceOptions));
 const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH));
-const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value));
+const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value));
 
 const dots = computed(() => drawing.value.pieces !== null && look.value.visualization === 'dots');
 const packed = computed(() => dots.value && look.value.dotsLayout !== 'spread');
@@ -156,7 +156,10 @@ const fillStyle = computed(() => {
 // interface: a gradient across the whole bar, `--md-n` times as wide as the
 // surface and placed by `--md-at`, with the stops in `--md-stops` on the root
 // and the faded ones in `--md-weak-stops`. A right-to-left page has its own
-// rule, by `:dir(rtl)`, because a gradient has no logical direction.
+// rule, by `:dir(rtl)`, because a gradient has no logical direction. The
+// fill of the one bar is the exception: its image is as long as the bar,
+// 4.5rem, and not a multiple of the fill, so that no stop moves by a pixel
+// when the value changes.
 //
 // In a display template the box is one piece, like the track: where it does
 // not fit the line, the ellipsis of the template stands for it. The number
@@ -307,6 +310,10 @@ const fillStyle = computed(() => {
 
 .md-weak {
 	background-image: linear-gradient(to right, var(--md-weak-stops));
+}
+
+.md-fill.md-paint {
+	background-size: 4.5rem 100%;
 }
 
 .md-paint:dir(rtl) {

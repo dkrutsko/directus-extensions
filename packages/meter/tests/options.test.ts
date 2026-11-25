@@ -182,8 +182,9 @@ describe('the options of the look', () => {
 		const fields = optionFields({}, false, { visualization: 'dots' });
 
 		expect(choices(fields, 'dotsLayout')).toEqual(['packed', 'spread']);
-		expect(choices(fields, 'activeColoring')).toEqual(['value', 'steps', 'gradient']);
-		expect(choices(fields, 'inactiveColoring')).toEqual(['plain', 'automatic', 'value', 'steps', 'gradient']);
+		expect(choices(fields, 'activeColoring')).toEqual(['value', 'blend', 'steps', 'gradient']);
+		expect((fieldOf(fields, 'activeColoring').meta?.options?.['choices'] as { text: string }[])[1]!.text).toBe('Blend');
+		expect(choices(fields, 'inactiveColoring')).toEqual(['plain', 'automatic', 'value', 'blend', 'steps', 'gradient']);
 
 		expect(preset(fields, 'dotsLayout')).toBe('packed');
 		expect(preset(fields, 'activeColoring')).toBe('value');

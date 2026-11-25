@@ -23,6 +23,7 @@ const DOTS_LAYOUTS: Choice[] = [
 
 const ACTIVE_COLORINGS: Choice[] = [
 	{ text: 'Value', value: 'value' },
+	{ text: 'Blend', value: 'blend' },
 	{ text: 'Steps', value: 'steps' },
 	{ text: 'Gradient', value: 'gradient' },
 ];
@@ -248,14 +249,14 @@ export function optionFields(fallback: unknown, display: boolean, own?: unknown,
 			'Active Coloring',
 			ACTIVE_COLORINGS,
 			baseLook.activeColoring,
-			'What is filled. Value: the colour of the current value. Steps: each part of the track in the colour of its own threshold. Gradient: those colours blended.',
+			'What is filled. Value: the colour of the current value. Blend: one colour which shifts towards the next threshold as the value nears it. Steps: each part of the track in the colour of its own threshold. Gradient: those colours blended along the track.',
 		),
 		dropdown(
 			'inactiveColoring',
 			'Inactive Coloring',
 			INACTIVE_COLORINGS,
 			baseLook.inactiveColoring,
-			'What is not filled. Plain: the track. Automatic: as what is filled, faded. Or one of the three on its own, faded.',
+			'What is not filled. Plain: the track. Automatic: as what is filled, faded. Or one of the four on its own, faded.',
 		),
 	];
 

@@ -223,6 +223,9 @@ test.beforeAll(async ({ api }) => {
 			field('paint_bar', { ...SCALE, activeColoring: 'gradient', inactiveColoring: 'automatic' }),
 			field('paint_stepped', { ...SCALE, activeColoring: 'steps' }),
 			field('paint_tint', { ...SCALE, inactiveColoring: 'value' }),
+			// One colour which shifts towards the next threshold: ten pills with the rest faded, and one bar.
+			field('paint_mix', { visualization: 'pills', subdivisions: 10, ...SCALE, activeColoring: 'blend', inactiveColoring: 'automatic' }),
+			field('paint_mixbar', { ...SCALE, activeColoring: 'blend' }),
 			// For the calendar layout, which draws the titles of its entries as plain text.
 			{ field: 'day', type: 'date', schema: {}, meta: { interface: 'datetime', hidden: true } },
 		],
@@ -338,6 +341,8 @@ test.beforeAll(async ({ api }) => {
 		paint_bar: 50,
 		paint_stepped: 90,
 		paint_tint: 50,
+		paint_mix: 60,
+		paint_mixbar: 20,
 	};
 
 	ids['First'] = (await api.post(`/items/${COLLECTION}`, { ...values, title: 'First' })).id;
@@ -432,6 +437,26 @@ test.beforeAll(async ({ api }) => {
 			field('twin_locked', { label: 'A caption', color: GREEN }, { note: 'A note under a meter.' }),
 			// A range which does not start at 0: steps of 2 from 1 are 1, 3, 5, 7 and 9, and 10 is the maximum.
 			live('offset', { min: 1, max: 10, step: 2, indicatorFormat: 'value' }),
+			// Read-only by its own value: a drag across 50 closes it while the button is held.
+			live('closing', null, { conditions: [{ name: 'Closed', rule: { _and: [{ closing: { _gte: 50 } }] }, readonly: true }] }),
+			// Whole numbers in a range whose limits are not whole: 1 to 5 can be written of 0.5 to 5.5, and 0 to 10
+			// of 0 to 10.5. Five pills by the method chosen for them, and five filled by the piece all the same.
+			live('between', { min: 0.5, max: 5.5, visualization: 'pills', indicatorFormat: 'value' }),
+			live('between_seg', { min: 0.5, max: 5.5, visualization: 'pills', input: 'segment', indicatorFormat: 'value' }),
+			live('beyond', { max: 10.5, indicatorFormat: 'value' }),
+			// Coloured by the place on the scale, and edited: one bar in steps and one which blends along the
+			// track, ten pills in steps and bars which blend.
+			live('flow_steps', { ...SCALE, activeColoring: 'steps' }),
+			live('flow_gradient', { ...SCALE, activeColoring: 'gradient' }),
+			live('flow_pills', { ...SCALE, visualization: 'pills', activeColoring: 'steps' }),
+			live('flow_bars', { ...SCALE, visualization: 'bars', activeColoring: 'gradient' }),
+			// Hidden by its own value: a relative drag across 50 takes the field out of the form while the button is held.
+			live('vanishing', { input: 'relative' }, { conditions: [{ name: 'Gone', rule: { _and: [{ vanishing: { _gte: 50 } }] }, hidden: true }] }),
+			// The same meters in pieces twice, one which can be edited and one which cannot: pills and dots.
+			live('pills_live', { visualization: 'pills', max: 5, label: 'A caption' }, { note: 'A note under a meter.' }),
+			field('pills_locked', { visualization: 'pills', max: 5, label: 'A caption' }, { note: 'A note under a meter.' }),
+			live('dots_live', { visualization: 'dots', max: 5, label: 'A caption' }, { note: 'A note under a meter.' }),
+			field('dots_locked', { visualization: 'dots', max: 5, label: 'A caption' }, { note: 'A note under a meter.' }),
 		],
 	});
 
@@ -456,6 +481,19 @@ test.beforeAll(async ({ api }) => {
 			twin_locked: 40,
 			gated: 40,
 			offset: 1,
+			closing: 30,
+			between: 3,
+			between_seg: 3,
+			beyond: 15,
+			flow_steps: 45,
+			flow_gradient: 45,
+			flow_pills: 45,
+			flow_bars: 45,
+			vanishing: 30,
+			pills_live: 3,
+			pills_locked: 3,
+			dots_live: 3,
+			dots_locked: 3,
 		})
 	).id;
 });
@@ -1563,6 +1601,43 @@ async function pixel(page: Page, x: number, y: number) {
 	return [line[1]!, line[2]!, line[3]!];
 }
 
+/**
+ * The colours of one row of pixels of the page, from left to right, from a screenshot of that row alone. The line
+ * of a picture may be stored as the difference of each pixel from the one before it, which is undone here; with
+ * no line above it, the other ways of storing it come to the same or to half of that.
+ */
+async function pixels(page: Page, x: number, y: number, width: number) {
+	const picture = await page.screenshot({ clip: { x: Math.floor(x), y: Math.floor(y), width: Math.floor(width), height: 1 } });
+	const data: Buffer[] = [];
+	let count = 0;
+	let channels = 3;
+
+	for (let offset = 8; offset < picture.length; ) {
+		const length = picture.readUInt32BE(offset);
+		const kind = picture.toString('latin1', offset + 4, offset + 8);
+
+		if (kind === 'IHDR') {
+			count = picture.readUInt32BE(offset + 8);
+			channels = picture[offset + 17] === 6 ? 4 : 3;
+		}
+
+		if (kind === 'IDAT') data.push(picture.subarray(offset + 8, offset + 8 + length));
+		offset += length + 12;
+	}
+
+	const stored = inflateSync(Buffer.concat(data));
+	const filter = stored[0]!;
+	const line = Buffer.from(stored.subarray(1, 1 + count * channels));
+
+	for (let index = 0; index < line.length; index++) {
+		const before = index >= channels ? line[index - channels]! : 0;
+		if (filter === 1 || filter === 4) line[index] = (line[index]! + before) & 255;
+		else if (filter === 3) line[index] = (line[index]! + (before >> 1)) & 255;
+	}
+
+	return Array.from({ length: count }, (_, index) => [line[index * channels]!, line[index * channels + 1]!, line[index * channels + 2]!]);
+}
+
 /** The colour in the middle of an element, or at a share of its width from its left edge. */
 async function colourOf(page: Page, locator: Locator, share = 0.5) {
 	await locator.scrollIntoViewIfNeeded();
@@ -2182,6 +2257,52 @@ test('colouring by the place on the scale: steps, a gradient across the whole tr
 	for (const place of [0.6, 0.9]) expectColour(await colourOf(page, bar('First', 'paint_bar'), place), faded(blended(place), trackColour), 8);
 });
 
+test('the blend colouring: one colour for everything filled, between the colours of the two thresholds around the value', async ({ page }) => {
+	await openItem(page, COLLECTION, ids['First']!);
+	await expect(text(page, 'paint_mix')).toHaveText('60%');
+
+	// The app fades a cover out over the page for a moment after the form is there, and a colour read through
+	// the last of it is one step off.
+	await expect(page.locator('.hydrating')).toHaveCount(0);
+
+	const trackColour = rgb(await token(page, '--theme--form--field--input--border-color'));
+	const piece = (index: number) => strip(page, 'paint_mix').locator('> *').nth(index);
+	const apart = (one: number[], other: number[]) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index]!)));
+
+	// 60 is half way between the threshold of amber at 40 and that of green at 80: six of ten pills are filled,
+	// and every one of them has the colour half way between the two, which is neither of them.
+	await expectFilledPieces(strip(page, 'paint_mix'), 10, 6);
+	const between = mixed(rgb(AMBER), rgb(GREEN), 0.5);
+	// One after the other: reading a colour scrolls its piece into view first, and two at once would get in each other's way.
+	const filled: number[][] = [];
+	for (const index of [0, 1, 2, 3, 4, 5]) filled.push(await colourOf(page, piece(index)));
+
+	for (const colour of filled) expectColour(colour, between);
+	expect(apart(filled[0]!, rgb(AMBER))).toBeGreaterThan(40);
+	expect(apart(filled[0]!, rgb(GREEN))).toBeGreaterThan(40);
+	expect(apart(filled[0]!, rgb(RED))).toBeGreaterThan(40);
+
+	// They share it to the pixel, at both ends of a pill as well: nothing runs along the track as in a gradient.
+	expect(new Set(filled.map(String)).size, filled.map(String).join(' | ')).toBe(1);
+	expect(await colourOf(page, piece(0), 0.2)).toEqual(await colourOf(page, piece(5), 0.8));
+	expect(new Set((await pieces(strip(page, 'paint_mix'))).slice(0, 6).map((each) => each.color)).size).toBe(1);
+
+	// What is not filled follows it, faded.
+	for (const index of [6, 9]) expectColour(await colourOf(page, piece(index)), faded(between, trackColour));
+
+	// One bar at 20, half way from the red of the minimum to amber: the whole fill has that one colour, and the
+	// track beyond it is plain.
+	await expectFilled(track(page, 'paint_mixbar'), fill(page, 'paint_mixbar'), 0.2);
+	const early = mixed(rgb(RED), rgb(AMBER), 0.5);
+	for (const place of [0.03, 0.1, 0.17]) expectColour(await colourOf(page, track(page, 'paint_mixbar'), place), early);
+	expect(await colourOf(page, track(page, 'paint_mixbar'), 0.03)).toEqual(await colourOf(page, track(page, 'paint_mixbar'), 0.17));
+	expectColour(await colourOf(page, track(page, 'paint_mixbar'), 0.6), trackColour);
+
+	// It is neither the red of the minimum nor the amber of the threshold ahead.
+	expect(apart(await colourOf(page, track(page, 'paint_mixbar'), 0.1), rgb(RED))).toBeGreaterThan(20);
+	expect(apart(await colourOf(page, track(page, 'paint_mixbar'), 0.1), rgb(AMBER))).toBeGreaterThan(20);
+});
+
 test('in a right-to-left page the pieces fill from the right, and the colours of the scale run from the right', async ({ page }) => {
 	await openItem(page, COLLECTION, ids['First']!);
 	await expect(text(page, 'pill_auto')).toHaveText('60%');
@@ -2425,6 +2546,19 @@ const EDIT_VALUES = {
 	twin_locked: 40,
 	gated: 40,
 	offset: 1,
+	closing: 30,
+	between: 3,
+	between_seg: 3,
+	beyond: 15,
+	flow_steps: 45,
+	flow_gradient: 45,
+	flow_pills: 45,
+	flow_bars: 45,
+	vanishing: 30,
+	pills_live: 3,
+	pills_locked: 3,
+	dots_live: 3,
+	dots_locked: 3,
 };
 
 /**
@@ -2619,6 +2753,42 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.move(third.x, third.y + 80);
 		await expect(hinted).toHaveCount(0);
 		await expect(text(page, 'five')).toHaveText('1 / 5');
+
+		// During a drag nothing is marked: the fill itself follows the pointer.
+		await page.mouse.move(fourth.x, fourth.y);
+		await expect(hinted).toHaveCount(4);
+		await page.mouse.down();
+		await expect(text(page, 'five')).toHaveText('4 / 5');
+		await expect(hinted).toHaveCount(0);
+		const secondPill = await middle('five', 1);
+		await page.mouse.move(secondPill.x, secondPill.y, { steps: 3 });
+		await expect(text(page, 'five')).toHaveText('2 / 5');
+		await expectFilledPieces(line(page, 'five'), 5, 2);
+		await expect(hinted).toHaveCount(0);
+
+		// At the release the marks are back at once, for where the pointer rests, without it moving again: the
+		// two pieces up to it, and not the four of where it was pressed.
+		await page.mouse.up();
+		await expect(hinted).toHaveCount(2);
+		expect(await line(page, 'five').locator('> *').evaluateAll((all) => all.map((each) => each.classList.contains('mt-hint')))).toEqual([true, true, false, false, false]);
+
+		// Released away from the meter, nothing is marked.
+		await page.mouse.down();
+		await expect(hinted).toHaveCount(0);
+		await page.mouse.move(fourth.x, fourth.y + 80, { steps: 3 });
+		await expect(text(page, 'five')).toHaveText('4 / 5');
+		await page.mouse.up();
+		await expect(hinted).toHaveCount(0);
+
+		// Escape ends a drag as a release does: the marks are those of the pointer's place.
+		await page.mouse.move(third.x, third.y);
+		await page.mouse.down();
+		await page.mouse.move(first.x, first.y, { steps: 2 });
+		await expect(text(page, 'five')).toHaveText('1 / 5');
+		await page.keyboard.press('Escape');
+		await expect(text(page, 'five')).toHaveText('4 / 5');
+		await expect(hinted).toHaveCount(1);
+		await page.mouse.up();
 	});
 
 	test('automatic fills by the piece where each piece is one step, and takes the value under the pointer otherwise', async ({ page }) => {
@@ -2647,83 +2817,138 @@ test.describe('a meter which can be edited', () => {
 		await expect(line(page, 'rel')).toHaveClass(/mt-by-relative/);
 	});
 
-	test('relative input: the press changes nothing, a drag changes the value by its distance times the sensitivity, and Shift is finer', async ({ page, playwright }) => {
-		// The same steps in two browsers. The browser of these tests refuses to lock the pointer, so here the
-		// meter works with a drag it has captured. The full browser grants the lock, and is started for this.
-		const steps = async (page: Page, locks: boolean) => {
-			const locked = () => page.evaluate(() => document.pointerLockElement !== null);
-			const far = await pointAt(page, 'rel', 0.9);
+	// The relative method, step by step, for two browsers. The browser of these tests refuses to lock the pointer,
+	// so there the meter works with a drag it has captured; the full browser grants the lock.
+	const relativeSteps = async (page: Page, locks: boolean) => {
+		const locked = () => page.evaluate(() => document.pointerLockElement !== null);
+		const far = await pointAt(page, 'rel', 0.9);
 
-			// A press far from where the fill ends, and a release, change nothing.
-			await page.mouse.move(far.x, far.y);
-			await page.mouse.down();
-			await expect.poll(locked).toBe(locks);
-			await page.mouse.up();
-			await expect.poll(locked).toBe(false);
-			await expect(text(page, 'rel')).toHaveText('40%');
-			await expect(edited(page)).toHaveCount(0);
+		// A press far from where the fill ends, and a release, change nothing.
+		await page.mouse.move(far.x, far.y);
+		await page.mouse.down();
+		await expect.poll(locked).toBe(locks);
+		await page.mouse.up();
+		await expect.poll(locked).toBe(false);
+		await expect(text(page, 'rel')).toHaveText('40%');
+		await expect(edited(page)).toHaveCount(0);
 
-			// A fifth of the track towards the end is a fifth of the range, a tenth back is a tenth.
-			const from = await pointAt(page, 'rel', 0.5);
-			await page.mouse.move(from.x, from.y);
-			await page.mouse.down();
-			await expect.poll(locked).toBe(locks);
-			await page.mouse.move(from.x + from.width * 0.2, from.y, { steps: 5 });
-			await expect(text(page, 'rel')).toHaveText('60%');
-			await page.mouse.move(from.x + from.width * 0.1, from.y + 60, { steps: 5 });
-			await expect(text(page, 'rel')).toHaveText('50%');
+		// A fifth of the track towards the end is a fifth of the range, a tenth back is a tenth.
+		const from = await pointAt(page, 'rel', 0.5);
+		await page.mouse.move(from.x, from.y);
+		await page.mouse.down();
+		await expect.poll(locked).toBe(locks);
+		await page.mouse.move(from.x + from.width * 0.2, from.y, { steps: 5 });
+		await expect(text(page, 'rel')).toHaveText('60%');
+		await page.mouse.move(from.x + from.width * 0.1, from.y + 60, { steps: 5 });
+		await expect(text(page, 'rel')).toHaveText('50%');
 
-			// With Shift the same fifth is a fiftieth: two steps.
-			await page.keyboard.down('Shift');
-			await page.mouse.move(from.x + from.width * 0.3, from.y, { steps: 5 });
-			await expect(text(page, 'rel')).toHaveText('52%');
-			await page.keyboard.up('Shift');
+		// With Shift the same fifth is a fiftieth: two steps.
+		await page.keyboard.down('Shift');
+		await page.mouse.move(from.x + from.width * 0.3, from.y, { steps: 5 });
+		await expect(text(page, 'rel')).toHaveText('52%');
+		await page.keyboard.up('Shift');
 
-			// Released: the lock is given back, and the pointer sets nothing.
-			await page.mouse.up();
-			await expect.poll(locked).toBe(false);
-			await page.mouse.move(from.x, from.y, { steps: 3 });
-			await expect(text(page, 'rel')).toHaveText('52%');
+		// Released: the lock is given back, and the pointer sets nothing.
+		await page.mouse.up();
+		await expect.poll(locked).toBe(false);
+		await page.mouse.move(from.x, from.y, { steps: 3 });
+		await expect(text(page, 'rel')).toHaveText('52%');
 
-			// Movements of a quarter of a step add up: forty of them are ten steps.
-			const slow = await pointAt(page, 'rel', 0.3);
-			await page.mouse.move(slow.x, slow.y);
-			await page.mouse.down();
-			await expect.poll(locked).toBe(locks);
-			await page.mouse.move(slow.x + slow.width * 0.1, slow.y, { steps: 40 });
-			await expect(text(page, 'rel')).toHaveText('62%');
-			await page.mouse.up();
+		// Movements of a quarter of a step add up: forty of them are ten steps.
+		const slow = await pointAt(page, 'rel', 0.3);
+		await page.mouse.move(slow.x, slow.y);
+		await page.mouse.down();
+		await expect.poll(locked).toBe(locks);
+		await page.mouse.move(slow.x + slow.width * 0.1, slow.y, { steps: 40 });
+		await expect(text(page, 'rel')).toHaveText('62%');
+		await page.mouse.up();
 
-			// At a sensitivity of 2 a tenth of the track is a fifth of the range, and the range has ends.
-			const fast = await pointAt(page, 'rel_fast', 0.2);
-			await page.mouse.move(fast.x, fast.y);
-			await page.mouse.down();
-			await expect.poll(locked).toBe(locks);
-			await page.mouse.move(fast.x + fast.width * 0.1, fast.y, { steps: 5 });
-			await expect(text(page, 'rel_fast')).toHaveText('60%');
-			await page.mouse.move(fast.x + fast.width * 0.6, fast.y, { steps: 5 });
-			await expect(text(page, 'rel_fast')).toHaveText('100%');
-			await page.mouse.move(fast.x + fast.width * 0.55, fast.y, { steps: 5 });
-			await expect(text(page, 'rel_fast')).toHaveText('90%');
+		// At a sensitivity of 2 a tenth of the track is a fifth of the range, and the range has ends.
+		const fast = await pointAt(page, 'rel_fast', 0.2);
+		await page.mouse.move(fast.x, fast.y);
+		await page.mouse.down();
+		await expect.poll(locked).toBe(locks);
+		await page.mouse.move(fast.x + fast.width * 0.1, fast.y, { steps: 5 });
+		await expect(text(page, 'rel_fast')).toHaveText('60%');
+		await page.mouse.move(fast.x + fast.width * 0.6, fast.y, { steps: 5 });
+		await expect(text(page, 'rel_fast')).toHaveText('100%');
+		await page.mouse.move(fast.x + fast.width * 0.55, fast.y, { steps: 5 });
+		await expect(text(page, 'rel_fast')).toHaveText('90%');
 
-			// Escape puts back what the field held before the press.
-			await page.keyboard.press('Escape');
-			await expect(text(page, 'rel_fast')).toHaveText('40%');
-			await expect.poll(locked).toBe(false);
-			await page.mouse.move(fast.x, fast.y, { steps: 3 });
-			await page.mouse.up();
-			await expect(text(page, 'rel_fast')).toHaveText('40%');
-			await expect(edited(page)).toHaveCount(1);
-		};
+		// Escape puts back what the field held before the press.
+		await page.keyboard.press('Escape');
+		await expect(text(page, 'rel_fast')).toHaveText('40%');
+		await expect.poll(locked).toBe(false);
+		await page.mouse.move(fast.x, fast.y, { steps: 3 });
+		await page.mouse.up();
+		await expect(text(page, 'rel_fast')).toHaveText('40%');
+		await expect(edited(page)).toHaveCount(1);
+	};
 
-		// The fall-back: no lock, a captured drag.
+	/** The kinds of event the document listens to, as `listened` gives them for an element. */
+	const documentListens = async (page: Page) => {
+		const client = await page.context().newCDPSession(page);
+
+		try {
+			const { result } = await client.send('Runtime.evaluate', { expression: 'document' });
+			const { listeners } = await client.send('DOMDebugger.getEventListeners', { objectId: result.objectId! });
+			return listeners.map((listener) => listener.type);
+		} finally {
+			await client.detach();
+		}
+	};
+
+	// A field which a condition hides once its value is 50: dragged across 50, its meter is taken out of the page
+	// with the button held. Whatever it held on to is let go: no listener of its own is left on the document,
+	// no pointer is locked, nothing is thrown, and the next press on another meter works as ever.
+	const vanishingSteps = async (page: Page, locks: boolean) => {
+		const locked = () => page.evaluate(() => document.pointerLockElement !== null);
+		const lockListeners = async () => (await documentListens(page)).filter((type) => type === 'pointerlockchange').length;
+
+		await expect(text(page, 'vanishing')).toHaveText('30%');
+		const before = await lockListeners();
+
+		const start = await pointAt(page, 'vanishing', 0.5);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await expect.poll(locked).toBe(locks);
+		expect(await lockListeners()).toBe(before + 1);
+
+		await page.mouse.move(start.x + start.width * 0.1, start.y, { steps: 4 });
+		await expect(text(page, 'vanishing')).toHaveText('40%');
+		await page.mouse.move(start.x + start.width * 0.25, start.y, { steps: 6 });
+
+		// Gone, with the button still down.
+		await expect(fieldOf(page, 'vanishing')).toHaveCount(0);
+		await expect.poll(locked).toBe(false);
+		expect(await lockListeners()).toBe(before);
+
+		await page.mouse.move(start.x + start.width * 0.3, start.y + 40, { steps: 3 });
+		await page.mouse.up();
+		await expect(fieldOf(page, 'vanishing')).toHaveCount(0);
+
+		// The pointer is free: a press on another meter sets it.
+		await clickAt(page, 'whole', 0.7);
+		await expect(text(page, 'whole')).toHaveText('70%');
+	};
+
+	test('relative input: the press changes nothing, a drag changes the value by its distance times the sensitivity, and Shift is finer', async ({ page }) => {
+		// In the browser of these tests, which refuses the lock: a captured drag.
 		expect(await line(page, 'rel').evaluate((element) => typeof element.requestPointerLock)).toBe('function');
-		await steps(page, false);
+		await relativeSteps(page, false);
 		await expect(line(page, 'rel')).toHaveCSS('cursor', 'ew-resize');
+	});
 
-		// The real thing, in the full browser, signed in as the pages of these tests are.
-		const browser = await playwright.chromium.launch({ channel: 'chromium' }).catch(() => null);
-		test.info().annotations.push({ type: 'pointer lock', description: browser ? 'granted in the full browser, refused in the browser of the tests' : 'the full browser could not be started' });
+	test('relative input under a real pointer lock, in the full browser', async ({ playwright }) => {
+		// The browser of these tests never grants the lock, so the full browser is started for this, signed in as
+		// the pages of these tests are. Where it cannot be started, this test is skipped and says why.
+		let reason = '';
+		const browser = await playwright.chromium.launch({ channel: 'chromium' }).catch((error: unknown) => {
+			reason = String(error).split('\n')[0] ?? '';
+			return null;
+		});
+
+		test.skip(browser === null, `the full browser could not be started, so the pointer lock was not tested: ${reason}`);
 		if (browser === null) return;
 
 		try {
@@ -2734,10 +2959,11 @@ test.describe('a meter which can be edited', () => {
 			const full = await context.newPage();
 			const errors: string[] = [];
 			full.on('pageerror', (error) => errors.push(String(error)));
+			const locked = () => full.evaluate(() => document.pointerLockElement !== null);
 
 			await openEdit(full);
 			await expect(text(full, 'rel')).toHaveText('40%');
-			await steps(full, true);
+			await relativeSteps(full, true);
 
 			// A lock which ends while the button is held was ended by the browser, as it does on Escape, and
 			// counts as Escape: the value from before the press is back.
@@ -2754,10 +2980,195 @@ test.describe('a meter which can be edited', () => {
 			await full.mouse.up();
 			await expect(text(full, 'rel')).toHaveText('62%');
 
+			// A press which is over before the lock arrives: the lock is given back at once, each time.
+			for (let round = 0; round < 3; round++) {
+				await full.mouse.move(point.x, point.y);
+				await full.mouse.down();
+				await full.mouse.up();
+				await expect.poll(locked).toBe(false);
+				await full.waitForTimeout(150);
+				expect(await locked()).toBe(false);
+			}
+
+			await expect(text(full, 'rel')).toHaveText('62%');
+
+			// And right after such a press, a drag works as any other.
+			await full.mouse.down();
+			await expect.poll(locked).toBe(true);
+			await full.mouse.move(point.x + point.width * 0.1, point.y, { steps: 5 });
+			await expect(text(full, 'rel')).toHaveText('72%');
+			await full.mouse.up();
+			await expect.poll(locked).toBe(false);
+
+			// A meter which is taken out of the page during a drag under the lock gives the lock back.
+			await vanishingSteps(full, true);
+
 			expect(errors).toEqual([]);
 		} finally {
 			await browser.close();
 		}
+	});
+
+	test('the other ends of a press: the browser takes the pointer away, and the meter is taken out of the page', async ({ page }) => {
+		// The browser cancels a pointer when it takes it for something else, as when a finger starts to scroll
+		// the page: nothing was meant, and the value from before the press is back.
+		const start = await pointAt(page, 'whole', 0.2);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await page.mouse.move(start.x + start.width * 0.5, start.y, { steps: 4 });
+		await expect(text(page, 'whole')).toHaveText('70%');
+		expect(await line(page, 'whole').evaluate((element) => element.hasPointerCapture(1))).toBe(true);
+
+		await line(page, 'whole').evaluate((element) => element.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true })));
+		await expect(text(page, 'whole')).toHaveText('40%');
+		expect(await line(page, 'whole').evaluate((element) => element.hasPointerCapture(1))).toBe(false);
+		await expect(line(page, 'whole')).not.toHaveClass(/mt-busy/);
+
+		// The press is over: the pointer sets nothing until it is pressed again.
+		await page.mouse.move(start.x + start.width * 0.3, start.y, { steps: 3 });
+		await expect(text(page, 'whole')).toHaveText('40%');
+		await page.mouse.up();
+		await expect(edited(page)).toHaveCount(0);
+
+		// A cancel for another pointer than the one which is pressed changes nothing.
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await expect(text(page, 'whole')).toHaveText('20%');
+		await line(page, 'whole').evaluate((element) => element.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 7, bubbles: true })));
+		await expect(text(page, 'whole')).toHaveText('20%');
+		await page.mouse.move(start.x + start.width * 0.1, start.y, { steps: 2 });
+		await expect(text(page, 'whole')).toHaveText('30%');
+		await page.mouse.up();
+
+		// The meter is taken out of the page during a drag, here without a lock.
+		await vanishingSteps(page, false);
+
+		// What the item is saved with: the two meters which were set, the one which went at the value which hid it.
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ whole: 70, vanishing: 50 });
+	});
+
+	test('a finger sets a meter as a mouse does: a tap, a sideways drag, the relative method without a lock, and no marks', async ({ browser }) => {
+		// A page of its own which has a touch screen, signed in as the pages of these tests are. The fingers are
+		// sent through the tools of the browser, which can move one as well as put it down.
+		const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1440, height: 900 }, hasTouch: true });
+
+		try {
+			await context.addCookies([{ name: 'license-banner-dismissed', value: 'true', url: BASE_URL }]);
+			expect((await context.request.post('/auth/login', { data: { ...ADMIN, mode: 'session' } })).ok()).toBe(true);
+
+			const page = await context.newPage();
+			const errors: string[] = [];
+			page.on('pageerror', (error) => errors.push(String(error)));
+			await openEdit(page);
+
+			const client = await context.newCDPSession(page);
+			const finger = (type: 'touchStart' | 'touchMove' | 'touchEnd', x = 0, y = 0) => client.send('Input.dispatchTouchEvent', { type, touchPoints: type === 'touchEnd' ? [] : [{ x, y, id: 1 }] });
+
+			// The pointer of a finger is known as one.
+			await line(page, 'whole').evaluate((element) => {
+				(window as unknown as { kinds: string[] }).kinds = [];
+				element.addEventListener('pointerdown', (event) => (window as unknown as { kinds: string[] }).kinds.push((event as PointerEvent).pointerType));
+			});
+
+			// A tap sets the value under the finger.
+			const whole = await pointAt(page, 'whole', 0.25);
+			await page.touchscreen.tap(whole.x, whole.y);
+			await expect(text(page, 'whole')).toHaveText('25%');
+			expect(await page.evaluate(() => (window as unknown as { kinds: string[] }).kinds)).toEqual(['touch']);
+
+			// A finger which moves sideways is followed, and the value stays when it is lifted.
+			const left = whole.x - whole.width * 0.25;
+			await finger('touchStart', left + whole.width * 0.3, whole.y);
+			await expect(text(page, 'whole')).toHaveText('30%');
+			for (const share of [0.4, 0.5, 0.6, 0.7]) await finger('touchMove', left + whole.width * share, whole.y);
+			await expect(text(page, 'whole')).toHaveText('70%');
+			await finger('touchEnd');
+			await expect(text(page, 'whole')).toHaveText('70%');
+
+			// A finger which moves up the page was not meant for the meter: the browser takes it for scrolling,
+			// and the value from before it came down is back.
+			await finger('touchStart', left + whole.width * 0.1, whole.y);
+			for (const up of [20, 60, 120, 200]) await finger('touchMove', left + whole.width * 0.1, whole.y - up);
+			await finger('touchEnd');
+			await expect(text(page, 'whole')).toHaveText('70%');
+
+			// The relative method by finger: nothing on the touch, the distance of the drag after it, and no lock
+			// is asked for.
+			const rel = await pointAt(page, 'rel', 0.5);
+			await finger('touchStart', rel.x, rel.y);
+			await expect(text(page, 'rel')).toHaveText('40%');
+			for (const share of [0.05, 0.1, 0.15, 0.2]) await finger('touchMove', rel.x + rel.width * share, rel.y);
+			await expect(text(page, 'rel')).toHaveText('60%');
+			expect(await page.evaluate(() => document.pointerLockElement)).toBeNull();
+			await finger('touchEnd');
+			await expect(text(page, 'rel')).toHaveText('60%');
+
+			// By the piece: a tap on the last pill fills all five, and a finger leaves no marks behind.
+			const five = await pointAt(page, 'five', 0.9);
+			await page.touchscreen.tap(five.x, five.y);
+			await expect(text(page, 'five')).toHaveText('5 / 5');
+			await expect(line(page, 'five').locator('.mt-hint')).toHaveCount(0);
+
+			// A read-only meter is not set by a finger either.
+			const locked = await pointAt(page, 'twin_locked', 0.9);
+			await page.touchscreen.tap(locked.x, locked.y);
+			await expect(text(page, 'twin_locked')).toHaveText('40%');
+
+			await expect(edited(page)).toHaveCount(3);
+			expect(errors).toEqual([]);
+		} finally {
+			await context.close();
+		}
+	});
+
+	test('a meter in pieces which can be edited is drawn as the same meter which cannot', async ({ page }) => {
+		// Every box of the meter and every one of its pieces, measured against its own field in one go.
+		const boxes = (name: string) =>
+			fieldOf(page, name).evaluate((element) => {
+				const origin = element.getBoundingClientRect();
+				const parts = Array.from(element.querySelectorAll('.meter, .meter > :first-child, .mt-part, .mt-line, .mt-caption, .mt-text, .type-note'));
+
+				return parts.map((part) => {
+					const area = part.getBoundingClientRect();
+					const style = getComputedStyle(part);
+					return [part.className.split(' ')[0], area.left - origin.left, area.top - origin.top, area.width, area.height, style.backgroundColor, style.borderRadius, style.opacity].join(' ');
+				});
+			});
+
+		for (const kind of ['pills', 'dots']) {
+			const live = await boxes(`${kind}_live`);
+			const locked = await boxes(`${kind}_locked`);
+
+			// Five pieces, the line under them and the note: eleven boxes, each in the same place with the same look.
+			expect(live.length, kind).toBe(11);
+			expect(live, kind).toEqual(locked);
+
+			// One is a slider which listens, the other a meter which does not.
+			await expect(line(page, `${kind}_live`)).toHaveAttribute('role', 'slider');
+			await expect(line(page, `${kind}_live`)).toHaveClass(/mt-live/);
+			await expect(line(page, `${kind}_locked`)).toHaveAttribute('role', 'meter');
+			expect(await line(page, `${kind}_locked`).getAttribute('class')).toBe(kind === 'pills' ? 'mt-strip mt-pills' : 'mt-strip mt-dots');
+			expect(await listened(page, line(page, `${kind}_locked`))).toEqual([]);
+			expect((await edges(meter(page, `${kind}_live`))).bottom - (await edges(meter(page, `${kind}_live`))).top).toBe(54);
+
+			// Under the pointer and with the focus of the keyboard nothing of it moves either.
+			await line(page, `${kind}_live`).scrollIntoViewIfNeeded();
+			const first = (await line(page, `${kind}_live`).locator('> *').first().boundingBox())!;
+			const over = { x: first.x + first.width / 2, y: first.y + first.height / 2 };
+			await page.mouse.move(over.x, over.y);
+			await expect(line(page, `${kind}_live`).locator('.mt-hint')).toHaveCount(1);
+			expect((await boxes(`${kind}_live`)).map((box) => box.split(' ').slice(0, 5).join(' '))).toEqual(locked.map((box) => box.split(' ').slice(0, 5).join(' ')));
+			await page.mouse.move(over.x, over.y + 100);
+			await line(page, `${kind}_live`).focus();
+			expect(await boxes(`${kind}_live`)).toEqual(locked);
+
+			// A click on the read-only one changes nothing, one on the other does.
+			await clickAt(page, `${kind}_locked`, 0.05);
+			await expect(text(page, `${kind}_locked`)).toHaveText('60%');
+		}
+
+		await expect(edited(page)).toHaveCount(0);
 	});
 
 	test('the keys: arrows, the Page keys, Home and End, and Left and Right the other way round in a right-to-left page', async ({ page }) => {
@@ -2899,6 +3310,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(text(page, 'none')).toHaveText('—');
 		await page.mouse.up();
 		await expect(meter(page, 'none')).toHaveClass(/mt-empty/);
+		await expect(line(page, 'none')).toHaveAttribute('aria-valuetext', 'No value');
 
 		// Escape with no drag is not the meter's: a press and release, then Escape, keeps the value.
 		await clickAt(page, 'whole', 0.3);
@@ -3046,6 +3458,189 @@ test.describe('a meter which can be edited', () => {
 		expect(Object.keys(sent.values).sort()).toEqual(['gated', 'whole']);
 	});
 
+	test('a field which stops being one that can be edited during a drag stops there, and nothing more is written', async ({ page }) => {
+		// A condition makes the field read-only once its own value is 50 or more, so a drag across 50 closes it
+		// while the button is held.
+		const track = line(page, 'closing');
+		const held = () => track.evaluate((element) => element.hasPointerCapture(1));
+		const start = await pointAt(page, 'closing', 0.3);
+		const to = (share: number) => page.mouse.move(start.x + start.width * (share - 0.3), start.y, { steps: 2 });
+
+		await expect(text(page, 'closing')).toHaveText('30%');
+		await expect(track).toHaveAttribute('role', 'slider');
+
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await to(0.4);
+		await expect(text(page, 'closing')).toHaveText('40%');
+		await to(0.48);
+		await expect(text(page, 'closing')).toHaveText('48%');
+		await expect(track).toHaveAttribute('role', 'slider');
+		expect(await held()).toBe(true);
+		expect(await listened(page, track)).toEqual(LISTENERS);
+
+		// Across the limit: the value which closed the field is the last one written.
+		await to(0.5);
+		await expect(text(page, 'closing')).toHaveText('50%');
+		await expect(track).toHaveAttribute('role', 'meter');
+
+		// At once it is the reading again: it has let go of the pointer, listens to nothing, and has no tab stop,
+		// handle, cursor or class of a meter which can be edited.
+		expect(await held()).toBe(false);
+		expect(await listened(page, track)).toEqual([]);
+		expect(await track.getAttribute('class')).toBe('mt-track');
+		expect(await meter(page, 'closing').evaluate((element) => element.querySelectorAll('[tabindex], .mt-handle, .mt-live, .mt-busy').length)).toBe(0);
+		await expect(track).toHaveCSS('cursor', 'auto');
+
+		// The button is still held, and the pointer moves on: nothing changes any more.
+		for (const share of [0.52, 0.6, 0.8, 0.2, 0.45]) {
+			await to(share);
+			await expect(text(page, 'closing')).toHaveText('50%');
+		}
+
+		await expectFilled(track, fill(page, 'closing'), 0.5);
+		await page.mouse.up();
+		await expect(text(page, 'closing')).toHaveText('50%');
+
+		// Nor does a new press, or a key sent to it.
+		await page.mouse.click(start.x, start.y);
+		await keyOn(track, 'Home');
+		await expect(text(page, 'closing')).toHaveText('50%');
+		await expect(track).toHaveAttribute('role', 'meter');
+
+		// What is saved is the limit, and nothing else.
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ closing: 50 });
+	});
+
+	test('whole numbers in a range whose limits are not whole: the pressed piece is the one filled, and the slider says what can be set', async ({ page }) => {
+		const pill = async (name: string, index: number) => {
+			await line(page, name).scrollIntoViewIfNeeded();
+			const area = (await line(page, name).locator('> *').nth(index).boundingBox())!;
+			return { x: area.x + area.width / 2, y: area.y + area.height / 2, left: area.x };
+		};
+
+		// Five pills over 0.5 to 5.5, of which a whole type can hold 1 to 5: four steps, so a pill is not a step,
+		// and the method chosen for it is the value under the pointer.
+		await expectFilledPieces(line(page, 'between'), 5, 3);
+		await expect(line(page, 'between')).toHaveClass(/mt-by-contiguous/);
+
+		// The slider says the range which can be set, not the one which is drawn.
+		for (const name of ['between', 'between_seg']) {
+			await expect(line(page, name)).toHaveAttribute('aria-valuemin', '1');
+			await expect(line(page, name)).toHaveAttribute('aria-valuemax', '5');
+			await expect(line(page, name)).toHaveAttribute('aria-valuenow', '3');
+		}
+
+		// Filled by the piece because the option says so: a press on the nth pill leaves n filled, and the value is n.
+		await expect(line(page, 'between_seg')).toHaveClass(/mt-by-segment/);
+
+		for (const filled of [5, 1, 4, 2, 3]) {
+			const point = await pill('between_seg', filled - 1);
+			await page.mouse.click(point.x, point.y);
+			await expect(text(page, 'between_seg')).toHaveText(String(filled));
+			await expectFilledPieces(line(page, 'between_seg'), 5, filled);
+		}
+
+		// Before the first pill: the least which can be written, which is 1 and fills one.
+		const first = await pill('between_seg', 0);
+		const third = await pill('between_seg', 2);
+		await page.mouse.move(third.x, third.y);
+		await page.mouse.down();
+		await page.mouse.move(first.left - 40, first.y, { steps: 3 });
+		await expect(text(page, 'between_seg')).toHaveText('1');
+		await page.mouse.up();
+		await expectFilledPieces(line(page, 'between_seg'), 5, 1);
+
+		// The keys keep to what can be written: Home and End are 1 and 5.
+		await line(page, 'between').focus();
+		await page.keyboard.press('End');
+		await expect(text(page, 'between')).toHaveText('5');
+		await page.keyboard.press('ArrowRight');
+		await expect(text(page, 'between')).toHaveText('5');
+		await page.keyboard.press('Home');
+		await expect(text(page, 'between')).toHaveText('1');
+		await page.keyboard.press('ArrowLeft');
+		await expect(text(page, 'between')).toHaveText('1');
+
+		// 15 in a range of 0 to 10.5: shown as it is, said to be at the most which can be set, and a step down
+		// from there is 9, one step under that, as a step down from 150 of a hundred is 99.
+		await expect(text(page, 'beyond')).toHaveText('15');
+		await expect(line(page, 'beyond')).toHaveAttribute('aria-valuemax', '10');
+		await expect(line(page, 'beyond')).toHaveAttribute('aria-valuenow', '10');
+		await line(page, 'beyond').focus();
+		await page.keyboard.press('ArrowLeft');
+		await expect(text(page, 'beyond')).toHaveText('9');
+		await page.keyboard.press('End');
+		await expect(text(page, 'beyond')).toHaveText('10');
+
+		// A meter which cannot be edited says the range as it is stored, as it always did.
+		await expect(line(page, 'twin_locked')).toHaveAttribute('aria-valuemin', '0');
+		await expect(line(page, 'twin_locked')).toHaveAttribute('aria-valuemax', '100');
+
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ between_seg: 1, between: 1, beyond: 10 });
+	});
+
+	test('while the value is dragged a place on the scale keeps its colour, and the place where a colour ends does not move', async ({ page }) => {
+		const distance = (one: number[], other: number[]) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index]!)));
+
+		// A drag from 45 to 100 in steps of one, on each of the four meters: at every value one row of pixels
+		// across the track is read, through the middle of the track.
+		const rows = async (name: string) => {
+			const start = await pointAt(page, name, 0.45);
+			const seen: { value: number; row: number[][] }[] = [];
+
+			await page.mouse.move(start.x, start.y);
+			await page.mouse.down();
+
+			for (let value = 45; value <= 100; value++) {
+				await page.mouse.move(start.x + (start.width * (value - 45)) / 100, start.y);
+				await expect(text(page, name)).toHaveText(`${value}%`);
+				seen.push({ value, row: await pixels(page, start.x - start.width * 0.45, start.y, start.width) });
+			}
+
+			await page.mouse.up();
+			return { seen, width: start.width };
+		};
+
+		// Nothing about the colours is animated: no transition and no animation on the track, the fill or a piece.
+		for (const target of [line(page, 'flow_steps'), fill(page, 'flow_steps'), line(page, 'flow_pills').locator('> *').first(), line(page, 'flow_bars').locator('> *').first()]) {
+			expect(await target.evaluate((element) => [getComputedStyle(element).transitionDuration, getComputedStyle(element).animationName])).toEqual(['0s', 'none']);
+		}
+
+		// One bar in steps: red ends at 40% of the track and amber at 80%, at the same pixel whatever the value.
+		// The end of the fill itself is round and has the handle on it, so a place counts once the fill is 16px past it.
+		const steps = await rows('flow_steps');
+		const ends = (row: number[][], from: string, to: string) => row.findIndex((colour) => distance(colour, rgb(to)) < distance(colour, rgb(from)));
+		const past = (place: number) => steps.seen.filter((each) => (each.value / 100 - place) * steps.width >= 16);
+
+		const red = past(0.4).map((each) => ends(each.row, RED, AMBER));
+		const amber = past(0.8).map((each) => ends(each.row.slice(Math.round(steps.width * 0.5)), AMBER, GREEN));
+		expect(red.length).toBeGreaterThan(40);
+		expect(amber.length).toBeGreaterThan(10);
+		expect([...new Set(red)]).toEqual([Math.round(steps.width * 0.4)]);
+		expect([...new Set(amber)]).toEqual([Math.round(steps.width * 0.8) - Math.round(steps.width * 0.5)]);
+
+		// One bar which blends: the colours at fixed places which the fill covers at every value do not change at all.
+		const blend = await rows('flow_gradient');
+		const places = [0.03, 0.1, 0.2, 0.3, 0.39];
+		const at = (row: number[][], width: number) => places.map((place) => row[Math.round(width * place)]!.join(' ')).join(', ');
+		expect([...new Set(blend.seen.map((each) => at(each.row, blend.width)))]).toHaveLength(1);
+		expect([...new Set(steps.seen.map((each) => at(each.row, steps.width)))]).toHaveLength(1);
+
+		// And they are the colours of those places.
+		for (const place of places) expectColour(blend.seen[0]!.row[Math.round(blend.width * place)]!, blended(place), 6);
+
+		// In pieces, steps and blended: the same.
+		for (const name of ['flow_pills', 'flow_bars']) {
+			const pieces = await rows(name);
+			expect([...new Set(pieces.seen.map((each) => at(each.row, pieces.width)))], name).toHaveLength(1);
+		}
+
+		await expect(edited(page)).toHaveCount(4);
+	});
+
 	test('in the comparison of two revisions no meter can be edited', async ({ page, api }) => {
 		// Two more revisions of the item, and the form again, which reads them when it opens.
 		await api.patch(`/items/${EDIT}/${ids['Edit']}`, { whole: 80 });
@@ -3085,7 +3680,9 @@ test.describe('a meter which can be edited', () => {
 		// No value: the dashed track and a dash, and no value for assistive technology.
 		await expect(meter(page, 'none')).toHaveClass(/mt-empty/);
 		await expect(text(page, 'none')).toHaveText('—');
-		await expect(line(page, 'none')).not.toHaveAttribute('aria-valuenow');
+		// A slider has to say a value: without one it says the least it could be set to, and "No value" as its text.
+		await expect(line(page, 'none')).toHaveAttribute('aria-valuenow', '0');
+		await expect(line(page, 'none')).toHaveAttribute('aria-valuetext', 'No value');
 		await expect(fieldOf(page, 'none').getByRole('slider', { name: 'None', exact: true })).toHaveCount(1);
 
 		await clickAt(page, 'none', 0.5);

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
-import { canEdit, changes, drawingOf, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, shareAt, snapValue, valueAtShare } from './meter';
+import { canEdit, changes, drawingOf, filledAt, inputMethod, keyValue, numberOf, pieceCount, pieceGeometry, readEditing, readLook, readOptions, readingOf, relativeMove, segmentValue, shareAt, snapValue, valueAtShare, writableRange } from './meter';
 import type { Paint, Piece } from './meter';
 
 /**
@@ -116,7 +116,7 @@ onBeforeUnmount(() => {
 // again only when the number of pieces changes, not with every pixel.
 const look = computed(() => readLook(props));
 const count = computed(() => pieceCount(look.value, options.value, 'form', width.value));
-const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value));
+const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value));
 
 // The colour stops of the scale are set once, on the root, for whichever
 // surfaces paint with them.
@@ -199,9 +199,11 @@ const positionOf = (event: PointerEvent, at: ReturnType<typeof frame>) => (at.rt
 // The value under the pointer, by the method of the meter.
 function valueUnder(event: PointerEvent, at: ReturnType<typeof frame>) {
 	const position = positionOf(event, at);
-	const share = method.value === 'segment' && at.pieces.length ? filledAt(position, at.pieces) / at.pieces.length : shareAt(position, at.length);
 
-	return snapValue(valueAtShare(share, options.value), options.value, editing.value);
+	// By the piece: the value which leaves the pieces up to the pointer filled.
+	if (method.value === 'segment' && at.pieces.length) return segmentValue(filledAt(position, at.pieces), at.pieces.length, options.value, editing.value);
+
+	return snapValue(valueAtShare(shareAt(position, at.length), options.value), options.value, editing.value);
 }
 
 // One press of the pointer, from the button going down to its release or to Escape. `before` is what the field
@@ -212,6 +214,25 @@ interface Drag {
 	raw: number;
 	lastX: number;
 	locked: boolean;
+	/** Where the pointer was last seen on the page, and whether it is a finger: for the marks after the drag. */
+	x: number;
+	y: number;
+	touch: boolean;
+}
+
+// Marks the pieces which a pointer resting at a point of the page would fill: those up to it, where the pieces
+// are filled by the pointer and the point is on the track. A finger does not rest anywhere.
+function rest(x: number, y: number, touch: boolean) {
+	const element = line.value;
+
+	if (!editable.value || !element || touch || method.value !== 'segment') {
+		hover.value = 0;
+		return;
+	}
+
+	const at = frame(element);
+	const inside = x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom;
+	hover.value = inside ? filledAt(at.rtl ? at.box.right - x : x - at.box.left, at.pieces) : 0;
 }
 
 let drag: Drag | null = null;
@@ -225,8 +246,20 @@ function onPointerDown(event: PointerEvent) {
 	finish(false);
 
 	const current = numberOf(props.value);
-	drag = { pointer: event.pointerId, before: props.value, raw: current ?? options.value.min, lastX: event.clientX, locked: false };
+	drag = {
+		pointer: event.pointerId,
+		before: props.value,
+		raw: current ?? options.value.min,
+		lastX: event.clientX,
+		locked: false,
+		x: event.clientX,
+		y: event.clientY,
+		touch: event.pointerType === 'touch',
+	};
 	dragging.value = true;
+
+	// Nothing is marked during a drag: the fill itself follows the pointer.
+	hover.value = 0;
 
 	// The drag goes on when the pointer leaves the field.
 	try {
@@ -264,11 +297,14 @@ function onPointerMove(event: PointerEvent) {
 	const at = frame(element);
 
 	if (drag === null) {
-		hover.value = method.value === 'segment' && event.pointerType !== 'touch' ? filledAt(positionOf(event, at), at.pieces) : 0;
+		rest(event.clientX, event.clientY, event.pointerType === 'touch');
 		return;
 	}
 
 	if (event.pointerId !== drag.pointer) return;
+
+	drag.x = event.clientX;
+	drag.y = event.clientY;
 
 	// A mouse which moves with no button held was released where the meter did not see it.
 	if (event.pointerType === 'mouse' && event.buttons === 0) {
@@ -310,6 +346,9 @@ function finish(restore: boolean) {
 
 		if (document.pointerLockElement === element) document.exitPointerLock();
 	}
+
+	// The marks are back at once, for where the pointer rests now, without waiting for it to move.
+	rest(ended.x, ended.y, ended.touch);
 
 	if (restore && editable.value && props.value !== ended.before) emit('input', ended.before);
 }
@@ -376,6 +415,20 @@ watch(editable, (now) => {
 	finish(false);
 });
 
+// What a slider says its range and its value are: the range which can be written, which for a field of a whole
+// type with limits between whole numbers is narrower than the range which is drawn, and the value within it. A
+// meter which cannot be edited says what it always said: the range as it is stored.
+const said = computed(() => {
+	const range = (editable.value ? writableRange(options.value, editing.value) : null) ?? options.value;
+	const now = reading.value.now;
+
+	// A slider has to say a value, so one without a value says the least it could be set to, and "No value" as
+	// the text of it. A meter without a value says none, as it always did.
+	if (!editable.value) return { min: range.min, max: range.max, now: now ?? undefined };
+
+	return { min: range.min, max: range.max, now: now === null ? range.min : Math.min(range.max, Math.max(range.min, now)) };
+});
+
 const listeners = computed(() =>
 	editable.value
 		? {
@@ -393,7 +446,7 @@ const listeners = computed(() =>
 const lineClass = computed(() => {
 	const drawn =
 		drawing.value.pieces === null
-			? ['mt-track', paintClass(drawing.value.track)]
+			? ['mt-track', paintClass(drawing.value.track), { 'mt-scaled': drawing.value.fill.scale !== null }]
 			: ['mt-strip', `mt-${look.value.visualization}`, { 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread' }];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
@@ -461,6 +514,15 @@ onBeforeUnmount(() => {
 //   shown and hidden at once, without a transition.
 // - The pieces which the pointer would fill (`mt-hint`) have a veil in the
 //   text colour over whatever they are painted with.
+// - The fill of the one bar is the exception to "`--mt-n` times as wide": its
+//   image is as wide as the track itself, `100cqi`, with the track made a
+//   container for that (`mt-scaled`, only where the fill is painted so). An
+//   image which is sized by the fill, `1 / fraction` times its width, comes
+//   out a fraction of a pixel wider or narrower at every value, and the place
+//   where one colour ends moves by a pixel as the value changes. Sized by the
+//   track and laid at its start, no stop can move: the fill only uncovers
+//   more or less of the same picture. `--mt-n` is still set on the fill, for
+//   a browser which does not know the unit and drops that declaration.
 // - A gradient has no logical direction, so a right-to-left page gets its own
 //   rule, by `:dir(rtl)`: the gradient runs to the left and the place is
 //   counted from the right. The app writes `dir` on the root element.
@@ -503,9 +565,9 @@ onBeforeUnmount(() => {
 			:aria-orientation="editable ? 'horizontal' : undefined"
 			:aria-label="options.label === null ? name : undefined"
 			:aria-labelledby="options.label === null ? undefined : `${id}-caption`"
-			:aria-valuemin="options.min"
-			:aria-valuemax="options.max"
-			:aria-valuenow="reading.now ?? undefined"
+			:aria-valuemin="said.min"
+			:aria-valuemax="said.max"
+			:aria-valuenow="said.now"
 			:aria-valuetext="spoken"
 			v-on="listeners"
 		>
@@ -628,6 +690,14 @@ onBeforeUnmount(() => {
 
 .mt-weak {
 	background-image: linear-gradient(to right, var(--mt-weak-stops));
+}
+
+.mt-scaled {
+	container-type: inline-size;
+}
+
+.mt-fill.mt-paint {
+	background-size: 100cqi 100%;
 }
 
 .mt-paint:dir(rtl) {

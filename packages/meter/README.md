@@ -23,7 +23,7 @@ A meter interface and display for [Directus](https://directus.io). A number whic
 - **A reading where the field is read-only.** A read-only meter cannot be changed, is no tab stop, and is not dimmed: a number which a flow maintains is normally read-only, and it stays as legible as any other.
 - **A real meter for assistive technology:** the role `meter`, or `slider` where it can be edited, with its range, its value and the text which is printed, named by the caption or else by the field.
 - **Looks like Directus** in light, dark and custom themes, follows right-to-left languages, and has no animation.
-- **Self-contained.** One app bundle of about 34 KB which imports only `vue` and `@directus/extensions-sdk`.
+- **Self-contained.** One app bundle of about 36 KB which imports only `vue` and `@directus/extensions-sdk`.
 
 ![The same form in the dark theme](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/form-dark.png)
 
@@ -61,8 +61,8 @@ Every option is optional.
 | `dotsLayout` | Dots Layout | `packed` | Where dots stand. `packed`: from the start, a fixed distance apart. `spread`: the first at the start edge, the last at the end edge, equal gaps between. The options form asks for it only for `dots`. |
 | `color` | Color | the primary colour | The colour of the bar. The colour picker stores a hex colour; a theme variable such as `var(--theme--danger)` can be written by hand. |
 | `thresholds` | Thresholds | none | A list of entries with a `value` and a `color`. From its value upward the bar has the colour of an entry. |
-| `activeColoring` | Active Coloring | `value` | The colours of what is filled. `value`: one colour, that of the current value. `steps`: each place on the scale has the colour of its own threshold. `gradient`: those colours blended from one to the next. |
-| `inactiveColoring` | Inactive Coloring | `plain` | The colours of what is not filled. `plain`: the track. `automatic`: as what is filled, faded. `value`, `steps`, `gradient`: that one, faded, whatever what is filled has. |
+| `activeColoring` | Active Coloring | `value` | The colours of what is filled. `value`: one colour, that of the current value. `blend`: one colour as well, which shifts towards the colour of the next threshold as the value comes near it. `steps`: each place on the scale has the colour of its own threshold. `gradient`: those colours blended from one to the next along the track. |
+| `inactiveColoring` | Inactive Coloring | `plain` | The colours of what is not filled. `plain`: the track. `automatic`: as what is filled, faded. `value`, `blend`, `steps`, `gradient`: that one, faded, whatever what is filled has. |
 | `input` | Input Method | `automatic` | How the pointer sets the value, in the interface. `contiguous`: the value is where the pointer is along the track. `segment`: the pieces up to the one under the pointer are filled. `relative`: the value moves by as much as the pointer moves. `automatic`: `segment` where every piece is exactly one step, `contiguous` otherwise. |
 | `step` | Step | `1` | The distance between two values which can be set, counted from the minimum, in the interface. |
 | `sensitivity` | Sensitivity | `1` | For `relative` only: how many times the range one width of the meter covers. The options form asks for it only while the input method is `relative`. |
@@ -98,15 +98,17 @@ Two things follow from this, and both are meant:
 
 ### Colouring
 
-![Six meters at 62% with a red colour, amber from 40 and green from 80: one bar in amber on the plain track, the same with the track in faded amber, one bar which is red up to 40 and amber after it with the rest of the track in faded amber and faded green, one bar which blends from red over amber towards green and goes on, faded, to the end, ten pills in steps, and fifty thin bars which blend](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/coloring-light.png)
+![Six meters at 62% with a red colour, amber from 40 and green from 80 (the colouring `blend` is not in this picture): one bar in amber on the plain track, the same with the track in faded amber, one bar which is red up to 40 and amber after it with the rest of the track in faded amber and faded green, one bar which blends from red over amber towards green and goes on, faded, to the end, ten pills in steps, and fifty thin bars which blend](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/coloring-light.png)
 
 The `color` and the `thresholds` say which colour a value has. The two colourings say where that shows.
 
 - **`value`,** the default: everything which is filled has one colour, that of the current value. The whole fill turns amber when the value reaches the amber threshold.
+- **`blend`:** one colour for everything which is filled, like `value`, but it is the colour the gradient has where the value stands. Half way between the amber threshold and the green one the whole fill is half way between amber and green, so the colour shifts little by little as the value moves and never jumps. From the last threshold on it is that threshold's colour.
 - **`steps`:** a colour belongs to a place on the scale. Each place has the colour a meter standing there would have, so the bar is red up to the amber threshold and amber from there on, whatever the value is. A piece has the colour of the value it reaches when it is filled completely.
 - **`gradient`:** the same colours, blended from one to the next: the `color` at the minimum, and the colour of each threshold at its value. The blend spans the whole track and the fill shows the part it covers; it is never squeezed into what is filled. A piece shows its own part of it.
-- **What is not filled** is the plain track by default. With `inactiveColoring` it is coloured in one of the same three ways and faded: mixed with seven parts of the track's colour to three of its own, in every theme. `automatic` is the way of what is filled, so a gradient goes on, weaker, to the end of the track. `value` there is a faded tint of the colour of the current value.
-- **Without thresholds** there is one colour, and the three ways are the same.
+- **What is not filled** is the plain track by default. With `inactiveColoring` it is coloured in one of the same four ways and faded: mixed with seven parts of the track's colour to three of its own, in every theme. `automatic` is the way of what is filled, so a gradient goes on, weaker, to the end of the track. `value` there is a faded tint of the colour of the current value, and `blend` a faded tint of the blended one.
+- **Without thresholds** there is one colour, and the four ways are the same.
+- **A place keeps its colour.** In `steps` and `gradient` a colour belongs to a place on the track, and it stays there to the pixel while the value changes: the fill only uncovers more or less of the same picture.
 - **A field without a value** is not tinted: it keeps its dashed outline.
 - A threshold at or below the minimum gives the minimum its colour. One beyond the maximum is beyond the track: steps never reach it, and a gradient blends towards it without arriving.
 
@@ -136,9 +138,9 @@ A meter in a form can be set with the pointer and the keyboard, unless the field
 **With the pointer** (mouse, pen or finger, the main button only). A drag goes on when the pointer leaves the field. A finger which moves sideways edits, and one which moves up or down scrolls the page as before.
 
 - **`contiguous`:** a press sets the value under the pointer, and a drag follows it. Past either end of the track it is the minimum or the maximum.
-- **`segment`:** a press or a drag fills the pieces up to and including the one under the pointer, and the value is that many of them: the third of five pieces on 0 to 5 is 3. A pointer between two pieces counts for the one before it. Before the start of the first piece it is the minimum, beyond the last one the maximum. Packed dots are where the dots are, not the whole width of the field. While the pointer rests over the meter, the pieces it would fill are marked.
+- **`segment`:** a press or a drag fills the pieces up to and including the one under the pointer, and the value is that many of them: the third of five pieces on 0 to 5 is 3. A pointer between two pieces counts for the one before it. Before the start of the first piece it is the minimum, beyond the last one the maximum. Packed dots are where the dots are, not the whole width of the field. While the pointer rests over the meter, the pieces it would fill are marked; during a drag nothing is marked, since the fill itself follows the pointer.
 - **`relative`:** a press changes nothing. Moving towards the end of the track raises the value and moving towards its start lowers it, by the share of the meter's width which the pointer has moved, times the sensitivity: at 1, one width covers the whole range. Holding Shift makes it ten times finer. The meter asks the browser to lock the pointer for the drag, so the cursor disappears and the movement has no edge to run into; the lock ends with the release of the button. Where the browser refuses the lock or has none, and for a finger, the same works as an ordinary drag.
-- **`automatic`,** the default, is `contiguous` for the one bar. For pills, segments, bars and dots it is `segment` where every piece stands for exactly one step, as five dots do on 0 to 5, and `contiguous` otherwise, as for ten pills on 0 to 100, where a piece is ten steps and filling by the piece could only ever give 10, 20, 30. It is never `relative`.
+- **`automatic`,** the default, is `contiguous` for the one bar. For pills, segments, bars and dots it is `segment` where every piece stands for exactly one step, as five dots do on 0 to 5, and `contiguous` otherwise, as for ten pills on 0 to 100, where a piece is ten steps and filling by the piece could only ever give 10, 20, 30. It is never `relative`. Where `segment` is set by hand on such a meter, a press on a piece writes the value nearest to that piece's share which leaves exactly the pieces up to it filled.
 
 **With the keyboard.** The meter is one tab stop.
 
@@ -147,7 +149,7 @@ A meter in a form can be set with the pointer and the keyboard, unless the field
 | Right, Up | One step up. |
 | Left, Down | One step down. |
 | Page Up, Page Down | Ten steps up or down, or one piece where a piece is more than that. |
-| Home, End | The minimum, the maximum. |
+| Home, End | The least and the most which can be set. |
 | Escape | During a drag: puts back the value from before the press, and ends the drag. |
 
 In a right-to-left language Left and Right swap, as the track itself does.
@@ -156,9 +158,11 @@ In a right-to-left language Left and Right swap, as the track itself does.
 
 - **On the steps.** The values which can be set are the minimum, the minimum plus one step, plus two, and so on, and the maximum, also where the steps miss it: steps of 3 from 0 to 10 give 0, 3, 6, 9 and 10. A step up from a value between two of them goes to the next one.
 - **Within the range,** always.
+- **A whole type keeps to whole numbers.** On a field of the type Integer or Big Integer whose limits are not whole, such as 0.5 to 5.5, the values which can be set are the whole numbers within the range, 1 to 5, and the steps are counted from the first of them. The bar is still drawn against the limits as they are; a screen reader is told the range which can be set.
+- **A step larger than the range** leaves two values, the two ends, and the nearer one is written. **A step so small that the range holds more than a thousand million of them** is no step: the value under the pointer is written as it is, to twelve digits.
 - **A plain number,** as the stock Slider writes one for every type. A step of 0.1 writes 0.3 and not 0.30000000000000004. A field of the type Integer or Big Integer gets a whole number.
 - **Only a change is written.** A click where the value already is leaves the item unchanged.
-- **A field without a value** gets one with the first click or key. A value which was stored beyond the range is shown as it is, and comes into the range with the first click or key.
+- **A field without a value** gets one from the first press with `contiguous` and `segment`, from the first movement of a drag with `relative`, where a press alone changes nothing, and from the first key with all three. A value which was stored beyond the range is shown as it is, and comes into the range in the same way: with the first press, the first movement or the first key.
 - **Nothing clears the value.** **Clear Value** in the menu of the field's label does that.
 - Escape puts back exactly what the field held before the press, whatever that was.
 

@@ -20,7 +20,7 @@ export type DotsLayout = 'packed' | 'spread';
  * `steps`: every place on the scale has the colour a meter standing there
  * would have. `gradient`: the same colours, blended from one to the next.
  */
-export type Coloring = 'value' | 'steps' | 'gradient';
+export type Coloring = 'value' | 'blend' | 'steps' | 'gradient';
 
 /** The colouring of what is not filled: the plain track, that of what is filled, or one of its own. */
 export type InactiveColoring = 'plain' | 'automatic' | Coloring;
@@ -207,6 +207,14 @@ export const DEFAULT_INPUT: InputMethod = 'automatic';
 export const DEFAULT_STEP = 1;
 export const DEFAULT_SENSITIVITY = 1;
 
+/**
+ * The most steps a range can hold and still have a grid, and the digits a
+ * value is written with where it has none. Past a thousand million steps the
+ * arithmetic of the grid no longer tells one step from the next.
+ */
+export const MAX_STEPS = 1e9;
+export const FREE_DIGITS = 12;
+
 /** How many steps the Page keys move, and how much finer the `relative` method is while Shift is held. */
 export const PAGE_STEPS = 10;
 export const FINE = 0.1;
@@ -217,8 +225,8 @@ const WHOLE_TYPES: readonly unknown[] = ['integer', 'bigInteger'];
 const FORMATS: readonly unknown[] = ['percent', 'value', 'fraction'];
 const VISUALIZATIONS: readonly unknown[] = ['contiguous', 'pills', 'segments', 'bars', 'dots'];
 const DOTS_LAYOUTS: readonly unknown[] = ['packed', 'spread'];
-const COLORINGS: readonly unknown[] = ['value', 'steps', 'gradient'];
-const INACTIVE_COLORINGS: readonly unknown[] = ['plain', 'automatic', 'value', 'steps', 'gradient'];
+const COLORINGS: readonly unknown[] = ['value', 'blend', 'steps', 'gradient'];
+const INACTIVE_COLORINGS: readonly unknown[] = ['plain', 'automatic', 'value', 'blend', 'steps', 'gradient'];
 
 // A number as the API writes it: digits with an optional sign, fraction and
 // exponent. Not hexadecimal, not "Infinity", not an empty text, each of which
@@ -661,6 +669,22 @@ export function pieceGeometry(visualization: Shape, place: Place, count: number,
 	});
 }
 
+/**
+ * The range of the values which can be written to a field: the range as it
+ * is drawn, and for a field of a whole type the whole numbers within it, from
+ * the first to the last. Everything which edits works in this range: the grid
+ * of steps starts at its minimum, a key starts from its nearer end for a
+ * value from outside, and it is the range a slider announces. `null` where
+ * it holds no value at all, as a range from 0.2 to 0.8 holds no whole number.
+ * What is drawn keeps to the range as it is stored.
+ */
+export function writableRange(range: Range, editing: Pick<Editing, 'whole'>): Range | null {
+	const min = editing.whole ? Math.ceil(range.min) : range.min;
+	const max = editing.whole ? Math.floor(range.max) : range.max;
+
+	return Number.isFinite(min) && Number.isFinite(max) && max >= min ? { min: min + 0, max: max + 0 } : null;
+}
+
 /** How many digits a number has after its decimal point, as it is written out. */
 function decimalsOf(number: number): number {
 	const [mantissa = '', exponent = '0'] = String(number).toLowerCase().split('e');
@@ -684,19 +708,44 @@ function decimalsOf(number: number): number {
  * the first whole number of the range. Where the range holds no value which
  * can be written, or the value asked for is not a number, there is nothing to
  * write, which is `null`.
+ *
+ * Two kinds of step have no grid. One larger than the range leaves the two
+ * ends of the range, and the nearer is written. One so small that the range
+ * holds more than `MAX_STEPS` of it is no step at all: the value within the
+ * range is written, rounded to `FREE_DIGITS` digits which count.
  */
 export function snapValue(value: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>, rounding: Rounding = 'nearest'): number | null {
-	const min = editing.whole ? Math.ceil(range.min) : range.min;
-	const max = editing.whole ? Math.floor(range.max) : range.max;
+	const writable = writableRange(range, editing);
 	const step = editing.step;
 
-	if (!Number.isFinite(value) || !Number.isFinite(min) || !Number.isFinite(max) || !(max >= min) || !(step > 0)) return null;
+	if (writable === null || !Number.isFinite(value) || !(step > 0)) return null;
+
+	const { min, max } = writable;
 
 	const within = Math.min(max, Math.max(min, value));
 	const span = max - min;
 
 	// Limits too far apart to subtract: no grid can be counted, and the value within the range is all there is.
 	if (!Number.isFinite(span)) return (editing.whole ? Math.round(within) : within) + 0;
+
+	// How many steps the range holds. A step larger than the range leaves two values which can be written, the
+	// two ends, and the nearer one is written.
+	const held = span / step;
+
+	if (!(held >= 1)) {
+		if (within <= min) return min;
+		if (within >= max) return max;
+		if (rounding !== 'nearest') return rounding === 'down' ? min : max;
+		return within - min < max - within ? min : max;
+	}
+
+	// More steps than can be counted with any meaning: there is no grid, and the value within the range is
+	// written, with the digits which mean something.
+	if (!(held <= MAX_STEPS)) {
+		const rounded = Number(within.toPrecision(FREE_DIGITS));
+		const free = Math.min(max, Math.max(min, editing.whole ? Math.round(rounded) : rounded));
+		return Number.isFinite(free) ? free + 0 : null;
+	}
 
 	// A hair of slack, so that 0.3 counts as three steps of 0.1 and not as 2.9999999999999996.
 	const SLACK = 1e-9;
@@ -771,15 +820,46 @@ export function filledAt(position: number, pieces: Piece[]): number {
  * step, which is where a click on the third piece can mean nothing but three
  * steps; where a piece stands for more or less than a step, as for a range of
  * a hundred drawn in ten pieces, it takes the value under the pointer, so
- * that every value of the grid can be reached.
+ * that every value of the grid can be reached. A piece is a step only where
+ * the limits themselves can be written: a whole type from 0.5 to 5.5 draws
+ * five pieces over a range of which only 1 to 5 can be written, and takes
+ * the value under the pointer.
  */
-export function inputMethod(editing: Pick<Editing, 'input' | 'step'>, count: number, range: Range): Exclude<InputMethod, 'automatic'> {
+export function inputMethod(editing: Pick<Editing, 'input' | 'step' | 'whole'>, count: number, range: Range): Exclude<InputMethod, 'automatic'> {
 	if (editing.input === 'relative') return 'relative';
 	if (!(count >= MIN_SUBDIVISIONS) || editing.input === 'contiguous') return 'contiguous';
 	if (editing.input === 'segment') return 'segment';
 
+	// A piece is a step only where the pieces are drawn over the very range which can be written.
+	const writable = writableRange(range, editing);
+	if (writable === null || writable.min !== range.min || writable.max !== range.max) return 'contiguous';
+
 	const span = range.max - range.min;
 	return Math.abs(count * editing.step - span) <= 1e-9 * Math.max(1, Math.abs(span)) ? 'segment' : 'contiguous';
+}
+
+/**
+ * The value which is written when the pointer fills `filled` of `count`
+ * pieces with the `segment` method. The press is on a piece, so that piece is
+ * what has to be filled afterwards: of the values which can be written and
+ * which draw exactly that many pieces, the one nearest to that share of the
+ * range. Where a piece is one step that is the share itself. Where no value
+ * draws that many, as with more pieces than there are steps, it is the value
+ * nearest to the share. `null` where nothing can be written.
+ */
+export function segmentValue(filled: number, count: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>): number | null {
+	if (!(count >= 1)) return null;
+
+	const target = valueAtShare(Math.min(count, Math.max(0, filled)) / count, range);
+	const nearest = snapValue(target, range, editing);
+	if (nearest === null) return null;
+
+	// Of the values which can be written, those which draw the pieces asked for lie together around the target,
+	// so the nearest of them is the one next to the target on one side or the other.
+	const draws = (value: number | null): value is number => value !== null && filledCount(fractionOf(value, range), count) === filled;
+	const around = [nearest, snapValue(target, range, editing, 'down'), snapValue(target, range, editing, 'up')].filter(draws);
+
+	return around.length ? around.reduce((best, value) => (Math.abs(value - target) < Math.abs(best - target) ? value : best)) : nearest;
 }
 
 /**
@@ -804,23 +884,31 @@ export function relativeMove(raw: number, movement: number, length: number, rang
  * meter's. Right and Up are one step up, Left and Down one step down, with
  * Left and Right the other way round in a right-to-left page. Page Up and
  * Page Down are ten steps, or one piece where a piece is more than that. Home
- * and End are the two ends of the range. A step is counted from the value as
- * it is, within the range, or from the minimum for a field without a value;
- * a value between two points of the grid goes to the next point.
+ * and End are the two ends of what can be written. A step is counted from
+ * the value as it is. A value from outside the range is first brought to the
+ * nearer end of what can be written, and a field without a value starts at
+ * the minimum of it; a value between two points of the grid goes to the next
+ * point. A key of the meter's where nothing can be written gives `null`.
  */
 export function keyValue(key: string, current: number | null, range: Range, editing: Pick<Editing, 'step' | 'whole'>, count = 0, rtl = false): number | null | undefined {
 	const forward = rtl ? 'ArrowLeft' : 'ArrowRight';
 	const backward = rtl ? 'ArrowRight' : 'ArrowLeft';
-	const piece = count >= MIN_SUBDIVISIONS ? (range.max - range.min) / count : 0;
+	const writable = writableRange(range, editing);
+
+	const known = ['Home', 'End', 'PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+	if (!known.includes(key)) return undefined;
+	if (writable === null) return null;
+
+	const piece = count >= MIN_SUBDIVISIONS ? (writable.max - writable.min) / count : 0;
 	const page = Math.max(PAGE_STEPS * editing.step, Number.isFinite(piece) ? piece : 0);
 
-	if (key === 'Home') return snapValue(range.min, range, editing);
-	if (key === 'End') return snapValue(range.max, range, editing);
+	if (key === 'Home') return snapValue(writable.min, range, editing);
+	if (key === 'End') return snapValue(writable.max, range, editing);
 
-	const delta = key === forward || key === 'ArrowUp' ? editing.step : key === backward || key === 'ArrowDown' ? -editing.step : key === 'PageUp' ? page : key === 'PageDown' ? -page : null;
-	if (delta === null) return undefined;
+	const delta = key === forward || key === 'ArrowUp' ? editing.step : key === backward || key === 'ArrowDown' ? -editing.step : key === 'PageUp' ? page : -page;
 
-	const from = current === null || !Number.isFinite(current) ? range.min : Math.min(range.max, Math.max(range.min, current));
+	// A value from outside the range is first brought to the nearer end of what can be written; the key counts from there.
+	const from = current === null || !Number.isFinite(current) ? writable.min : Math.min(writable.max, Math.max(writable.min, current));
 	return snapValue(from + delta, range, editing, delta > 0 ? 'down' : 'up');
 }
 
@@ -917,6 +1005,43 @@ export function stopsCss(stops: Stop[], coloring: 'steps' | 'gradient', faded = 
 		.join(', ');
 }
 
+/** Two neighbouring colours of the scale, and how far a place is from the first towards the second, from 0 to 1. */
+export interface Blend {
+	from: string;
+	to: string;
+	share: number;
+}
+
+/**
+ * The colour of the scale at one place, as the gradient has it there: the
+ * two stops around the place and the share of the way from one to the other.
+ * Before the first stop it is the first colour, on a stop that stop's colour,
+ * and from the last stop on the last colour. `place` is a share of the range
+ * from the minimum, and may lie outside 0 to 1, as the stops may.
+ */
+export function blendAt(stops: Stop[], place: number): Blend {
+	const first = stops[0];
+	if (first === undefined) return { from: DEFAULT_COLOR, to: DEFAULT_COLOR, share: 0 };
+	if (!(place > first.at)) return { from: first.color, to: first.color, share: 0 };
+
+	for (let index = 1; index < stops.length; index++) {
+		const from = stops[index - 1]!;
+		const to = stops[index]!;
+		if (place < to.at) return { from: from.color, to: to.color, share: (place - from.at) / (to.at - from.at) };
+	}
+
+	const last = stops[stops.length - 1]!;
+	return { from: last.color, to: last.color, share: 0 };
+}
+
+/** A blend as one CSS colour. The browser does the mixing, as it does for a faded colour: a stop may be a theme variable. */
+export function blendCss(blend: Blend): string {
+	if (!(blend.share > 0) || blend.from === blend.to) return blend.from;
+	if (blend.share >= 1) return blend.to;
+
+	return `color-mix(in srgb, ${blend.from} ${Number(((1 - blend.share) * 100).toFixed(2))}%, ${blend.to})`;
+}
+
 /** The value a piece reaches when it is filled completely: the maximum for the last of them. */
 function valueAtPiece(index: number, count: number, range: Range): number {
 	if (index + 1 >= count) return range.max;
@@ -936,7 +1061,11 @@ const NO_PAINT: Paint = { color: null, scale: null };
  * is cut into (`pieceCount`); below 2 it is one bar.
  *
  * What is filled is coloured by `activeColoring`. `value`: the colour of the
- * current value, everywhere. `steps`: a piece has the colour of the value it
+ * current value, everywhere. `blend`: one colour everywhere as well, but the
+ * one the gradient has at the place of the current value, so that it shifts
+ * towards the colour of a threshold as the value comes near it instead of
+ * changing at it; `value` is the stored value, for its place, which may be
+ * beyond the range as the stops may. `steps`: a piece has the colour of the value it
  * reaches when it is filled completely, and the one bar changes colour at
  * each threshold. `gradient`: the colours of the scale blended across the
  * whole track, of which a piece or the fill shows its own part; the blend is
@@ -949,7 +1078,13 @@ const NO_PAINT: Paint = { color: null, scale: null };
  * `value`. A meter without a reading has no colours at all: it keeps its
  * dashed look.
  */
-export function drawingOf(look: Pick<Look, 'activeColoring' | 'inactiveColoring'>, options: Options, reading: Pick<Reading, 'empty' | 'fraction' | 'color'>, count = 0): Drawing {
+export function drawingOf(
+	look: Pick<Look, 'activeColoring' | 'inactiveColoring'>,
+	options: Options,
+	reading: Pick<Reading, 'empty' | 'fraction' | 'color'>,
+	count = 0,
+	value: unknown = null,
+): Drawing {
 	const pieces = count >= MIN_SUBDIVISIONS ? Math.min(MAX_PIECES, Math.floor(count)) : 0;
 	const filled = filledCount(reading.fraction, pieces);
 	const placeOf = (index: number) => (pieces > 1 ? index / (pieces - 1) : 0);
@@ -970,12 +1105,22 @@ export function drawingOf(look: Pick<Look, 'activeColoring' | 'inactiveColoring'
 	const wanted = look.inactiveColoring === 'automatic' ? look.activeColoring : look.inactiveColoring;
 	const inactive: Coloring | 'plain' = flat && wanted !== 'plain' ? 'value' : wanted;
 
+	// The one colour of `blend`: that of the scale at the place of the value, which for a value beyond the range
+	// is beyond the track, where a threshold may still be.
+	const number = numberOf(value);
+	const place = number !== null && options.max > options.min ? shareOf(number, options) : reading.fraction;
+	const blended = blendCss(blendAt(stops, Number.isFinite(place) ? place : reading.fraction));
+
+	// The two colourings which are one colour everywhere, and that colour.
+	const single = (coloring: Coloring | 'plain'): coloring is 'value' | 'blend' => coloring === 'value' || coloring === 'blend';
+	const colorOf = (coloring: 'value' | 'blend') => (coloring === 'value' ? reading.color : blended);
+
 	if (!pieces) {
 		return {
-			stops: active === 'value' ? null : stopsCss(stops, active),
-			weakStops: inactive === 'plain' || inactive === 'value' ? null : stopsCss(stops, inactive, true),
-			track: inactive === 'plain' ? NO_PAINT : inactive === 'value' ? { color: fadedColor(reading.color), scale: null } : { color: null, scale: 'weak' },
-			fill: active === 'value' ? { color: reading.color, scale: null } : { color: null, scale: 'full' },
+			stops: single(active) ? null : stopsCss(stops, active),
+			weakStops: inactive === 'plain' || single(inactive) ? null : stopsCss(stops, inactive, true),
+			track: inactive === 'plain' ? NO_PAINT : single(inactive) ? { color: fadedColor(colorOf(inactive)), scale: null } : { color: null, scale: 'weak' },
+			fill: single(active) ? { color: colorOf(active), scale: null } : { color: null, scale: 'full' },
 			pieces: null,
 		};
 	}
@@ -987,7 +1132,7 @@ export function drawingOf(look: Pick<Look, 'activeColoring' | 'inactiveColoring'
 		if (coloring === 'plain') return NO_PAINT;
 		if (coloring === 'gradient') return { color: null, scale: weak ? 'weak' : 'full' };
 
-		const color = coloring === 'value' ? reading.color : colorFor(valueAtPiece(index, pieces, options), options);
+		const color = single(coloring) ? colorOf(coloring) : colorFor(valueAtPiece(index, pieces, options), options);
 		return { color: weak ? fadedColor(color) : color, scale: null };
 	};
 

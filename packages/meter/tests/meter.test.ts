@@ -3,11 +3,15 @@ import {
 	DEFAULT_COLOR,
 	DISPLAY_WIDTH,
 	FADE,
+	FREE_DIGITS,
 	MAX_PIECES,
+	MAX_STEPS,
 	MIN_SUBDIVISIONS,
 	NO_VALUE,
 	PIECE_SIZES,
 	TRACK_COLOR,
+	blendAt,
+	blendCss,
 	canEdit,
 	changes,
 	colorFor,
@@ -35,6 +39,7 @@ import {
 	readingOf,
 	relativeMove,
 	scaleStops,
+	segmentValue,
 	shareAt,
 	snapValue,
 	stopsCss,
@@ -44,6 +49,7 @@ import {
 	valueAtShare,
 	valueText,
 	wantedCount,
+	writableRange,
 } from '../src/meter';
 import type { Shape } from '../src/meter';
 
@@ -730,8 +736,8 @@ describe('how the meter is drawn', () => {
 		}
 	});
 
-	test('the colouring of what is filled is one of three words, of what is not one of five', () => {
-		for (const coloring of ['value', 'steps', 'gradient']) {
+	test('the colouring of what is filled is one of four words, of what is not one of six', () => {
+		for (const coloring of ['value', 'blend', 'steps', 'gradient']) {
 			expect(readLook({ activeColoring: coloring }).activeColoring).toBe(coloring);
 			expect(readLook({ inactiveColoring: coloring }).inactiveColoring).toBe(coloring);
 		}
@@ -739,7 +745,7 @@ describe('how the meter is drawn', () => {
 		expect(readLook({ inactiveColoring: 'plain' }).inactiveColoring).toBe('plain');
 		expect(readLook({ inactiveColoring: 'automatic' }).inactiveColoring).toBe('automatic');
 
-		for (const coloring of [null, undefined, '', 'Steps', 'plain', 'automatic', 'blend', 1, true, ['steps']]) {
+		for (const coloring of [null, undefined, '', 'Steps', 'plain', 'automatic', 'blended', 'mix', 1, true, ['steps']]) {
 			expect(readLook({ activeColoring: coloring }).activeColoring, String(coloring)).toBe('value');
 		}
 
@@ -1991,5 +1997,360 @@ describe('whether a field can be edited, and whether a value changes it', () => 
 		expect(changes('', 0)).toBe(true);
 		expect(changes('abc', 0)).toBe(true);
 		expect(changes(150, 100)).toBe(true);
+	});
+});
+
+describe('the range which can be written', () => {
+	const whole = { whole: true };
+	const any = { whole: false };
+
+	test('the range as it is drawn, for a type which holds any number', () => {
+		expect(writableRange(range(0, 100), any)).toEqual({ min: 0, max: 100 });
+		expect(writableRange(range(0.5, 5.5), any)).toEqual({ min: 0.5, max: 5.5 });
+		expect(writableRange(range(-2.25, 0.75), any)).toEqual({ min: -2.25, max: 0.75 });
+		expect(writableRange(range(7, 7), any)).toEqual({ min: 7, max: 7 });
+	});
+
+	test('the whole numbers within it, for a whole type', () => {
+		expect(writableRange(range(0, 100), whole)).toEqual({ min: 0, max: 100 });
+		expect(writableRange(range(0.5, 5.5), whole)).toEqual({ min: 1, max: 5 });
+		expect(writableRange(range(0, 10.5), whole)).toEqual({ min: 0, max: 10 });
+		expect(writableRange(range(-2.5, 2.5), whole)).toEqual({ min: -2, max: 2 });
+		expect(writableRange(range(-0.5, 3), whole)).toEqual({ min: 0, max: 3 });
+		expect(writableRange(range(2.2, 2.8), whole)).toBeNull();
+		expect(writableRange(range(0.2, 0.8), whole)).toBeNull();
+	});
+
+	test('nothing where a limit is not a finite number', () => {
+		expect(writableRange(range(Number.NaN, 5), any)).toBeNull();
+		expect(writableRange(range(0, Number.POSITIVE_INFINITY), any)).toBeNull();
+		expect(writableRange(range(5, 0), any)).toBeNull();
+	});
+
+	test('automatic fills by the piece only where the limits themselves can be written', () => {
+		const method = (own: object, count: number, limits: { min: number; max: number }, type: string) => inputMethod(readEditing(own, type), count, limits);
+
+		// Five pieces over 0.5 to 5.5 on a whole type: 1 to 5 can be written, which is four steps and not five.
+		expect(method({}, 5, range(0.5, 5.5), 'integer')).toBe('contiguous');
+		expect(method({}, 5, range(0.5, 5.5), 'bigInteger')).toBe('contiguous');
+		expect(method({}, 10, range(0, 10.5), 'integer')).toBe('contiguous');
+		expect(method({}, 4, range(0.5, 5.5), 'integer')).toBe('contiguous');
+
+		// The same limits on a type which can hold them.
+		expect(method({}, 5, range(0.5, 5.5), 'float')).toBe('segment');
+		expect(method({}, 5, range(0.5, 5.5), 'decimal')).toBe('segment');
+
+		// Whole limits on a whole type, as before.
+		expect(method({}, 5, range(0, 5), 'integer')).toBe('segment');
+		expect(method({}, 5, range(-2, 3), 'integer')).toBe('segment');
+
+		// Nothing which can be written: no piece is a step.
+		expect(method({}, 5, range(0.2, 0.8), 'integer')).toBe('contiguous');
+
+		// The method which is set is used as it is.
+		expect(method({ input: 'segment' }, 5, range(0.5, 5.5), 'integer')).toBe('segment');
+	});
+});
+
+describe('the value a press on a piece writes', () => {
+	const one = { step: 1, whole: true };
+	const filledBy = (value: number | null, count: number, limits: { min: number; max: number }) => (value === null ? null : filledCount(fractionOf(value, limits), count));
+
+	test('where a piece is a step: that many steps', () => {
+		for (const filled of [0, 1, 2, 3, 4, 5]) expect(segmentValue(filled, 5, range(0, 5), one)).toBe(filled);
+		for (const filled of [0, 3, 7, 10]) expect(segmentValue(filled, 10, range(0, 100), one)).toBe(filled * 10);
+
+		expect(segmentValue(3, 4, range(10, 18), { step: 2, whole: true })).toBe(16);
+		expect(segmentValue(2, 5, range(0, 1), { step: 0.2, whole: false })).toBe(0.4);
+	});
+
+	test('a whole type with limits between whole numbers: the piece which was pressed is the last one filled', () => {
+		// Five pieces over 0.5 to 5.5, of which 1 to 5 can be written.
+		const limits = range(0.5, 5.5);
+
+		expect([1, 2, 3, 4, 5].map((filled) => segmentValue(filled, 5, limits, one))).toEqual([1, 2, 3, 4, 5]);
+		for (const filled of [1, 2, 3, 4, 5]) expect(filledBy(segmentValue(filled, 5, limits, one), 5, limits)).toBe(filled);
+
+		// Before the first piece no value draws none: the least which can be written.
+		expect(segmentValue(0, 5, limits, one)).toBe(1);
+	});
+
+	test('of the values which draw the piece, the one nearest to its share', () => {
+		// Four pieces for 0 to 100 in steps of 1: the second piece is 50, though 38 to 62 would all draw two.
+		expect(segmentValue(2, 4, range(0, 100), one)).toBe(50);
+
+		// Steps of 20: the share of the second of four pieces, 50, is between 40 and 60, which both draw two; the upper one of a tie.
+		expect(segmentValue(2, 4, range(0, 100), { step: 20, whole: true })).toBe(60);
+
+		// Steps of 30 up to 100 are 0, 30, 60, 90 and 100. The third of four pieces, 75: 60 draws two and 90 four,
+		// so no value draws three, and the nearest value is written.
+		expect(segmentValue(3, 4, range(0, 100), { step: 30, whole: true })).toBe(90);
+		expect(filledBy(60, 4, range(0, 100))).toBe(2);
+		expect(filledBy(90, 4, range(0, 100))).toBe(4);
+	});
+
+	test('whatever the options, the pressed piece is filled whenever any value could fill it', () => {
+		const cases: [{ min: number; max: number }, { step: number; whole: boolean }, number][] = [
+			[range(0.5, 5.5), { step: 1, whole: true }, 5],
+			[range(0, 10.5), { step: 1, whole: true }, 10],
+			[range(0, 100), { step: 7, whole: true }, 10],
+			[range(0, 1), { step: 0.3, whole: false }, 4],
+			[range(-3.5, 3.5), { step: 2, whole: true }, 7],
+			[range(0, 10), { step: 4, whole: true }, 8],
+		];
+
+		for (const [limits, editing, count] of cases) {
+			for (let filled = 0; filled <= count; filled++) {
+				const written = segmentValue(filled, count, limits, editing);
+				expect(written).not.toBeNull();
+
+				// Every value which can be written, and whether one of them draws this many pieces.
+				const writable = writableRange(limits, editing)!;
+				const possible: number[] = [];
+				for (let value = writable.min; value <= writable.max + 1e-9; value += editing.step) possible.push(snapValue(value, limits, editing)!);
+				possible.push(writable.max);
+
+				const drawing = possible.filter((value) => filledBy(value, count, limits) === filled);
+				if (drawing.length) expect(filledBy(written, count, limits), `${JSON.stringify(limits)} ${editing.step} piece ${filled}: ${written}`).toBe(filled);
+				expect(possible.some((value) => Math.abs(value - written!) < 1e-9)).toBe(true);
+			}
+		}
+	});
+
+	test('nothing where nothing can be written, or there are no pieces', () => {
+		expect(segmentValue(1, 5, range(0.2, 0.8), one)).toBeNull();
+		expect(segmentValue(1, 0, range(0, 5), one)).toBeNull();
+	});
+});
+
+describe('the keys in a range of which not all can be written', () => {
+	const one = { step: 1, whole: true };
+
+	test('a value from beyond the range is brought to the nearer end of what can be written, and the key counts from there', () => {
+		// 0 to 10.5 on a whole type: 0 to 10 can be written.
+		expect(keyValue('ArrowLeft', 15, range(0, 10.5), one)).toBe(9);
+		expect(keyValue('ArrowRight', 15, range(0, 10.5), one)).toBe(10);
+		expect(keyValue('ArrowDown', 11, range(0, 10.5), one)).toBe(9);
+		expect(keyValue('PageDown', 25, range(0, 20.5), one)).toBe(10);
+
+		// 0.5 to 5.5: 1 to 5.
+		expect(keyValue('ArrowRight', -3, range(0.5, 5.5), one)).toBe(2);
+		expect(keyValue('ArrowLeft', -3, range(0.5, 5.5), one)).toBe(1);
+		expect(keyValue('ArrowRight', null, range(0.5, 5.5), one)).toBe(2);
+		expect(keyValue('ArrowLeft', null, range(0.5, 5.5), one)).toBe(1);
+
+		// Whole limits, as before.
+		expect(keyValue('ArrowLeft', 150, range(0, 100), one)).toBe(99);
+		expect(keyValue('ArrowRight', -20, range(0, 100), one)).toBe(1);
+	});
+
+	test('Home and End are the ends of what can be written, and a Page key is a piece of it', () => {
+		expect(keyValue('Home', 3, range(0.5, 5.5), one)).toBe(1);
+		expect(keyValue('End', 3, range(0.5, 5.5), one)).toBe(5);
+
+		// Two pieces over 0.5 to 40.5: a piece of what can be written, 1 to 40, is 19.5, more than ten steps.
+		expect(keyValue('PageUp', 1, range(0.5, 40.5), one, 2)).toBe(20);
+		expect(keyValue('PageDown', 40, range(0.5, 40.5), one, 2)).toBe(21);
+	});
+
+	test('where nothing can be written a key of the meter\'s gives nothing, and another key is still not the meter\'s', () => {
+		for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']) {
+			expect(keyValue(key, 0, range(0.2, 0.8), one), key).toBeNull();
+		}
+
+		expect(keyValue('a', 0, range(0.2, 0.8), one)).toBeUndefined();
+		expect(keyValue('Enter', 3, range(0, 5), one)).toBeUndefined();
+	});
+});
+
+describe('steps which make no grid', () => {
+	const float = (step: number) => ({ step, whole: false });
+	const whole = (step: number) => ({ step, whole: true });
+
+	test('a step larger than the range leaves its two ends, and the nearer one is written', () => {
+		// The steps of the review: a range of 10, and steps up to ten thousand million times that.
+		for (const step of [50, 1e8, 1e9, 2e9, 1e10, 1e300]) {
+			expect(snapValue(9.99, range(0, 10), float(step)), String(step)).toBe(10);
+			expect(snapValue(6, range(0, 10), float(step)), String(step)).toBe(10);
+			expect(snapValue(5, range(0, 10), float(step)), String(step)).toBe(10);
+			expect(snapValue(4.99, range(0, 10), float(step)), String(step)).toBe(0);
+			expect(snapValue(0.01, range(0, 10), float(step)), String(step)).toBe(0);
+			expect(snapValue(0, range(0, 10), float(step)), String(step)).toBe(0);
+			expect(snapValue(10, range(0, 10), float(step)), String(step)).toBe(10);
+			expect(snapValue(-3, range(0, 10), float(step)), String(step)).toBe(0);
+			expect(snapValue(30, range(0, 10), float(step)), String(step)).toBe(10);
+		}
+
+		// Counted from the minimum, on a whole type, and as a key wants it.
+		expect(snapValue(24, range(20, 30), float(1e10))).toBe(20);
+		expect(snapValue(26, range(20, 30), float(1e10))).toBe(30);
+		expect(snapValue(3, range(0.5, 5.5), whole(100))).toBe(5);
+		expect(snapValue(2.9, range(0.5, 5.5), whole(100))).toBe(1);
+		expect(snapValue(9.99, range(0, 10), float(1e10), 'down')).toBe(0);
+		expect(snapValue(0.01, range(0, 10), float(1e10), 'up')).toBe(10);
+		expect(snapValue(10, range(0, 10), float(1e10), 'down')).toBe(10);
+		expect(snapValue(0, range(0, 10), float(1e10), 'up')).toBe(0);
+
+		// A step as long as the range is a grid of its two ends like any other.
+		expect(snapValue(4, range(0, 10), float(10))).toBe(0);
+		expect(snapValue(6, range(0, 10), float(10))).toBe(10);
+	});
+
+	test('a step of which the range holds more than a thousand million is none: the value itself is written', () => {
+		expect(MAX_STEPS).toBe(1e9);
+		expect(FREE_DIGITS).toBe(12);
+
+		// The steps of the review, of which a hundred holds more than can be counted.
+		for (const step of [1e-300, 1e-307, 5e-308, 1e-309, 1e-12, 1e-8]) {
+			expect(snapValue(30, range(0, 100), float(step)), String(step)).toBe(30);
+			expect(snapValue(0.25, range(0, 100), float(step)), String(step)).toBe(0.25);
+			expect(snapValue(99.5, range(0, 100), float(step)), String(step)).toBe(99.5);
+			expect(snapValue(150, range(0, 100), float(step)), String(step)).toBe(100);
+			expect(snapValue(-1, range(0, 100), float(step)), String(step)).toBe(0);
+		}
+
+		// With the twelve digits which count, and no dust.
+		expect(snapValue(0.123456789012345, range(0, 1), float(1e-12))).toBe(0.123456789012);
+		expect(snapValue(0.1 + 0.2, range(0, 1), float(1e-12))).toBe(0.3);
+		expect(snapValue(33.333333333333336, range(0, 100), float(1e-10))).toBe(33.3333333333);
+
+		// A whole type stays whole.
+		expect(snapValue(123456789012.4, range(0, 1e12), whole(1))).toBe(123456789012);
+		expect(snapValue(5e9 + 0.6, range(0, 1e10), whole(1))).toBe(5000000001);
+
+		// A thousand million steps exactly still are a grid.
+		expect(snapValue(0.0000000014, range(0, 1), float(1e-9))).toBe(0.000000001);
+	});
+
+	test('a key still moves the value where there is no grid, and lands on an end where there are only two', () => {
+		expect(keyValue('ArrowRight', 30, range(0, 100), float(1e-10))).toBe(30.0000000001);
+		expect(keyValue('ArrowRight', 0, range(0, 10), float(1e10))).toBe(10);
+		expect(keyValue('ArrowLeft', 10, range(0, 10), float(1e10))).toBe(0);
+		expect(keyValue('ArrowLeft', 0, range(0, 10), float(1e10))).toBe(0);
+	});
+});
+
+describe('the colouring which blends towards the next threshold', () => {
+	const scale = { color: RED, thresholds: [{ value: 40, color: AMBER }, { value: 80, color: GREEN }] };
+	const stops = scaleStops(readOptions(scale));
+	const mix = (from: string, share: number, to: string) => `color-mix(in srgb, ${from} ${share}%, ${to})`;
+
+	const drawing = (value: unknown, own: object, count = 0) => {
+		const options = readOptions(own);
+		return drawingOf(readLook(own), options, readingOf(value, options, EN), count, value);
+	};
+
+	test('the two stops around a place, and the share of the way from the first to the second', () => {
+		// Between two stops.
+		expect(blendAt(stops, 0.2)).toEqual({ from: RED, to: AMBER, share: 0.5 });
+		expect(blendAt(stops, 0.1)).toEqual({ from: RED, to: AMBER, share: 0.25 });
+		expect(blendAt(stops, 0.6).from).toBe(AMBER);
+		expect(blendAt(stops, 0.6).to).toBe(GREEN);
+		expect(blendAt(stops, 0.6).share).toBeCloseTo(0.5, 12);
+		expect(blendAt(stops, 0.7).share).toBeCloseTo(0.75, 12);
+
+		// Below the first stop, and on it: the first colour.
+		expect(blendAt(stops, -0.5)).toEqual({ from: RED, to: RED, share: 0 });
+		expect(blendAt(stops, 0)).toEqual({ from: RED, to: RED, share: 0 });
+
+		// On a threshold: its colour, with nothing of the next.
+		expect(blendAt(stops, 0.4)).toEqual({ from: AMBER, to: GREEN, share: 0 });
+
+		// On the last stop and beyond it: the last colour.
+		expect(blendAt(stops, 0.8)).toEqual({ from: GREEN, to: GREEN, share: 0 });
+		expect(blendAt(stops, 1)).toEqual({ from: GREEN, to: GREEN, share: 0 });
+		expect(blendAt(stops, 7)).toEqual({ from: GREEN, to: GREEN, share: 0 });
+
+		// One stop, and none.
+		expect(blendAt([{ at: 0, color: GREEN }], 0.5)).toEqual({ from: GREEN, to: GREEN, share: 0 });
+		expect(blendAt([], 0.5)).toEqual({ from: DEFAULT_COLOR, to: DEFAULT_COLOR, share: 0 });
+		expect(blendAt(stops, Number.NaN)).toEqual({ from: RED, to: RED, share: 0 });
+	});
+
+	test('a range which does not start at 0: the places are shares of the range', () => {
+		// From 20 to 120, with thresholds at 40 and 80: the stops are at 0, 0.2 and 0.6.
+		const moved = scaleStops(readOptions({ ...scale, min: 20, max: 120 }));
+
+		expect(blendAt(moved, 0.1)).toEqual({ from: RED, to: AMBER, share: 0.5 });
+		expect(blendAt(moved, 0.4).from).toBe(AMBER);
+		expect(blendAt(moved, 0.4).share).toBeCloseTo(0.5, 12);
+
+		// 30 is half way from the minimum to the first threshold, 60 half way between the two.
+		expect(drawing(30, { ...scale, min: 20, max: 120, activeColoring: 'blend' }).fill.color).toBe(mix(RED, 50, AMBER));
+		expect(drawing(60, { ...scale, min: 20, max: 120, activeColoring: 'blend' }).fill.color).toBe(mix(AMBER, 50, GREEN));
+		expect(drawing(20, { ...scale, min: 20, max: 120, activeColoring: 'blend' }).fill.color).toBe(RED);
+	});
+
+	test('as one colour for CSS, mixed by the browser', () => {
+		expect(blendCss({ from: RED, to: AMBER, share: 0.5 })).toBe(mix(RED, 50, AMBER));
+		expect(blendCss({ from: RED, to: AMBER, share: 0.25 })).toBe(mix(RED, 75, AMBER));
+		expect(blendCss({ from: 'var(--theme--danger)', to: 'var(--theme--warning)', share: 1 / 3 })).toBe(mix('var(--theme--danger)', 66.67, 'var(--theme--warning)'));
+
+		// Nothing to mix.
+		expect(blendCss({ from: RED, to: AMBER, share: 0 })).toBe(RED);
+		expect(blendCss({ from: RED, to: AMBER, share: 1 })).toBe(AMBER);
+		expect(blendCss({ from: RED, to: RED, share: 0.5 })).toBe(RED);
+		expect(blendCss({ from: RED, to: AMBER, share: Number.NaN })).toBe(RED);
+	});
+
+	test('the fill of the one bar has that one colour, which shifts as the value nears a threshold', () => {
+		const own = { ...scale, activeColoring: 'blend' };
+
+		expect(drawing(20, own)).toEqual({ stops: null, weakStops: null, track: { color: null, scale: null }, fill: { color: mix(RED, 50, AMBER), scale: null }, pieces: null });
+		expect(drawing(30, own).fill.color).toBe(mix(RED, 25, AMBER));
+		expect(drawing(39, own).fill.color).toBe(mix(RED, 2.5, AMBER));
+		expect(drawing(40, own).fill.color).toBe(AMBER);
+		expect(drawing(60, own).fill.color).toBe(mix(AMBER, 50, GREEN));
+		expect(drawing(80, own).fill.color).toBe(GREEN);
+		expect(drawing(100, own).fill.color).toBe(GREEN);
+		expect(drawing(0, own).fill.color).toBe(RED);
+
+		// Where `value` jumps at the threshold.
+		expect(drawing(39, scale).fill.color).toBe(RED);
+		expect(drawing(40, scale).fill.color).toBe(AMBER);
+	});
+
+	test('a value beyond the range is at its own place, where a threshold may still be', () => {
+		const own = { color: RED, thresholds: [{ value: 200, color: GREEN }], activeColoring: 'blend' };
+
+		expect(drawing(100, own).fill.color).toBe(mix(RED, 50, GREEN));
+		expect(drawing(150, own).fill.color).toBe(mix(RED, 25, GREEN));
+		expect(drawing(250, own).fill.color).toBe(GREEN);
+		expect(drawing(-50, own).fill.color).toBe(RED);
+
+		// Without the value itself, the place is where the fill ends.
+		const options = readOptions(own);
+		expect(drawingOf(readLook(own), options, readingOf(150, options, EN)).fill.color).toBe(mix(RED, 50, GREEN));
+	});
+
+	test('every filled piece has that same colour', () => {
+		const pieces = drawing(60, { ...scale, activeColoring: 'blend' }, 10).pieces!;
+
+		expect(pieces.filter((piece) => piece.filled)).toHaveLength(6);
+		expect(pieces.slice(0, 6).map((piece) => piece.paint)).toEqual(Array(6).fill({ color: mix(AMBER, 50, GREEN), scale: null }));
+		expect(pieces.slice(6).map((piece) => piece.paint)).toEqual(Array(4).fill({ color: null, scale: null }));
+		expect(drawing(60, { ...scale, activeColoring: 'blend' }, 10).stops).toBeNull();
+	});
+
+	test('for what is not filled it is that colour, faded; automatic follows it', () => {
+		const faded = fadedColor(mix(AMBER, 50, GREEN));
+
+		expect(drawing(60, { ...scale, activeColoring: 'blend', inactiveColoring: 'automatic' }).track).toEqual({ color: faded, scale: null });
+		expect(drawing(60, { ...scale, inactiveColoring: 'blend' }).track).toEqual({ color: faded, scale: null });
+		expect(drawing(60, { ...scale, inactiveColoring: 'blend' }).fill).toEqual({ color: AMBER, scale: null });
+		expect(drawing(60, { ...scale, activeColoring: 'blend', inactiveColoring: 'plain' }).track).toEqual({ color: null, scale: null });
+
+		const pieces = drawing(60, { ...scale, activeColoring: 'blend', inactiveColoring: 'automatic' }, 10).pieces!;
+		expect(pieces.slice(6).map((piece) => piece.paint)).toEqual(Array(4).fill({ color: faded, scale: null }));
+
+		// Each on its own: a gradient over a faded blend, and a blend over faded steps.
+		expect(drawing(60, { ...scale, activeColoring: 'gradient', inactiveColoring: 'blend' }).track).toEqual({ color: faded, scale: null });
+		expect(drawing(60, { ...scale, activeColoring: 'blend', inactiveColoring: 'steps' }).track).toEqual({ color: null, scale: 'weak' });
+	});
+
+	test('without thresholds it is the colour of the value, and no value has no colour', () => {
+		expect(drawing(60, { color: GREEN, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual(drawing(60, { color: GREEN, activeColoring: 'value', inactiveColoring: 'automatic' }));
+		expect(drawing(60, { activeColoring: 'blend' }).fill).toEqual({ color: DEFAULT_COLOR, scale: null });
+		expect(drawing(null, { ...scale, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual({ stops: null, weakStops: null, track: { color: null, scale: null }, fill: { color: null, scale: null }, pieces: null });
 	});
 });
