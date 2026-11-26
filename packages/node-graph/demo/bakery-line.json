@@ -1,0 +1,211 @@
+{
+	"format": "directus-node-graph-ruleset",
+	"schemaVersion": 1,
+	"key": "bakery-line",
+	"version": 2,
+	"name": "Bakery line",
+	"direction": "TB",
+	"dataTypes": [
+		{ "key": "dough", "label": "Dough", "color": "var(--theme--secondary)" },
+		{ "key": "baked", "label": "Baked goods", "color": "var(--theme--success)" },
+		{ "key": "packed", "label": "Packed goods", "color": "var(--theme--primary)", "accepts": ["baked"] }
+	],
+	"nodeTypes": [
+		{
+			"key": "mix",
+			"label": "Mix",
+			"icon": "blender",
+			"category": "Prepare",
+			"description": "Weighs and mixes one batch of dough. Every line starts with one.",
+			"limits": { "minInstances": 1 },
+			"titleTemplate": "Mix {{product}}",
+			"summaryFields": ["batch_kg"],
+			"fields": [
+				{
+					"field": "product",
+					"name": "Product",
+					"type": "string",
+					"meta": {
+						"interface": "select-dropdown",
+						"width": "half",
+						"options": {
+							"choices": [
+								{ "text": "Sourdough loaves", "value": "sourdough" },
+								{ "text": "Rye bread", "value": "rye" },
+								{ "text": "Croissants", "value": "croissant" },
+								{ "text": "Oat biscuits", "value": "oat" }
+							]
+						}
+					}
+				},
+				{
+					"field": "batch_kg",
+					"name": "Batch (kg)",
+					"type": "integer",
+					"meta": { "interface": "input", "width": "half", "options": { "min": 1 } },
+					"schema": { "default_value": 20 }
+				},
+				{
+					"field": "weights",
+					"type": "alias",
+					"meta": { "interface": "presentation-notice", "options": { "text": "The batch is the weight of the dough, not of the flour." } }
+				}
+			],
+			"outputs": [{ "key": "out", "label": "Dough", "dataType": "dough", "minConnections": 1 }]
+		},
+		{
+			"key": "proof",
+			"label": "Proof",
+			"icon": "schedule",
+			"category": "Prepare",
+			"description": "Lets the dough rise before it is baked.",
+			"titleTemplate": "Proof {{minutes}} min",
+			"fields": [
+				{
+					"field": "minutes",
+					"name": "Minutes",
+					"type": "integer",
+					"meta": { "interface": "input", "required": true, "options": { "min": 10 } },
+					"schema": { "default_value": 60 }
+				}
+			],
+			"inputs": [{ "key": "in", "label": "Dough", "dataType": "dough", "maxConnections": 1 }],
+			"outputs": [{ "key": "out", "label": "Dough", "dataType": "dough", "maxConnections": 1 }]
+		},
+		{
+			"key": "bake",
+			"label": "Bake",
+			"icon": "local_fire_department",
+			"color": "var(--theme--secondary)",
+			"category": "Bake",
+			"description": "Bakes the dough in one of the ovens.",
+			"titleTemplate": "Bake: {{oven}}",
+			"summaryFields": ["temperature", "minutes"],
+			"fields": [
+				{
+					"field": "oven",
+					"name": "Oven",
+					"type": "json",
+					"meta": {
+						"interface": "collection-item-dropdown",
+						"note": "One of the items of Node Graph, Ovens.",
+						"options": { "selectedCollection": "demo_node_graph_ovens" }
+					}
+				},
+				{
+					"field": "temperature",
+					"name": "Temperature (°C)",
+					"type": "integer",
+					"meta": { "interface": "input", "width": "half" },
+					"schema": { "default_value": 220 }
+				},
+				{
+					"field": "minutes",
+					"name": "Minutes",
+					"type": "integer",
+					"meta": { "interface": "input", "width": "half" },
+					"schema": { "default_value": 35 }
+				}
+			],
+			"inputs": [{ "key": "in", "label": "Dough", "dataType": "dough", "minConnections": 1 }],
+			"outputs": [{ "key": "out", "label": "Baked goods", "dataType": "baked", "minConnections": 1, "edgeTypes": ["rack", "belt"] }]
+		},
+		{
+			"key": "pack",
+			"label": "Pack",
+			"icon": "inventory_2",
+			"category": "Finish",
+			"description": "Packs the baked goods.",
+			"titleTemplate": "Pack: {{box}}",
+			"fields": [
+				{
+					"field": "box",
+					"name": "Packed in",
+					"type": "string",
+					"meta": {
+						"interface": "select-dropdown",
+						"options": {
+							"choices": [
+								{ "text": "Paper bags", "value": "bags" },
+								{ "text": "Crates of twelve", "value": "crates" },
+								{ "text": "Gift boxes", "value": "gift" }
+							]
+						}
+					}
+				}
+			],
+			"inputs": [{ "key": "in", "label": "Baked goods", "dataType": "baked", "minConnections": 1 }],
+			"outputs": [{ "key": "out", "label": "Packed goods", "dataType": "packed" }]
+		},
+		{
+			"key": "dispatch",
+			"label": "Dispatch",
+			"icon": "local_shipping",
+			"color": "var(--theme--success)",
+			"category": "Finish",
+			"description": "Where the goods go. Takes packed goods, or baked goods straight from the rack.",
+			"titleTemplate": "Dispatch: {{destination}}",
+			"fields": [
+				{
+					"field": "destination",
+					"name": "Destination",
+					"type": "string",
+					"meta": {
+						"interface": "select-dropdown",
+						"options": {
+							"choices": [
+								{ "text": "Shop counter", "value": "shop" },
+								{ "text": "Café", "value": "cafe" },
+								{ "text": "Market stall", "value": "market" },
+								{ "text": "Wholesale", "value": "wholesale" }
+							]
+						}
+					}
+				}
+			],
+			"inputs": [{ "key": "in", "label": "Packed goods", "dataType": "packed", "minConnections": 1 }]
+		}
+	],
+	"edgeTypes": [
+		{
+			"key": "belt",
+			"label": "Conveyor",
+			"style": { "path": "step", "animated": true, "marker": "none" }
+		},
+		{
+			"key": "rack",
+			"label": "Cooling rack",
+			"style": { "path": "step", "dashed": true, "color": "var(--theme--foreground-subdued)" },
+			"labelTemplate": "cools {{minutes}} min",
+			"fields": [
+				{
+					"field": "minutes",
+					"name": "Cooling (minutes)",
+					"type": "integer",
+					"meta": { "interface": "input", "options": { "min": 5 } },
+					"schema": { "default_value": 30 }
+				}
+			]
+		}
+	],
+	"connectionRules": {
+		"defaultEdgeType": "belt",
+		"allowCycles": false
+	},
+	"graphRules": {
+		"minNodes": 3,
+		"maxNodes": 30,
+		"requireConnected": true
+	},
+	"starter": {
+		"nodes": [
+			{ "ref": "mix", "type": "mix", "position": { "x": 0, "y": 0 } },
+			{ "ref": "bake", "type": "bake", "position": { "x": 0, "y": 198 } },
+			{ "ref": "dispatch", "type": "dispatch", "position": { "x": 0, "y": 432 } }
+		],
+		"edges": [
+			{ "source": "mix", "sourceHandle": "out", "target": "bake", "targetHandle": "in" },
+			{ "source": "bake", "sourceHandle": "out", "target": "dispatch", "targetHandle": "in" }
+		]
+	}
+}

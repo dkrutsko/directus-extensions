@@ -77,7 +77,7 @@ Tested in Chrome only, not yet in Firefox or Safari, and not with a screen reade
 
 ## Development
 
-This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. After `npm install` in the repository root, run these in `packages/switch`:
+This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. The test Directus has a demo of the switch with every option side by side, [described in its README](https://github.com/dkrutsko/directus-extensions/blob/main/sandbox/README.md#demos). After `npm install` in the repository root, run these in `packages/switch`:
 
 ```bash
 npm run dev       # watch build, unminified

@@ -67,6 +67,10 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 - Code comments cite the visual spec as `docs/design.md §N`: keep its section numbers stable.
 - The unit tests cover the core, the hook, the options and the conversions of the options editor. The editor itself has to be checked in a browser.
 
+## Demo
+
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_node_graph`, whose four items hold their graphs at different stages (finished, half built, just created, empty), a form with the graph fields in groups by topic, a table preset with the display, and `demo_node_graph_ovens`, the items which the item references of the bakery ruleset point at. The rulesets are `demo/bakery-line.json`, `demo/loan-desk.json` and `examples/approval-workflow.json`, and a field's note names its ruleset instead of listing it. The hook checks every graph the demo seeds, so a graph with errors only goes into a field set to Log only. A new or changed option gets a field in a group. `sandbox/demo.spec.ts` builds the demo, checks that every field draws its row and every value in the table the display, and opens the recipes in the editor.
+
 ## Known gaps
 
 - Fit-to-screen in the wide drawer, with the panels open, lands near 39% zoom, so card text is unreadable. Options: a collapsible inspector, a minimum fit zoom.

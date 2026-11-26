@@ -191,7 +191,7 @@ A meter in a form is edited wherever its field can be: not in a read-only field,
 
 ## Development
 
-This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. [`AGENTS.md`](https://github.com/dkrutsko/directus-extensions/blob/main/packages/meter/AGENTS.md) describes the code and its tests.
+This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. The test Directus has a demo of the meter with its options side by side, in a form and in a table, [described in its README](https://github.com/dkrutsko/directus-extensions/blob/main/sandbox/README.md#demos). [`AGENTS.md`](https://github.com/dkrutsko/directus-extensions/blob/main/packages/meter/AGENTS.md) describes the code and its tests.
 
 ## License
 

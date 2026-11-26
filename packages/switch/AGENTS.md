@@ -64,6 +64,10 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 - The unit tests cover only `switch.ts`. Everything in `interface.vue` has to be checked in a browser.
 - The names of the options in the settings are the app's own strings (`$t:label`, `$t:icon_on`, `$t:interfaces.boolean.color_on`, ...), each of which says exactly what is meant. The notes and the placeholder of Description have no such string and are plain English.
 
+## Demo
+
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the singleton `demo_switch`, with every option in three groups, the first of the set-ups most fields want. A new or changed option gets a field there. `sandbox/demo.spec.ts` builds it and checks that every field draws a switch.
+
 ## Testing in a browser
 
 `sandbox/switch.spec.ts` creates the collection `sandbox_switch`, with a stock input and a stock Toggle beside the switches to compare them with, and checks in Chromium that the built bundle loads and:

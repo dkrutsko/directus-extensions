@@ -31,7 +31,8 @@ npm run validate   # directus-extension validate
 | `src/i18n.ts` | `useAppText` (the app's `$t`, for "No value"), `useLanguage` and `pageLanguage` (the language numbers are written in). Nothing imports `vue-i18n`. |
 | `src/preview.ts` | The SVG in the interface picker of Data Model. Our own drawing. |
 | `tests/` | Vitest: `meter.test.ts` and `options.test.ts` for the two framework-free files, and `bundle.test.ts`, which reads the `<style>` blocks of the two components (no comment, no colour but the theme's tokens, system colours only under forced colours) and `dist/app.js` where there is a build (no comment). |
-| `sandbox/` | Six browser spec files by topic, and `meter-support.ts`, which holds what they share. |
+| `sandbox/` | Six browser spec files by topic, `meter-support.ts`, which holds what they share, and `demo.spec.ts`, the smoke test of the demo. |
+| `demo/demo.mjs` | The definition of the demo in the sandbox: see [Demo](#demo). |
 | `docs/behaviour.md` | The rules of behaviour, by topic. Not in the npm archive; the README links to it on GitHub. |
 | `docs/images/` | The pictures of the README, taken in the sandbox. |
 
@@ -120,9 +121,15 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 - The key of the format is `indicatorFormat`, not `format`: the stock Formatted Value display stores a boolean under `format`, and the options of a field can outlive a change of its display. The key of the look is `visualization`, not `style`, which is no ordinary prop in Vue.
 - A new word of an option goes into its list in `meter.ts` and its record of names in `options.ts`; the type check fails until both have it.
 
+## Demo
+
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_meter`, with 50 meters at half the width of the form, as in the README's pictures, in six groups: Recipes, Visualization, Coloring, Grow and fade, Text, Editing. Its six items differ only in how far they have come (each value is a share of each field's range); "Past half" is at 62%, where the next of 5, 10 or 20 pieces is under way, so growing and fading show at rest. The table has a preset with the recipes and four more columns, and a bookmark each for Visualization, Coloring and Text.
+
+A new or changed option gets a field in a group, or is added to one; set no option to its default, since the note under a field lists what it sets. `sandbox/demo.spec.ts` builds the demo and checks that every field draws a meter, and every value in the table and in each bookmark the display.
+
 ## Testing in a browser
 
-The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (89 tests).
+The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (90 tests, 1 of them the demo's).
 
 | File | What it holds |
 |---|---|
@@ -132,13 +139,14 @@ The browser tests run against the sandbox Directus of the repository (root `AGEN
 | `meter-editing.spec.ts` | What the pointer, a finger and the keys write, by every input method; what a reading is spared; the step; what is measured and observed; the options forms of editing. One test starts the full Chromium for the pointer lock and is skipped where that cannot be started. |
 | `meter-live-pieces.spec.ts` | The pieces of a meter which can be edited: large where a press would fill them (by "Piece" and by "Position"), growing and fading. |
 | `meter-ratios.spec.ts` | Bars at real device pixel ratios of 1, 1.5 and 2 (a browser of its own for each), a meter in a stock Repeater, and a field the form does not let the user change (a user who may only read, a batch edit). |
+| `demo.spec.ts` | The smoke test of the demo (see [Demo](#demo)): it builds `demo_meter`, not a `sandbox_meter...` collection. |
 
 `meter-support.ts` holds the fixtures (`seedMain`, `seedOwners`, `seedWide`, `seedEdit`, `seedRepeater`, `seedUnits`, `removeAll`), the helpers which read a meter in the page (`readPieces`, `shown`, `expectFilled`, `listened`, `optionsDialog`, `pixel` among them), `signedIn`, which opens a signed-in page of its own in any browser and fails on its errors, `makeUser`, for a user of the tests' own (another language, the dark appearance, fewer permissions), and `asDecimal`, which tells the app of a page that a field is a decimal with a scale.
 
 Each file makes the collections it needs before its tests and removes them after, so one file runs alone:
 
 ```bash
-npm run sandbox:test -- meter/                          # all six, from the repository root
+npm run sandbox:test -- meter/                          # all seven, from the repository root
 npm run sandbox:test -- meter/sandbox/meter-editing     # one file
 cd sandbox && npx playwright test meter/ -g "a title"   # one test: npm takes `-g` for itself
 ```

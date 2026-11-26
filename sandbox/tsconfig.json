@@ -9,6 +9,9 @@
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,
 		"resolveJsonModule": true,
+		// The demo machinery (demo/*.mjs) is plain JavaScript, which Node runs as it
+		// is; the smoke tests import it, and its types are inferred.
+		"allowJs": true,
 		"verbatimModuleSyntax": true,
 		"strict": true,
 		"noUncheckedIndexedAccess": true,

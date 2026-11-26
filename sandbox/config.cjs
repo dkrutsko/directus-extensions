@@ -1,9 +1,12 @@
 // Configuration of the sandbox Directus (CONFIG_PATH points here). Everything
 // it writes goes into ./data, which `npm run sandbox:reset` deletes.
+// SANDBOX_DATA names another folder (absolute, or relative to this one), and
+// SANDBOX_PORT another port, so two instances can run side by side. The start
+// refuses a folder which it did not make (scripts/data.mjs).
 const path = require('node:path');
 const settings = require('./settings.json');
 
-const data = path.join(__dirname, 'data');
+const data = path.resolve(__dirname, process.env.SANDBOX_DATA || 'data');
 const port = Number(process.env.SANDBOX_PORT) || settings.port;
 
 module.exports = {

@@ -9,7 +9,8 @@
     "check": "tsc --noEmit",
     "test": "playwright test",
     "browsers": "playwright install chromium",
-    "reset": "node scripts/reset.mjs"
+    "reset": "node scripts/reset.mjs",
+    "demo": "node scripts/demo.mjs"
   },
   "engines": {
     "node": "22.x"

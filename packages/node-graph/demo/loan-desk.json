@@ -1,0 +1,126 @@
+{
+	"format": "directus-node-graph-ruleset",
+	"schemaVersion": 1,
+	"key": "loan-desk",
+	"version": 1,
+	"name": "Loan desk",
+	"direction": "LR",
+	"nodeTypes": [
+		{
+			"key": "desk",
+			"label": "At the desk",
+			"icon": "person",
+			"description": "Where every decision starts. Each tree has exactly one.",
+			"deletable": false,
+			"limits": { "minInstances": 1, "maxInstances": 1 },
+			"outputs": [{ "key": "next", "label": "Next", "minConnections": 1, "maxConnections": 1 }]
+		},
+		{
+			"key": "question",
+			"label": "Question",
+			"icon": "help",
+			"category": "Decide",
+			"description": "A question with one output for each of its answers.",
+			"titleTemplate": "{{question}}",
+			"fields": [
+				{
+					"field": "question",
+					"name": "Question",
+					"type": "string",
+					"meta": { "interface": "input", "required": true, "options": { "placeholder": "Is the item on hold?" } }
+				},
+				{
+					"field": "answers",
+					"name": "Answers",
+					"type": "json",
+					"meta": {
+						"interface": "list",
+						"note": "Each answer becomes an output. Reordering the answers moves their connections.",
+						"options": {
+							"template": "{{label}}",
+							"addLabel": "Add answer",
+							"fields": [{ "field": "label", "name": "Answer", "type": "string", "meta": { "interface": "input" } }]
+						}
+					},
+					"schema": { "default_value": [{ "label": "Yes" }, { "label": "No" }] }
+				}
+			],
+			"inputs": [{ "key": "in", "label": "In", "minConnections": 1 }],
+			"dynamicOutputs": {
+				"field": "answers",
+				"labelTemplate": "{{label}}",
+				"port": { "minConnections": 1, "maxConnections": 1 }
+			}
+		},
+		{
+			"key": "outcome",
+			"label": "Outcome",
+			"icon": "flag",
+			"color": "var(--theme--success)",
+			"category": "Decide",
+			"description": "What the desk tells the member.",
+			"titleTemplate": "{{decision}}",
+			"summaryFields": ["note"],
+			"fields": [
+				{
+					"field": "decision",
+					"name": "Decision",
+					"type": "string",
+					"meta": {
+						"interface": "select-dropdown",
+						"required": true,
+						"options": {
+							"choices": [
+								{ "text": "Lend for three weeks", "value": "three_weeks" },
+								{ "text": "Lend for one week", "value": "one_week" },
+								{ "text": "Reading room only", "value": "reading_room" },
+								{ "text": "Ask a librarian", "value": "librarian" }
+							]
+						}
+					}
+				},
+				{
+					"field": "note",
+					"name": "Note",
+					"type": "string",
+					"meta": { "interface": "input" }
+				}
+			],
+			"inputs": [{ "key": "in", "label": "In", "minConnections": 1 }]
+		}
+	],
+	"edgeTypes": [
+		{
+			"key": "answer",
+			"label": "Answer",
+			"style": { "path": "straight" }
+		}
+	],
+	"connectionRules": {
+		"allowCycles": false,
+		"pairs": {
+			"mode": "allow",
+			"rules": [
+				{ "source": "desk", "target": "question" },
+				{ "source": "question", "sourcePort": "answers.*" }
+			]
+		}
+	},
+	"graphRules": {
+		"entryNodeTypes": ["desk"],
+		"requireReachableFromEntry": true,
+		"maxNodes": 50
+	},
+	"severity": {
+		"field_required": "warning"
+	},
+	"starter": {
+		"nodes": [
+			{ "ref": "desk", "type": "desk", "position": { "x": 0, "y": 0 } },
+			{ "ref": "first", "type": "question", "position": { "x": 360, "y": 0 } }
+		],
+		"edges": [
+			{ "source": "desk", "sourceHandle": "next", "target": "first", "targetHandle": "in" }
+		]
+	}
+}

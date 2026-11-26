@@ -15,6 +15,23 @@ A collection of extensions for [Directus](https://directus.io): interfaces, disp
 
 Install an extension from the Directus Marketplace or with npm; its own README says how to use it. All of them are built and tested against Directus 11.17.4 and declare the host range `^11.15.0`.
 
+## Demo
+
+To try the extensions before choosing, run them in a local Directus. It needs Node 22 and npm 11:
+
+```bash
+git clone https://github.com/dkrutsko/directus-extensions.git
+cd directus-extensions
+npm install
+npm run build
+npm run sandbox:install
+npm run sandbox           # Directus at http://127.0.0.1:8155
+```
+
+Open http://127.0.0.1:8155 and sign in as `admin@example.com` with the password `sandbox`. Under Content, the folder **Demos** has one collection for each extension with options to choose from: the extension in several fields with different options, grouped by topic, and for a display a table with a few items. The first start builds them. Every field can be changed and saved. The note under a field lists the options it uses, so a set-up you like can be copied into your own project; Settings, Data Model shows all of a field's settings.
+
+`npm run demo` puts every demo back as its definition in `packages/<name>/demo/` describes it, and [the sandbox's README](sandbox/README.md#demos) says how they work.
+
 ## Development
 
 The extensions need Node 22 or later and npm 11. One install in the repository root serves all of them:

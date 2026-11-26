@@ -30,7 +30,8 @@
     "sandbox:install": "npm --prefix sandbox ci && npm --prefix sandbox run browsers",
     "sandbox": "npm --prefix sandbox start",
     "sandbox:test": "npm --prefix sandbox test",
-    "sandbox:reset": "npm --prefix sandbox run reset"
+    "sandbox:reset": "npm --prefix sandbox run reset",
+    "demo": "npm --prefix sandbox run demo"
   },
   "engines": {
     "node": ">= 22.0.0"

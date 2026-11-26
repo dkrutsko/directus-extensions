@@ -83,6 +83,10 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 - The names of a step's three fields in the settings are the app's own strings (`$t:text`, `$t:value`, `$t:icon`) and the placeholders are the Dropdown's, each of which says exactly what is meant. The name of the option, "Steps", "Show Labels" and the notes have no such string and are plain English. `text` is not required; `value` is. The row of the repeater is `{{ text }} ({{ value }})`, so a step without a text can still be told from the others there.
 - The options are a function of the field, as the Dropdown's are, only to give the `value` input the type of the field. Keep it that way: an untyped input writes text into the options of an integer field.
 
+## Demo
+
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_steps`, whose six items differ only in how far they have come (first step, a third and two thirds of the way, last step, a value which is not a step, none), a form with the tracks in five groups by topic, a table preset of the recipes with the display, and a bookmark "More cases" for the rest. A few fields hold the same value in every item (`FIXED`), because their value is the point. The note of each field lists the values its steps store, with their icons, since the form shows only the labels (`brief`, up to eight steps). A new or changed option, or a rule for entries which are left out, gets a field in a group. `sandbox/demo.spec.ts` builds it and checks that every field draws a track or the notice of a field without steps, and every value in the table and in its bookmark the display.
+
 ## Testing in a browser
 
 `sandbox/steps.spec.ts` creates the collection `sandbox_steps`, with a stock input and a stock Dropdown beside the tracks, and checks in Chromium that the built bundle loads and:

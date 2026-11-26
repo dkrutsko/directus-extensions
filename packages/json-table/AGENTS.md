@@ -73,6 +73,10 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 - Add a line to the message table of `docs/format.md` with every new message people are likely to meet.
 - The unit tests cover only `table.ts`. Everything in `interface.vue` has to be checked in a browser.
 
+## Demo
+
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the singleton `demo_json_table`, whose fields each hold a table, in groups (recipes, every kind of cell, column labels, pins, values and states), and `demo_json_table_products`, under it in the navigation, which the links open. The options only lay a table out, so most fields differ in their value; a new or changed option gets a field, and a new field of the format a row in the gallery of cells. `sandbox/demo.spec.ts` builds it and checks that each field draws a table, its placeholder or, for the one broken on purpose, the notice.
+
 ## Testing in a browser
 
 `sandbox/json-table.spec.ts` checks in the sandbox Directus, in Chromium, that the built bundle loads and draws the examples, the placeholder of an empty field and the notice of an invalid value. Nothing else is automated. Version 1.0.0 was verified against a disposable Directus 11.17.4 (SQLite) with Playwright scripts in Chrome, Firefox and WebKit, 97 checks each, which are not part of the repository. To repeat that, seed a collection with a read-only `json` field on this interface and one item per case, and cover at least:

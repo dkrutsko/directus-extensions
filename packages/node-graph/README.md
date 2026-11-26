@@ -126,7 +126,7 @@ The stock drawer has no width option, so the editor widens it, and fits its body
 
 ## Development
 
-This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. After `npm install` in the repository root, run these in `packages/node-graph`:
+This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. The test Directus has a demo of the node graph with three rulesets and the other options side by side, in a form and in a table, [described in its README](https://github.com/dkrutsko/directus-extensions/blob/main/sandbox/README.md#demos). After `npm install` in the repository root, run these in `packages/node-graph`:
 
 ```bash
 npm run dev       # watch build, unminified

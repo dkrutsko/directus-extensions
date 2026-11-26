@@ -8,9 +8,9 @@ This file is the shared instruction file for coding agents (Codex, Cursor, Claud
 
 | Path | What |
 |---|---|
-| `packages/<name>/` | One extension: `src`, `tests` (vitest unit tests, where it has any), `sandbox` (browser tests), `docs`, `examples`, and its own `README.md`, `CHANGELOG.md`, `LICENSE`, `AGENTS.md`. |
+| `packages/<name>/` | One extension: `src`, `tests` (vitest unit tests, where it has any), `sandbox` (browser tests), `demo` (the definition of its demo, where it has one), `docs`, `examples`, and its own `README.md`, `CHANGELOG.md`, `LICENSE`, `AGENTS.md`. |
 | `template/` | The starting point of a new extension, with `__NAME__`, `__SNAKE__`, `__TITLE__` and `__DESCRIPTION__` where `npm run new` fills in the name. Not a workspace and never built as it is. |
-| `sandbox/` | A local Directus 11.17.4 (SQLite) which loads every package, the Playwright setup and the fixtures of the browser tests. Its own `package.json` and lockfile; not a workspace. `sandbox/README.md` explains it. |
+| `sandbox/` | A local Directus 11.17.4 (SQLite) which loads every package, the machinery which builds the demos (`sandbox/demo`), the Playwright setup and the fixtures of the browser tests. Its own `package.json` and lockfile; not a workspace. `sandbox/README.md` explains it. |
 | `scripts/sync.mjs` | Writes the lists of packages (the table in `README.md`, the dropdowns of both workflows) and checks the rules below which a script can check, and that both lockfiles are complete. |
 | `scripts/new.mjs` | Copies `template/` to `packages/<name>` and runs the sync. |
 | `.github/workflows/` | **Build** and **Publish**, both started by hand with the package as an input. |
@@ -28,7 +28,8 @@ npm run sync                 # rewrite the package lists, check the rules
 npm run new -- <name> "..."  # a new extension from template/
 
 npm run sandbox:install      # once, with Node 22
-npm run sandbox              # Directus at http://127.0.0.1:8155
+npm run sandbox              # Directus at http://127.0.0.1:8155, with the demos
+npm run demo                 # puts the demos back; add `-- <name>` for one package
 npm run sandbox:test         # browser tests; add `-- <name>/` for one package
 ```
 
@@ -86,6 +87,15 @@ Every package has at least one spec in `packages/<name>/sandbox/` which proves t
 - A spec creates collections named `sandbox_<name>...` and drops them first, so it runs again on the same database.
 - Every test fails on an error logged or thrown by the page, whichever extension caused it.
 - The specs run in Chromium only. Firefox, WebKit, touch devices and the dark theme are checked by hand when a change calls for it.
+
+## Demos
+
+The sandbox has a folder "Demos" with a collection for each extension which has options to choose from, for the maintainer to test by hand and for anyone who clones the repository to try combinations. `sandbox/README.md` explains how they are built.
+
+- **An extension with options has a demo** in `packages/<name>/demo/demo.mjs` and a smoke test in `packages/<name>/sandbox/demo.spec.ts`. `packages/switch` is the model of an interface alone (a singleton), `packages/meter` of one with a display (items and a table), `packages/json-table` of a demo with a collection it needs (`supports`).
+- **A new or changed option gets a field in the demo, or is added to one.** The note under each field is written from its options. Keep the habits which `sandbox/README.md` lists, so the demos read as one. After a change run `npm run demo -- <name>` and the smoke test, and look at the form.
+- **The definition is the only source.** The sandbox builds the demo from it, and nothing done in the Data Studio is written back.
+- `list-m2a-viewable` has no demo: it has nothing to choose. A package made by `npm run new` has none yet either: add the two files, copied from the model which fits.
 
 ## Known gaps
 

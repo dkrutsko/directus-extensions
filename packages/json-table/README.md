@@ -114,7 +114,7 @@ Tested in Chrome, in Firefox and in WebKit, the engine of Safari, but not in Saf
 
 ## Development
 
-This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. After `npm install` in the repository root, run these in `packages/json-table`:
+This package lives in the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, whose README covers the setup, the test Directus and releasing. The test Directus has a demo of the table with every option and every kind of cell side by side, [described in its README](https://github.com/dkrutsko/directus-extensions/blob/main/sandbox/README.md#demos). After `npm install` in the repository root, run these in `packages/json-table`:
 
 ```bash
 npm run dev       # watch build, unminified
