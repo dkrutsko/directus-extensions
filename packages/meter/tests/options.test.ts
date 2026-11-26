@@ -127,8 +127,8 @@ describe('the options form of the display', () => {
 		const text = String(fields[0]?.meta?.options?.['text']);
 
 		expect(text).toContain('taken from the interface of the field');
-		expect(text).toContain('Emptied limits and an emptied label are taken from it again');
-		expect(text).toContain('An emptied color or list of thresholds means none');
+		expect(text).toContain('An emptied option is taken from it again');
+		expect(text).toContain('except an emptied color or list of thresholds, which means none');
 	});
 
 	test('on a field without interface options, the defaults', () => {
@@ -262,7 +262,7 @@ describe('the options of the look', () => {
 		expect(field.meta?.interface).toBe('input');
 		// The app's own word for it, in the language of the user.
 		expect(field.meta?.options).toEqual({ placeholder: '$t:automatic', min: 2 });
-		expect(field.meta?.note).toContain('A set number gives round shares, or fewer if it does not fit');
+		expect(field.meta?.note).toContain('Fewer if too many');
 		expect(field.schema?.default_value).toBeUndefined();
 	});
 
@@ -519,8 +519,14 @@ describe('the options form of a display which is not told its field', () => {
 			expect(preset(told, key), key).toBeDefined();
 		}
 
-		for (const key of ['visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring'])
+		// Each can be emptied in the form of the display, which hands it back to the interface; not in the interface's.
+		for (const key of ['indicatorFormat', 'visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring']) {
 			expect(fieldOf(blind, key).meta?.options?.['allowNone'], key).toBe(true);
+			expect(fieldOf(told, key).meta?.options?.['allowNone'], key).toBe(true);
+			expect(fieldOf(optionFields({}, false), key).meta?.options?.['allowNone'], key).toBeUndefined();
+		}
+
+		expect(placeholder(told, 'indicatorFormat')).toBe('$t:percent');
 	});
 
 	test('the number of subdivisions and the layout of the dots show until the visualization of the form rules them out', () => {
@@ -802,8 +808,10 @@ describe('the texts of the options forms', () => {
 		}
 	});
 
-	test('the note of the number of subdivisions says that a set number gives round shares', () => {
-		for (const fields of Object.values(forms)) expect(String(fieldOf(fields, 'subdivisions').meta?.note)).toContain('gives round shares');
+	test('the note of the number of subdivisions says what an empty one comes to: one for each unit, or what fits', () => {
+		for (const fields of Object.values(forms)) {
+			expect(String(fieldOf(fields, 'subdivisions').meta?.note)).toContain('Empty: one for each unit of a whole range, else what fits');
+		}
 	});
 
 	test('the two methods which say how the pointer sets the value are called Position and Piece', () => {

@@ -35,6 +35,8 @@ If something else keeps the number up to date (a flow, an import, the API) and e
 - **A field which sets none of the new options looks as it did.** Where it can be edited it also has a pointer cursor, a small handle at the end of the fill while it is used, and a focus ring.
 - The display is never edited.
 
+The [changelog](https://github.com/dkrutsko/directus-extensions/blob/main/packages/meter/CHANGELOG.md) lists everything which is new in 2.0.
+
 ## Options
 
 Every option is optional. "Display" says whether the display has the option too; where it does and sets none of its own, it takes the interface's (see [The display](#the-display)). The form shows the words of a dropdown capitalised ("Pills", "Position"), and `fraction` as "Value / Maximum".
@@ -51,14 +53,14 @@ Every option is optional. "Display" says whether the display has the option too;
 | Visualization | `visualization` | `contiguous`, `pills`, `segments`, `bars`, `dots` | `contiguous` | One bar which is filled exactly, or a row of pieces which are each filled or not: pills with round ends, segments which read as one cut bar, thin square bars, or dots. The nearest whole number of pieces is filled; the text keeps the exact value. | yes |
 | Subdivisions | `subdivisions` | whole number, 2 or more | automatic | How many pieces are wanted. Empty: one for every unit of the range where that is a whole number of at least 2, else as many as fit. Where the number does not fit the width, fewer are drawn: for pills and segments a number which divides it, so each piece is a round share. At most 200. | yes |
 | Dots Layout | `dotsLayout` | `packed`, `spread` | `packed` | Where dots stand: from the start, a fixed distance apart, or from edge to edge with equal gaps. | yes |
-| Grow | `grow` | number, 0 to 20 | `0` | Above 0, the pieces which are not filled are drawn small and grow as the value nears them. The number is how many can be growing at once: 1 for the next piece only, more for a ramp. | no |
-| Fade In | `fade` | on or off | off | The next piece takes on the colour of a filled one gradually, as the value nears it. | yes |
-| Color | `color` | hex colour or `var(--theme--...)` | the primary colour | The colour of what is filled. | yes |
+| Grow | `grow` | number, 0 to 20 | `0` | Above 0, the pieces which are not filled are drawn small and grow as the value nears them. The number is how many can be growing at once: 1 for the next piece only (the next two or three where the bars are thin), more for a ramp. | no |
+| Fade In | `fade` | on or off | off | The next piece takes on the colour of a filled one gradually, as the value nears it. With a Grow above 1, or thin bars, the next few do. | yes |
+| Color | `color` | hex colour or `var(--theme--...)` | the primary colour | The colour of what is filled. The text input of the colour picker also takes a theme variable, typed in: `var(--theme--danger)` follows the theme. | yes |
 | Thresholds | `thresholds` | list of `{ "value", "color" }` | none | From its value upward the bar has the colour of an entry; the highest one the value has reached counts. Values are in the units of the field. | yes |
 | Active Coloring | `activeColoring` | `value`, `blend`, `steps`, `gradient` | `value` | The colours of what is filled. `value`: one colour, that of the current value. `blend`: one colour which shifts towards the next threshold's as the value nears it. `steps`: each place on the track has the colour of its own threshold. `gradient`: those colours blended along the track. | yes |
 | Inactive Coloring | `inactiveColoring` | `plain`, `automatic`, `value`, `blend`, `steps`, `gradient` | `plain` | The colours of what is not filled. `plain`: the track. `automatic`: as what is filled, faded. The other four: that colouring, faded. | yes |
 | Input Method | `input` | `automatic`, `position`, `piece`, `relative`, `none` | `automatic` | How the pointer sets the value: see [Editing](#editing). `none`: the meter is not edited. | no |
-| Step | `step` | number above 0 | by type and range | The distance between two values which can be set, counted from the minimum. Empty: 1 on an Integer or Big Integer field; on a Float or Decimal field the largest power of ten which gives the range a hundred steps, at most 1: 0.01 for 0 to 1, 0.1 for 0 to 10, 1 from a range of 100 on. The form shows what it comes to. | no |
+| Step | `step` | number above 0 | by type and range | The distance between two values which can be set, counted from the minimum. Empty: 1 on an Integer or Big Integer field; on a Float or Decimal field the largest power of ten which gives the range at least a hundred steps, at most 1: 0.01 for 0 to 1, 0.1 for 0 to 10, 1 from a range of 100 on. The form shows what it comes to. | no |
 | Sensitivity | `sensitivity` | number above 0 | `1` | For `relative`: how many times the range one length of the meter covers. | no |
 
 Options which apply only sometimes are hidden in the form until they do: Subdivisions, Grow and Fade In need pieces, Dots Layout needs dots, Prefix and Suffix a format other than the percentage, Sensitivity the method "Relative", and Step any method but "None".
@@ -71,7 +73,7 @@ Options which apply only sometimes are hidden in the form until they do: Subdivi
 
 ## Recipes
 
-Each is the options of the interface as the field stores them (`meta.options`). The display follows without options of its own.
+Each is the options of the interface as the field stores them (`meta.options`). Set them in the field's Interface options under Settings, Data Model, or send them with `PATCH /fields/<collection>/<field>`. The display follows without options of its own.
 
 **A rating of five dots, set by piece.** A click on the fourth dot sets 4, on any numeric type.
 

@@ -105,8 +105,9 @@ const AFFIXED: readonly IndicatorFormat[] = FORMATS.filter((format) => format !=
  * the number of subdivisions, `fade` and the layout of the dots show until
  * the form's own visualization rules them out.
  *
- * The dropdowns of the look (`visualization`, `dotsLayout`, `activeColoring`,
- * `inactiveColoring`) fall back like the limits: an emptied one is taken from
+ * The dropdowns of the format and the look (`indicatorFormat`,
+ * `visualization`, `dotsLayout`, `activeColoring`, `inactiveColoring`) fall
+ * back like the limits: an emptied one is taken from
  * the interface again. In the form of the display they can be emptied, and
  * then show what they come to as their placeholder.
  *
@@ -137,9 +138,9 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 	const blind = display && !known;
 	const unset = (text: string) => (blind ? FROM_INTERFACE : text);
 
-	// A dropdown of the look. It shows what it comes to while nothing is stored. In the form of the display it can
+	// A dropdown of the format or the look. It shows what it comes to while nothing is stored. In the form of the display it can
 	// be emptied, which hands the option back to the interface, and then shows what it comes to as its placeholder.
-	const dropdown = (field: string, name: string, choices: Choice[], preset: string, note: string): Fields[number] => ({
+	const dropdown = (field: string, name: string, choices: Choice[], preset: string, note?: string): Fields[number] => ({
 		field,
 		name,
 		type: 'string',
@@ -147,7 +148,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 			width: 'half',
 			interface: 'select-dropdown',
 			options: display ? { choices, allowNone: true, placeholder: unset(choices.find((choice) => choice.value === preset)?.text ?? '') } : { choices },
-			note,
+			...(note ? { note } : {}),
 		},
 		...(blind ? {} : { schema: { default_value: preset } }),
 	});
@@ -236,20 +237,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 				default_value: unsetOptions.indicator,
 			},
 		},
-		{
-			field: 'indicatorFormat',
-			name: '$t:format',
-			type: 'string',
-			meta: {
-				width: 'half',
-				interface: 'select-dropdown',
-				options: {
-					choices: choicesOf(FORMATS, FORMAT_NAMES),
-					...(blind ? { placeholder: FROM_INTERFACE } : {}),
-				},
-			},
-			...(blind ? {} : { schema: { default_value: unsetOptions.indicatorFormat } }),
-		},
+		dropdown('indicatorFormat', '$t:format', choicesOf(FORMATS, FORMAT_NAMES), unsetOptions.indicatorFormat),
 		affix('prefix', '$t:displays.formatted-value.prefix', 'As typed, with no space added. A fraction has it before both numbers.'),
 		affix('suffix', '$t:displays.formatted-value.suffix', 'As typed: " GB" needs its space. A fraction has it once, at the end.'),
 		dropdown(
@@ -270,7 +258,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 					placeholder: unset(unsetLook.subdivisions === null ? '$t:automatic' : String(unsetLook.subdivisions)),
 					min: MIN_SUBDIVISIONS,
 				},
-				note: 'A set number gives round shares, or fewer if it does not fit. Empty: what fits.',
+				note: 'Empty: one for each unit of a whole range, else what fits. Fewer if too many.',
 				hidden: !blind && unsetLook.visualization === 'contiguous',
 				conditions: SHOWN_FOR_PIECES,
 			},
@@ -302,7 +290,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 								max: MAX_GROW,
 								step: 0.5,
 							},
-							note: '0: off. 1: the next piece grows as the value nears it. More: a ramp of that many.',
+							note: '0: off. 1: the next piece or few thin bars grow as the value nears. More: a ramp.',
 							hidden: unsetLook.visualization === 'contiguous',
 							conditions: SHOWN_FOR_PIECES,
 						},
@@ -318,7 +306,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 				options: {
 					label: 'Fade in the next piece',
 				},
-				note: 'The next piece takes on its color gradually, as the value nears it.',
+				note: 'The next piece or few take on their color gradually, as the value nears them.',
 				hidden: !blind && unsetLook.visualization === 'contiguous',
 				conditions: SHOWN_FOR_PIECES,
 			},
@@ -463,8 +451,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 						? 'An option which is not set here is taken from the interface of the field. This dialog cannot show what is set there: an empty input stands for it. ' +
 							'An emptied color or list of thresholds means none.'
 						: 'An option which is not set here is taken from the interface of the field, and shown as it is set there. ' +
-							'Emptied limits and an emptied label are taken from it again, as are the emptied dropdowns of the look and the coloring. ' +
-							'An emptied color or list of thresholds means none.',
+							'An emptied option is taken from it again, except an emptied color or list of thresholds, which means none.',
 				},
 			},
 		},

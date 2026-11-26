@@ -292,9 +292,9 @@ watch(hover, (now) => {
 const dragging = shallowRef(false);
 
 /**
- * Writes a value, which has to be one `snapValue` or `keyValue` made: on the
- * grid, within the range, a finite number. Only where the field can be
- * edited, and only where it differs from what the field holds.
+ * Writes a value, which has to be one `snapValue`, `pieceValue` or `keyValue`
+ * made: on the grid, within the range, a finite number. Only where the field
+ * can be edited, and only where it differs from what the field holds.
  */
 function write(value: number | null | undefined) {
 	if (!editable.value || typeof value !== 'number' || !Number.isFinite(value)) return;
@@ -822,11 +822,12 @@ onBeforeUnmount(() => {
 //   what they are without it. A filled piece has no transform of its growth,
 //   and a meter which does not grow its pieces has none anywhere, but for
 //   the pieces up to the pointer (above).
-// - The piece which fades in (`fade`) has one child (`mt-over`) which covers
-//   it, painted as the piece will be once it is filled, at the opacity of
-//   how far the value has come into it. It takes no press: the piece under
-//   it does. Only that one piece has a child and the class `mt-under`; a
-//   meter which does not fade has neither anywhere.
+// - A piece which fades in (`fade`: the next one, or as many as the reach
+//   covers) has one child (`mt-over`) which covers it, painted as the piece
+//   will be once it is filled, at the opacity of how far it has grown. It
+//   takes no press: the piece under it does. Only such a piece has a child
+//   and the class `mt-under`; a meter which does not fade has neither
+//   anywhere.
 // - There are three transitions, 150ms each, and none for a user who asked
 //   for less motion. Two are by the class `mt-eased` on the row: of the size
 //   of pieces which grow and of the opacity of the piece which fades in,

@@ -16,7 +16,7 @@ npm run build      # dist/app.js + dist/api.js
 npm run validate   # directus-extension validate
 ```
 
-`prepublishOnly` runs check, test, build and validate.
+`prepublishOnly` runs check, build, test and validate: the build comes before the tests, so that `tests/bundle.test.ts` reads the bundle which is published.
 
 ## Layout
 
@@ -56,7 +56,7 @@ npm run validate   # directus-extension validate
 - **The fill of the one bar** is sized by the track, not by itself: `100cqi` in the form (the track is a container, class `mt-scaled`, only then), `4.5rem` in the display. Sized by the fill, a stop would move by a pixel as the value changes.
 - **A gradient has no logical direction,** so a right-to-left page has rules of its own by `:dir(rtl)`. Everything else is laid out along the inline axis.
 - **Sizes are transforms.** A piece which grows, and a piece which a press of the pointer would fill, is drawn at its size by a `transform` about its middle. No box changes, so the count, the gaps, the height and where the pointer counts a piece are untouched. `pieceStyle` decides between the two sizes: the large one wins. A large pill also gets corner radii which keep its ends round (`roundEnds`).
-- **`fade`:** the one piece which is fading in has one child (`-over`), painted as the piece will be once filled, at the opacity of its growth.
+- **`fade`:** each piece which is fading in (the next one, or as many as the reach covers) has one child (`-over`), painted as the piece will be once filled, at the opacity of its growth.
 - **Bars** are sized by `barFit` in whole device pixels and handed to the row as `--<prefix>-bar` and `--<prefix>-gap` (class `-fitted`). `fitCount` counts bars with the same least sizes.
 - **Measuring.** The form measures the element on the line of the track with a `ResizeObserver`, only while the visualization has pieces (`watched`). The width is read by three computed values (the count, the two sizes of the bars, the reach of thin bars), each of which changes only now and then, so a meter is not drawn again with every pixel. A field which is not shown has no width and draws one bar. The display measures nothing: its length is `DISPLAY_WIDTH`.
 - **The text is whole or absent** by layout alone. Its box is a flex container which may wrap, one line high, with `overflow: hidden`, and a zero-width space as `::before` holds the first line: a number which does not fit goes to the second line and is gone. Never put `text-overflow` on a number.
@@ -107,7 +107,7 @@ npm run validate   # directus-extension validate
 10. **A field which can be edited writes only what `snapValue`, `pieceValue` or `keyValue` made:** a finite number on the grid, within the range, whole for a whole type.
 11. **`contiguous` with the default colouring, and both `grow` and `fade` off, add nothing to the page:** the elements, classes and inline styles of the plain meter, in a field which cannot be edited exactly those of 1.0.1. A piece is filled or not, never in part, and what is said about the value is never the rounded one. The number of pieces comes from the width of the track's own line and from nothing which the pieces could change.
 12. **A number shows whole, or not at all.**
-13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 49,145 bytes (15,627 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
+13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 48,951 bytes (15,607 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
 14. **It is an app-only bundle,** so the Marketplace can install it under the default `MARKETPLACE_TRUST`.
 15. **Directus look.** Only `--theme--*` tokens for colours, and system colours only under forced colours (`tests/bundle.test.ts` checks both). The track is `--theme--form--field--input--border-color`, the fill `--theme--primary` unless an option says otherwise. Styles are scoped; class names other than the two roots (`meter`, `meter-display`) start with `mt-` in the interface and `md-` in the display.
 
@@ -123,7 +123,7 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 
 ## Demo
 
-`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_meter`, with 50 meters at half the width of the form, as in the README's pictures, in six groups: Recipes, Visualization, Coloring, Grow and fade, Text, Editing. Its six items differ only in how far they have come (each value is a share of each field's range); "Past half" is at 62%, where the next of 5, 10 or 20 pieces is under way, so growing and fading show at rest. The table has a preset with the recipes and four more columns, and a bookmark each for Visualization, Coloring and Text.
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_meter`, with 50 meters, all but the plain bar at half the width of the form, as in the README's pictures, in six groups: Recipes, Visualization, Coloring, Grow and fade, Text, Editing. Its six items differ only in how far they have come (each value is a share of each field's range); "Past half" is at 62%, where the next of 5, 10 or 20 pieces is under way, so growing and fading show at rest. The table has a preset with the recipes and four more columns, and a bookmark each for Visualization, Coloring and Text.
 
 A new or changed option gets a field in a group, or is added to one; set no option to its default, since the note under a field lists what it sets. `sandbox/demo.spec.ts` builds the demo and checks that every field draws a meter, and every value in the table and in each bookmark the display.
 

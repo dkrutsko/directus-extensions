@@ -133,7 +133,7 @@ export interface Overlay {
  * the first and 1 for the last. `size` is how large it is drawn where the
  * pieces grow (`grow`), and `null` for a piece at its full size, which is
  * every piece of a meter which does not grow them. `over` is what is laid
- * over the one piece which is fading in (`fade`), and `null` for every other.
+ * over a piece which is fading in (`fade`), and `null` for every other.
  */
 export interface PieceDrawing {
 	filled: boolean;
@@ -1452,6 +1452,7 @@ export const LARGE_ALONG: Record<Shape, number> = { pills: 2, segments: 0, bars:
  * The size at which a piece which the pointer would fill is drawn: larger
  * than regular, whether it is filled or not and whatever it would be without
  * the pointer.
+ *
  * `length` is how long a piece is along the track, in pixels, since the
  * growth along it is a number of pixels and a scale is a factor. A piece
  * without a length is not made longer.

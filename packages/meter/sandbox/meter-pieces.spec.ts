@@ -974,7 +974,7 @@ test('the options form of the look: the number and the layout only while they ap
 	await expect(option('subdivisions').locator('input')).toHaveAttribute('placeholder', 'Automatic');
 	await expect(option('subdivisions').locator('input')).toHaveAttribute('min', '2');
 	await expect(option('subdivisions').locator('input')).not.toHaveAttribute('max');
-	await expect(option('subdivisions')).toContainText('A set number gives round shares');
+	await expect(option('subdivisions')).toContainText('Empty: one for each unit of a whole range');
 	await expect(option('dotsLayout')).toHaveCount(0);
 
 	// Dots: the layout as well.

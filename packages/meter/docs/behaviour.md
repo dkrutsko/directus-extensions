@@ -73,7 +73,7 @@ With any visualization but `contiguous` the track is a row of pieces, and each p
    - Never more than 200, whatever the width and whatever is asked for.
 4. **How many are filled.** The share of the range the value has reached, times the number of pieces, rounded to the nearest whole number, with the upper one half way. Of ten pieces on 0 to 100, 44 fills four and 45 fills five. The filled pieces are the first ones, from the side where text starts. The text still says the exact value.
 
-Two things follow, and both are meant. The look depends on the width: the same field can have 10 pills in half of the form and 5 in a table. And a coarse meter rounds: five pieces for 0 to 100 show 44 and 58 alike. Set `subdivisions` to a small number, or give the meter a range of a few units, for a meter which looks the same everywhere.
+Two things follow, and both are meant. The look depends on the width: the same field can have 10 pills in half of the form and 5 in a table. And a coarse meter rounds: five pieces for 0 to 100 show 52 and 68 alike. Set `subdivisions` to a small number, or give the meter a range of a few units, for a meter which looks the same everywhere.
 
 ## The sizes of the pieces
 
@@ -100,7 +100,7 @@ A row of pieces says how many are filled and nothing about the way to the next o
 - **The number is how many pieces can be growing at once.** A piece is filled once the value has come half of it. With 1 the growth starts that half piece before the fill, so only the next piece is ever under way, and at a value which is a whole number of pieces nothing is. Every further 1 reaches one piece further: with 2 a piece and a half, with 3 two and a half, a ramp of up to three. Below 1 the reach is half of the number: with 0.5 a quarter of a piece.
 - **Thin bars** have a longer reach where the pieces alone give less: about 15px of the track for each 1 of `grow` in the form, counted in half bars. So with 1 the next two or three bars are a short ramp. Wide bars and the other shapes go by the pieces alone.
 - **The ramp comes out of the start of the scale.** The growth never reaches further ahead than the fill is long, plus the half piece which fills the first one. A meter at its minimum is empty, and the ramp gets longer with the fill until it has its whole reach.
-- **`fade`** (the form and the display). The piece which comes next has the look of a filled piece laid over it, the more the nearer the value is. It uses the reach of `grow`, and that of 1 where `grow` is 0. In the display, which has no `grow`, it is that of 1, and for thin bars about 9px.
+- **`fade`** (the form and the display). Each piece which has started to grow has the look of a filled piece laid over it, the more the nearer the value is: the next piece, or as many as the reach covers. It uses the reach of `grow`, and that of 1 where `grow` is 0. In the display, which has no `grow`, it is that of 1, and for thin bars about 9px.
 - **No colour or size jumps.** A piece arrives at its full size and colour at the moment it is filled.
 - **Nothing moves.** A small piece is drawn smaller about its middle, in the place it has anyway. The gaps, the number of pieces, the height of the field and where a press counts are the same with and without it.
 - **While the pointer drags the value** by Position or Relative, the growing and the fading follow the pointer itself and not the steps of the value. The fill, the text and what is written stay on the steps. At the release the sizes settle on what the value gives. With steps of more than half a piece the value can fill a piece before the pointer has reached it.
@@ -243,7 +243,7 @@ Directus keeps the options of a field when its interface changes, so the Meter u
 - A default which a form shows is not stored. Nothing is stored until an option is changed.
 - Options which apply only sometimes show and hide by the option they depend on: Subdivisions, Grow and Fade In while the visualization has pieces, Dots Layout for dots, Prefix and Suffix while the format is not the percentage, Sensitivity for "Relative", and Step for every method but "None".
 - The Step input shows what an empty step comes to as its placeholder, and follows the limits as they are typed.
-- The form of the display shows what it takes over from the interface: as placeholders of the limits, the caption, the prefix, the suffix and the subdivisions, and as the state of its other inputs. Its dropdowns of the look and the colourings can be emptied, which hands the option back to the interface.
+- The form of the display shows what it takes over from the interface: as placeholders of the limits, the caption, the prefix, the suffix and the subdivisions, and as the state of its other inputs. Its dropdowns of the format, the look and the colourings can be emptied, which hands the option back to the interface.
 - **In the dialog of a stock Repeater's field** the forms are not told the field. The Step input then takes decimals also for a whole type (the meter still rounds the step) and says "Automatic". The form of the display cannot show what the interface has: its empty inputs say "As in the interface", and its options which apply only sometimes show until its own values rule them out.
 
 ## Motion, contrast themes and print

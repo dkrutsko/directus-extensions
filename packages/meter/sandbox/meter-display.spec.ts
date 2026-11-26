@@ -336,7 +336,7 @@ test('a colour and thresholds which are emptied in the options form of the displ
 	await expect(colour).toContainText('Primary color when empty');
 	await expect(thresholds.locator('.v-list-item')).toHaveCount(0);
 	await expect(thresholds.locator('.v-notice')).toBeVisible();
-	await expect(dialogs.locator('.v-notice', { hasText: 'An emptied color or list of thresholds means none' })).toBeVisible();
+	await expect(dialogs.locator('.v-notice', { hasText: 'except an emptied color or list of thresholds, which means none' })).toBeVisible();
 
 	// And the table draws neither: the primary colour, though 40 is beyond the threshold of the interface.
 	await page.goto(`/admin/content/${COLLECTION}?bookmark=${bookmarks.others}`);

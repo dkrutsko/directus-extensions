@@ -63,7 +63,7 @@
     "validate": "directus-extension validate",
     "check": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "prepublishOnly": "npm run check && npm test && npm run build && npm run validate"
+    "prepublishOnly": "npm run check && npm run build && npm test && npm run validate"
   },
   "engines": {
     "node": ">= 22.0.0"

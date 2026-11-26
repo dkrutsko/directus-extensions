@@ -9,7 +9,7 @@
 ### Added
 
 - **Input Method** (`input`, interface): "Automatic", "Position" (the value is where the pointer is), "Piece" (the pieces up to the pointer are filled), "Relative" (the value moves by as much as the pointer moves) or "None" (the meter is not edited). "Automatic" is "Piece" where every piece is exactly one step, and "Position" otherwise.
-- **Step** (`step`, interface): the distance between two values which can be set, counted from the minimum. Left empty, it is a step which suits the type and the range, and a field which was a stock Slider keeps that Slider's step.
+- **Step** (`step`, interface): the distance between two values which can be set, counted from the minimum. Left empty, it is a step which suits the type and the range, and a field which was a stock Slider or Input keeps the step which was set there.
 - **Sensitivity** (`sensitivity`, interface): for "Relative", how much of the range one length of the meter covers. Shift makes a drag ten times finer.
 - **Keys.** A meter which can be edited is one tab stop with the role `slider`: the arrows for one step, Page Up and Page Down for ten steps or one piece, Home and End for the two ends, Escape to put the value back during a drag.
 - **Touch.** A tap or a sideways drag sets the value; a vertical one scrolls the page.
@@ -20,12 +20,13 @@
 - **Subdivisions** (`subdivisions`): how many pieces are wanted. Left empty, one for every unit of a whole range, or as many as fit. Where the number does not fit the width, fewer are drawn.
 - **Dots Layout** (`dotsLayout`): "Packed" from the start, or "Spread" from edge to edge.
 - **Grow** (`grow`, interface): the pieces which are not filled are drawn small, and grow as the value nears them. The number is how many can be growing at once.
-- **Fade In** (`fade`): the next piece takes on the colour of a filled one gradually, as the value nears it.
+- **Fade In** (`fade`): the next piece, or the next few with a ramp or thin bars, takes on the colour of a filled one gradually, as the value nears it.
 - **Active Coloring** (`activeColoring`): "Value" (one colour, by the current value, as before), "Blend" (one colour which shifts towards the next threshold's), "Steps" (each place on the track has the colour of its threshold) or "Gradient" (those colours blended along the track).
 - **Inactive Coloring** (`inactiveColoring`): "Plain" (the track, as before), "Automatic" (as what is filled, faded) or one of the four, faded.
-- **The display** has every new option but Grow and the three of editing, and takes each from the interface of the field where it sets none of its own.
+- **The display** has every new option but Grow and the three of editing, and takes each from the interface of the field where it sets none of its own. Its Format can now be emptied, and is then the interface's again.
 - **In a stock Repeater** a Meter can be the interface of a field, and the Meter display can draw the rows.
 - **Contrast themes and print.** Under a contrast theme of the system (forced colours) the meter is drawn in the system's colours. A printed form or table keeps its bars.
+- **Size.** The app bundle grew from about 14 kB to 49 kB (16 kB gzipped). It still has no dependency.
 
 ### Unchanged
 

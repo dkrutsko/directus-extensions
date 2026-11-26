@@ -818,10 +818,9 @@ test.describe('the pieces of a meter which can be edited', () => {
 		// While the pointer drags the value the sizes of the pieces which grow follow it at once, without a
 		// transition. The value is spread along the row of dots, which is 76px long: five dots and four gaps.
 		//
-		// The two soft expectations below FAIL as the meter is. The dots which a drag by position fills are
-		// large, as by the piece, and while a piece is large the row eases the size of every piece (`mt-swell`),
-		// the growing ones among them: the fourth dot runs behind the pointer here, where it follows it at once
-		// while no piece is large. Whether that is to stay is not decided; until it is, these two say so.
+		// The dots which a drag by position fills are large, as by the piece, and while a piece is large the row
+		// eases the sizes (`mt-swell`). The pieces which grow are spared that while the pointer drags the value
+		// (`mt-tracking`), so the fourth dot follows the pointer at once all the same.
 		const track = (await line(page, 'grow_dots').boundingBox())!;
 		const along = (share: number) => track.x + 76 * share;
 		await page.mouse.move(along(0.5), track.y + 6);
@@ -830,11 +829,11 @@ test.describe('the pieces of a meter which can be edited', () => {
 		await expect(line(page, 'grow_dots')).toHaveClass(/mt-eased/);
 		await page.mouse.move(along(0.55), track.y + 6, { steps: 3 });
 		await expect(line(page, 'grow_dots')).not.toHaveClass(/mt-eased/);
-		expect.soft(await motion('grow_dots', 4), 'a dot which grows has no transition while the pointer drags the value').not.toContain('0.15s');
+		expect(await motion('grow_dots', 4), 'a dot which grows has no transition while the pointer drags the value').not.toContain('0.15s');
 		await page.mouse.move(along(0.3), track.y + 6, { steps: 5 });
 		await page.mouse.move(along(0.66), track.y + 6, { steps: 5 });
 		await expect(text(page, 'grow_dots')).toHaveText('3.3');
-		expect.soft((await sizes('grow_dots'))[3], 'the dot which grows is at the size of the place of the pointer at once').toEqual([9.6, 9.6]);
+		expect((await sizes('grow_dots'))[3], 'the dot which grows is at the size of the place of the pointer at once').toEqual([9.6, 9.6]);
 
 		// Where the sizes end up is the place of the pointer all the same: the three dots which the drag has
 		// filled large, 14px, a size which is eased in a drag as it is by the piece, and the fourth six tenths
@@ -853,7 +852,7 @@ test.describe('the pieces of a meter which can be edited', () => {
 
 		// A meter without it has no size on any piece and no transition: the elements and styles of plain pieces.
 		for (const name of ['five', 'dots', 'ring_segments', 'ring_bars', 'pills_locked']) {
-			await expect(line(page, name), name).not.toHaveClass(/mt-eased|mt-grow/);
+			await expect(line(page, name), name).not.toHaveClass(/mt-eased/);
 			const parts = (await readPieces(line(page, name))).map((piece) => piece.markup);
 			expect([...new Set(parts)].sort(), name).toEqual(['mt-part mt-on|background-color: var(--theme--primary);|0', 'mt-part||0']);
 			expect(await motion(name, 0), name).not.toBe('transform 0.15s');
@@ -1208,9 +1207,8 @@ test.describe('the pieces of a meter which can be edited', () => {
 		await page.mouse.move(again.x + again.width * 0.445, again.y + 6, { steps: 5 });
 		await expect(line(page, 'grow_coarse')).not.toHaveClass(/mt-eased/);
 
-		// The two filled segments are large in the drag, and while they are the row eases the size of every
-		// piece, so the third comes to its size a moment after the pointer (see the soft expectations of the
-		// test of pieces which grow, above): it is waited for.
+		// The two filled segments are large in the drag. The third, which grows, follows the pointer at once all
+		// the same (`mt-tracking`); the check is repeated only until the frame is drawn.
 		await expect(async () => expect((await third('grow_coarse')).height).toBeGreaterThan(7)).toPass({ timeout: 5000 });
 		await line(page, 'grow_coarse').evaluate((element) => {
 			(window as unknown as { runs: number }).runs = 0;

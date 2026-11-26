@@ -196,11 +196,11 @@ const rootStyle = computed(() => {
 // when the value changes.
 //
 // The pieces of a display never grow (`grow` is the interface's alone): they
-// are too small to be drawn smaller. The piece which fades in (`fade`) has
-// one child (`md-over`) which covers it, painted as the piece will be once it
-// is filled, at the opacity of how far the value has come into it. Only that
-// one piece has a child and the class `md-under`. There is no transition in a
-// display.
+// are too small to be drawn smaller. A piece which fades in (`fade`: the next
+// one, or the next few thin bars) has one child (`md-over`) which covers it,
+// painted as the piece will be once it is filled, at the opacity of how far
+// it has grown. Only such a piece has a child and the class `md-under`. There
+// is no transition in a display.
 //
 // In a display template the box is one piece, like the track: where it does
 // not fit the line, the ellipsis of the template stands for it. The number
