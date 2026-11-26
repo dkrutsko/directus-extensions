@@ -723,11 +723,12 @@ export function fitCount(visualization: Shape, place: Place, width: number, rati
  * as many as fit. With room for fewer than two there are no pieces, which is
  * 0: the meter is one bar then.
  *
- * Bars do not `divide`: where what is wanted does not fit, as many are drawn
- * as fit. Bars are all drawn at one whole number of device pixels, so a
- * number which divides what is wanted would leave the rest of the track
- * empty: fifty for a hundred where 57 fit leave an eighth of it. With as many
- * as fit, only the bar which would be cut off is missing.
+ * Bars and dots do not `divide`: where what is wanted does not fit, as many
+ * are drawn as fit. Bars are all drawn at one whole number of device pixels
+ * and dots keep their size, so a number which divides what is wanted would
+ * leave the rest of the track empty, or make spread dots sparse: fifty bars
+ * for a hundred where 57 fit leave an eighth of it. With as many as fit, only
+ * the piece which would be cut off is missing.
  */
 export function drawnCount(wanted: number | null, fit: number, divide = true): number {
 	const room = Math.min(MAX_PIECES, Math.floor(fit));
@@ -751,14 +752,15 @@ export function drawnCount(wanted: number | null, fit: number, divide = true): n
  * layout comes to the same number. `ratio` is that of the screen, by which
  * bars are counted.
  */
-export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'> & Partial<Pick<Look, 'dotsLayout'>>, range: Range, place: Place, width: number, ratio = 1): number {
+export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number, ratio = 1): number {
 	if (look.visualization === 'contiguous') return 0;
 
-	// Bars and packed dots keep their size and stand from the start, so a number which divides what is wanted
-	// would leave the rest of the track empty: they are as many as fit. Spread dots fill the track anyway.
-	const packed = look.visualization === 'dots' && (look.dotsLayout ?? DEFAULT_DOTS_LAYOUT) === 'packed';
+	// Pills and segments share the width, so fewer of them can still stand for round shares: they take a number
+	// which divides what is wanted. Bars and dots keep their size: they are as many as fit, in either layout of
+	// the dots, so that packed and spread dots are the same number and differ only in where they stand.
+	const divide = look.visualization === 'pills' || look.visualization === 'segments';
 
-	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width, ratio), look.visualization !== 'bars' && !packed);
+	return drawnCount(wantedCount(look, range), fitCount(look.visualization, place, width, ratio), divide);
 }
 
 /** How wide a bar and the gap to the next one are drawn, and how long the row of bars is with them, in CSS pixels. */

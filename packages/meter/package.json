@@ -1,6 +1,6 @@
 {
   "name": "directus-extension-meter",
-  "description": "Meter interface and display for Directus: a number drawn as a filled bar against a range, with its percentage, value or fraction as text, a caption and colours by threshold",
+  "description": "Meter interface and display for Directus: a number against a range as a bar or a row of pills, segments, bars or dots, with its percentage, value or fraction as text, a caption and colours by threshold, set with the pointer and the keys unless the field is read-only",
   "version": "2.0.0",
   "license": "MIT",
   "author": {

@@ -510,6 +510,8 @@ test.beforeAll(async ({ api }) => {
 			live('near_bars', { visualization: 'bars', max: 40, grow: 2 }),
 			// Packed dots for a hundred, as many as fit, filled by the piece.
 			live('near_dots', { visualization: 'dots', input: 'segment' }),
+			// The same spread from edge to edge: as many dots as packed, in other places.
+			live('near_spread', { visualization: 'dots', dotsLayout: 'spread', input: 'segment' }),
 		],
 	});
 
@@ -563,6 +565,7 @@ test.beforeAll(async ({ api }) => {
 			grow_four: 40,
 			near_bars: 24,
 			near_dots: 40,
+			near_spread: 40,
 		})
 	).id;
 
@@ -1637,8 +1640,8 @@ async function expectFilledPieces(row: Locator, count: number, filled: number) {
 
 // The rule by which the pieces are counted, written out again here: how narrow a piece of each shape may get and
 // how far it is from the next, in the form and in the display; how many of those fit a width; and how many are
-// drawn when a number is wanted, or none is. Bars and packed dots take no number which divides the wanted one:
-// what is wanted where it fits, else as many as fit.
+// drawn when a number is wanted, or none is. Bars and dots take no number which divides the wanted one: what
+// is wanted where it fits, else as many as fit, for dots in either layout.
 const SIZES = {
 	form: { pills: [20, 4], segments: [14, 3], bars: [4, 2], dots: [12, 4] },
 	display: { pills: [8, 2], segments: [6, 2], bars: [2, 1], dots: [6, 2] },
@@ -2814,6 +2817,7 @@ const EDIT_VALUES = {
 	grow_four: 40,
 	near_bars: 24,
 	near_dots: 40,
+	near_spread: 40,
 };
 
 /**
@@ -5250,6 +5254,50 @@ test.describe('a meter which can be edited', () => {
 		await expectLarge(page, 'near_dots', 21);
 		await page.mouse.move(5, 5);
 		await expectLarge(page, 'near_dots', 0);
+	});
+
+	test('spread dots for a hundred are as many as packed ones, 21 and not the twenty which divide a hundred, from edge to edge, and a press on the last gives the maximum', async ({ page }) => {
+		await line(page, 'near_spread').scrollIntoViewIfNeeded();
+		await expect(line(page, 'near_spread')).toHaveClass(/mt-spread/);
+		await expect(line(page, 'near_spread')).toHaveClass(/mt-by-segment/);
+		await expect(text(page, 'near_spread')).toHaveText('40%');
+
+		// The same number as the packed dots of the field before it, in the same width.
+		const track = (await line(page, 'near_spread').boundingBox())!;
+		const spread = await pieces(line(page, 'near_spread'));
+		const packed = await pieces(line(page, 'near_dots'));
+		expect(track.width).toBe(342);
+		expect(spread).toHaveLength(21);
+		expect(spread.length).toBe(packed.length);
+		expect(100 % spread.length).not.toBe(0);
+		await expectFilledPieces(line(page, 'near_spread'), 21, 8);
+
+		// Where they stand is what differs: the first at the start edge, the last at the end edge, and the gaps
+		// between them laid out alike, 4.5px, wider than the 4px of packed dots.
+		expect([...new Set(spread.map((dot) => `${dot.width} ${dot.height}`))]).toEqual(['12 12']);
+		expect(spread[0]!.left).toBeCloseTo(track.x, 1);
+		expect(spread.at(-1)!.right).toBeCloseTo(track.x + track.width, 1);
+		const gaps = spread.slice(1).map((dot, index) => dot.left - spread[index]!.right);
+		expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThan(0.01);
+		expect(gaps[0]!).toBeCloseTo((342 - 21 * 12) / 20, 2);
+		expect(gaps[0]!).toBeGreaterThan(4);
+		expect(packed.at(-1)!.right - packed[0]!.left).toBeCloseTo(332, 1);
+		expect(spread.at(-1)!.right - spread[0]!.left).toBeCloseTo(342, 1);
+
+		// By the piece: the last dot is the maximum, the first fills one and the eleventh eleven, as packed.
+		const middle = (index: number) => ({ x: spread[index]!.left + 6, y: spread[index]!.top + 6 });
+		await page.mouse.click(middle(20).x, middle(20).y);
+		await expect(line(page, 'near_spread')).toHaveAttribute('aria-valuenow', '100');
+		await expectFilledPieces(line(page, 'near_spread'), 21, 21);
+		await expectLarge(page, 'near_spread', 21);
+		await page.mouse.click(middle(0).x, middle(0).y);
+		await expect(line(page, 'near_spread')).toHaveAttribute('aria-valuenow', '5');
+		await expectFilledPieces(line(page, 'near_spread'), 21, 1);
+		await page.mouse.click(middle(10).x, middle(10).y);
+		await expect(line(page, 'near_spread')).toHaveAttribute('aria-valuenow', '52');
+		await expectFilledPieces(line(page, 'near_spread'), 21, 11);
+		await page.mouse.move(5, 5);
+		await expectLarge(page, 'near_spread', 0);
 	});
 
 	test('bars in a right-to-left page: the row starts at the right, what is left of the track is at the left, and the pointer goes by the bars', async ({ page }) => {
