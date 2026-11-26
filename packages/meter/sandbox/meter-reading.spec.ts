@@ -53,14 +53,16 @@ import {
 } from './meter-support.ts';
 import type { Credentials, Locator } from './meter-support.ts';
 
-// A user whose appearance is dark, so that no test changes that of the administrator.
+// A user whose appearance is dark, and one whose language is German, so that no test changes the administrator.
 let dark: Credentials;
+let german: Credentials;
 
 test.beforeAll(async ({ api }) => {
 	await removeAll(api);
 	await seedMain(api);
 	await seedUnits(api);
 	dark = await makeUser(api, 'dark', { appearance: 'dark' });
+	german = await makeUser(api, 'german', { language: 'de-DE' });
 });
 
 test.afterAll(async ({ api }) => {
@@ -684,6 +686,31 @@ test('in the dark theme the track, the fill and a faded piece are painted from t
 
 		// No value: the dashes are in the subdued colour of text of this theme.
 		await expect(track(shown, 'empty')).toHaveCSS('border-top-color', await token(shown, '--theme--foreground-subdued'));
+
+		session.quiet();
+	} finally {
+		await session.context.close();
+	}
+});
+
+test('for a user with another language a field without a value says so in that language, not in English', async ({ browser }) => {
+	const session = await signedIn(browser, {}, german);
+
+	try {
+		const shown = session.page;
+		await openItem(shown, COLLECTION, ids['First']!);
+		await expect(shown.locator('html')).toHaveAttribute('lang', 'de-DE');
+		await expect(text(shown, 'empty')).toHaveText('—');
+
+		// The words are the app's own for an empty value, `no_value`, which is "Kein Wert" in the German of
+		// Directus 11.17.4. In English the app's text and the meter's fall-back are the same words, so only
+		// another language shows that the meter asks the app.
+		await expect(track(shown, 'empty')).toHaveAttribute('aria-valuetext', 'Kein Wert');
+		await expect(line(shown, 'pill_none')).toHaveAttribute('aria-valuetext', 'Kein Wert');
+		await expect(track(shown, 'empty')).not.toHaveAttribute('aria-valuenow');
+
+		// A field with a value says its value, written as the language writes a percentage.
+		await expect(track(shown, 'plain')).toHaveAttribute('aria-valuetext', '50\u00a0%');
 
 		session.quiet();
 	} finally {

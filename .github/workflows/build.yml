@@ -54,8 +54,8 @@ jobs:
         run: npm run sync -- --check
 
       - run: npm run check $WORKSPACE
-      - run: npm run test --if-present $WORKSPACE
       - run: npm run build $WORKSPACE
+      - run: npm run test --if-present $WORKSPACE
       - run: npm run validate $WORKSPACE
 
       - name: Pack tarball

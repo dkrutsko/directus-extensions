@@ -83,6 +83,7 @@ npm run validate   # directus-extension validate
 - `optionFields(fallback, display, type, known, own, schema)` builds both forms. `fallback` is what an unset option comes to: for the display the options of the field's interface, for the interface the limits and the step a stock Slider left behind.
 - **A default which a form shows is not stored.** The defaults are in the components.
 - **Options which apply only sometimes** are always in the list, with `conditions` on the values of the form itself. Each rule has one key: the app passes over a rule with more or fewer (`app/src/utils/apply-conditions.ts:16`).
+- **Active Coloring shows only while there are thresholds.** Its rules are on the form's `thresholds`: two on `count(thresholds)`, which the app works out before it tries a rule (`packages/utils/shared/validate-payload.ts:57`), since no operator tells `[]` from a list with entries, and before them two on the key itself: `null` (never set in the interface's form, or emptied) hides, and anything else shows. The app tries the last rule first, so the last of these only decides in an app which does not count, where the dropdown would else be out of reach. The values a rule sees have the defaults of the form's fields under them, so a display which never stored the key is judged by the interface's list, which is the default of its `thresholds`. The blind form has only the two which count: there `null` is also what "never stored" looks like.
 - **`known` is false** in the dialog of a stock Repeater's field, which hands the forms a stand-in without `meta` (`app/src/interfaces/_system/system-interface-options/system-interface-options.vue:49-53`). The display's form is then "blind": placeholders say "As in the interface", dropdowns start empty, and the options which apply only sometimes show until the form's own values rule them out.
 - **The notes of half-width options fit two lines** (about eighty characters), which a browser test measures. The README's options table is where each option is told in full.
 
@@ -107,7 +108,7 @@ npm run validate   # directus-extension validate
 10. **A field which can be edited writes only what `snapValue`, `pieceValue` or `keyValue` made:** a finite number on the grid, within the range, whole for a whole type.
 11. **`contiguous` with the default colouring, and both `grow` and `fade` off, add nothing to the page:** the elements, classes and inline styles of the plain meter, in a field which cannot be edited exactly those of 1.0.1. A piece is filled or not, never in part, and what is said about the value is never the rounded one. The number of pieces comes from the width of the track's own line and from nothing which the pieces could change.
 12. **A number shows whole, or not at all.**
-13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 48,951 bytes (15,607 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
+13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 49,331 bytes (15,696 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
 14. **It is an app-only bundle,** so the Marketplace can install it under the default `MARKETPLACE_TRUST`.
 15. **Directus look.** Only `--theme--*` tokens for colours, and system colours only under forced colours (`tests/bundle.test.ts` checks both). The track is `--theme--form--field--input--border-color`, the fill `--theme--primary` unless an option says otherwise. Styles are scoped; class names other than the two roots (`meter`, `meter-display`) start with `mt-` in the interface and `md-` in the display.
 
@@ -123,21 +124,21 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 
 ## Demo
 
-`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_meter`, with 50 meters, all but the plain bar at half the width of the form, as in the README's pictures, in six groups: Recipes, Visualization, Coloring, Grow and fade, Text, Editing. Its six items differ only in how far they have come (each value is a share of each field's range); "Past half" is at 62%, where the next of 5, 10 or 20 pieces is under way, so growing and fading show at rest. The table has a preset with the recipes and four more columns, and a bookmark each for Visualization, Coloring and Text.
+`demo/demo.mjs` describes the demo in the sandbox (see `sandbox/README.md`, "Demos"): the collection `demo_meter`, with 50 meters, all but the plain bar at half the width of the form, as in the README's pictures, in six groups: Recipes, Visualization, Coloring, Grow and fade, Text, Editing. Its six items differ only in how far they have come (each value is a share of each field's range); "Past half" is at 62%, where the next of 5, 10 or 20 pieces is under way, so growing and fading show at rest. The table has a preset with the recipes and four more columns, a bookmark each for Visualization, Coloring and Text, and a bookmark "Grow and fade" with four columns of that group: the pills without and with growth, which the display draws alike, and the two which fade in, which it fades too.
 
 A new or changed option gets a field in a group, or is added to one; set no option to its default, since the note under a field lists what it sets. `sandbox/demo.spec.ts` builds the demo and checks that every field draws a meter, and every value in the table and in each bookmark the display.
 
 ## Testing in a browser
 
-The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (90 tests, 1 of them the demo's).
+The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (98 tests, 1 of them the demo's).
 
 | File | What it holds |
 |---|---|
-| `meter-reading.spec.ts` | The interface as a reading in the form: the fill and the text, no value, the roles, the area as high as an input, a condition, right-to-left, prefix and suffix, forced colours, print, the dark theme, a translated caption, markup as text. |
+| `meter-reading.spec.ts` | The interface as a reading in the form: the fill and the text, no value, the roles, the area as high as an input, a condition, right-to-left, prefix and suffix, forced colours, print, the dark theme, "No value" in the language of the user, a translated caption, markup as text. |
 | `meter-display.spec.ts` | The display: the table, the tooltip, a template of a related item, its own options against the interface's, both pairs of limits, emptied colour and thresholds, right-to-left, prefix and suffix in the table, text which does not fit, Arabic digits, plain text in the calendar. |
-| `meter-pieces.spec.ts` | Pieces and colourings, in the form and in the table: the shapes, the count by the width, dots packed and spread, colours read from pixels, and their options forms. |
-| `meter-editing.spec.ts` | What the pointer, a finger and the keys write, by every input method; what a reading is spared; the step; what is measured and observed; the options forms of editing. One test starts the full Chromium for the pointer lock and is skipped where that cannot be started. |
-| `meter-live-pieces.spec.ts` | The pieces of a meter which can be edited: large where a press would fill them (by "Piece" and by "Position"), growing and fading. |
+| `meter-pieces.spec.ts` | Pieces and colourings, in the form and in the table: the shapes, the count by the width, dots packed and spread, colours read from pixels, one colour over a track painted by the scale, and their options forms, with Active Coloring which shows only while there are thresholds. |
+| `meter-editing.spec.ts` | What the pointer, a finger and the keys write, by every input method; a second finger, a release the meter never saw, keys which never scroll the page and are left alone during a drag, Escape in a drawer; what a reading is spared; the step; what is measured and observed; the options forms of editing. One test starts the full Chromium for the pointer lock and is skipped where that cannot be started. |
+| `meter-live-pieces.spec.ts` | The pieces of a meter which can be edited: large where a press would fill them (by "Piece" and by "Position"), growing and fading, no transition for the first value a form draws, and the colours of the scale during a drag. |
 | `meter-ratios.spec.ts` | Bars at real device pixel ratios of 1, 1.5 and 2 (a browser of its own for each), a meter in a stock Repeater, and a field the form does not let the user change (a user who may only read, a batch edit). |
 | `demo.spec.ts` | The smoke test of the demo (see [Demo](#demo)): it builds `demo_meter`, not a `sandbox_meter...` collection. |
 
@@ -175,6 +176,9 @@ Things which are easy to trip over:
 - **A field is squeezed by its `.interface`,** not by the `.field` around it. A field with the width "fill" changes the columns of its whole form, so it lives in a collection of its own.
 - **A resized window goes on settling.** Read a width and a count together, and again until they agree.
 - **The dialog of a Repeater's field** is reached through Settings, Data Model, the json field, Interface, "Edit Fields". Its display options are in a group which starts closed. The save shortcut does nothing while a drawer is still closing.
+- **A drawer slides in.** A meter in it which is measured at once is pressed some pixels off: wait until it has been in one place for a few frames.
+- **Two fingers can be driven as well:** `Input.dispatchTouchEvent` takes every finger which is down, the second is not the primary pointer, and nothing is pinched or cancelled. `touchEnd` takes no fingers and lifts all of them.
+- **A threshold is added in a drawer of its own and removed after the app has asked.** `optionsDialog` has `addThreshold` and `removeThreshold`. A list which is emptied in the form is `null`, and equals the default, so nothing is stored for it.
 - **The app's tooltip is one shared element with one timer,** and leaves `data-tooltip` on its element. `expectTooltip` moves the mouse away and back until it shows.
 - **A choice of a dropdown found by a part of its text can be another one:** "Value" is also in "Value / Maximum". Ask for the exact text.
 - **The app's form does not store a value which equals what the input shows as its default.**
@@ -222,6 +226,7 @@ Not tested, or accepted as it is. A statement that something "was not tried" is 
 **The display and the options forms**
 
 - A caption, prefix or suffix of the display cannot be emptied where the interface has one. A colour or list of thresholds which was set or emptied in the display follows the interface again only when the key is removed from the stored options, for which the form has no control.
+- Active Coloring shows for any list of thresholds with entries, also one whose thresholds all lie at or below the minimum or are not usable, where the four colourings still draw the same. In the dialog of a Repeater's field the display's form shows it whatever the interface has, and also after its own list was emptied there. The rules which tell an empty list lean on `count()` in a condition, which was tried in 11.17.4 only; the source of 11.15.0 has it as well, and without it any list which is not `null` shows the dropdown.
 - A text which does not fit is left out without a mark. In the form only assistive technology and the raw value have it then.
 - The fraction as plain text (the handler) carries no direction mark, so a right-to-left page may lay "7 / 12" out as "12 / 7" where the app prints that string.
 - In the dialog of a Repeater's field the Step input takes decimals also for a whole type, and the two toggles of the display's form (Value Text, Fade In) show a default which may not be the interface's. A decimal field in a Repeater was not tried, nor other places which draw options inside another form (a flow's operation, a panel).

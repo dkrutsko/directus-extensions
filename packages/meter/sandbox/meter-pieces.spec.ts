@@ -877,6 +877,36 @@ test('the blend colouring: one colour for everything filled, between the colours
 	expect(apart(await colourOf(page, track(page, 'paint_mixbar'), 0.1), rgb(AMBER))).toBeGreaterThan(20);
 });
 
+test('one colour for what is filled over a track painted by the scale: the faded steps and the faded gradient which are still to come', async ({ page }) => {
+	await openItem(page, COLLECTION, ids['First']!);
+	await expect(text(page, 'paint_ahead')).toHaveText('50%');
+	await expect(page.locator('.hydrating')).toHaveCount(0);
+
+	const trackColour = rgb(await token(page, '--theme--form--field--input--border-color'));
+	const piece = (index: number) => strip(page, 'paint_ahead_pills').locator('> *').nth(index);
+
+	// One bar at 50, in the colour of the value: all of the fill is amber, also where the scale is red.
+	await expectFilled(track(page, 'paint_ahead'), fill(page, 'paint_ahead'), 0.5);
+	for (const place of [0.05, 0.25, 0.45]) expectColour(await colourOf(page, track(page, 'paint_ahead'), place), rgb(AMBER));
+
+	// The track ahead of it shows the steps of the scale at their places, faded: amber up to 80 and green from there.
+	for (const place of [0.55, 0.65, 0.78]) expectColour(await colourOf(page, track(page, 'paint_ahead'), place), faded(rgb(AMBER), trackColour));
+	for (const place of [0.82, 0.95]) expectColour(await colourOf(page, track(page, 'paint_ahead'), place), faded(rgb(GREEN), trackColour));
+
+	// Ten pills at 60 which blend: the six which are filled share the colour half way from amber to green.
+	await expectFilledPieces(strip(page, 'paint_ahead_pills'), 10, 6);
+	for (const index of [0, 3, 5]) expectColour(await colourOf(page, piece(index)), mixed(rgb(AMBER), rgb(GREEN), 0.5));
+
+	// The four which are not show their own tenths of the gradient across the whole track, faded: the seventh
+	// is still between amber and green, and the last is green.
+	const ahead: number[][] = [];
+	for (const index of [6, 7, 8, 9]) ahead.push(await colourOf(page, piece(index)));
+
+	ahead.forEach((colour, index) => expectColour(colour, faded(blended((index + 6.5) / 10), trackColour), 6));
+	expect(ahead[0]).not.toEqual(ahead[3]);
+	expectColour(ahead[3]!, faded(rgb(GREEN), trackColour), 6);
+});
+
 test('in a right-to-left page the pieces fill from the right, and the colours of the scale run from the right', async ({ page }) => {
 	await openItem(page, COLLECTION, ids['First']!);
 	await expect(text(page, 'pill_auto')).toHaveText('60%');
@@ -953,7 +983,9 @@ test('the options form of the look: the number and the layout only while they ap
 	page,
 	api,
 }) => {
-	await api.patch(`/fields/${COLLECTION}/fresh`, { meta: { options: null, display_options: null } });
+	// A field with a threshold, so that the colouring of the fill is asked for as well.
+	const thresholds = [{ value: 50, color: AMBER }];
+	await api.patch(`/fields/${COLLECTION}/fresh`, { meta: { options: { thresholds }, display_options: null } });
 
 	await page.goto(`/admin/settings/data-model/${COLLECTION}/fresh`);
 
@@ -998,7 +1030,7 @@ test('the options form of the look: the number and the layout only while they ap
 	await save();
 	await expect
 		.poll(async () => (await api.get(`/fields/${COLLECTION}/fresh`)).meta.options)
-		.toEqual({ visualization: 'dots', dotsLayout: 'spread', subdivisions: 4, activeColoring: 'steps', inactiveColoring: 'automatic' });
+		.toEqual({ thresholds, visualization: 'dots', dotsLayout: 'spread', subdivisions: 4, activeColoring: 'steps', inactiveColoring: 'automatic' });
 	expect((await api.get(`/fields/${COLLECTION}/fresh`)).meta.display_options).toBeNull();
 
 	// The display gets a look of its own: pills, in which the layout of the dots is not asked for.
@@ -1040,9 +1072,100 @@ test('the options form of the look: the number and the layout only while they ap
 	await api.patch(`/fields/${COLLECTION}/fresh`, { meta: { options: null, display_options: null } });
 });
 
+test('Active Coloring shows only while there are thresholds, at once as one is added or removed, and in the display also by those of the interface', async ({
+	page,
+	api,
+}) => {
+	const put = (options: object | null, display: object | null) => api.patch(`/fields/${COLLECTION}/fresh`, { meta: { options, display_options: display } });
+	const stored = async () => {
+		const { meta } = await api.get(`/fields/${COLLECTION}/fresh`);
+		return { options: meta.options, display: meta.display_options };
+	};
+
+	const { option, choose, tab, save, addThreshold, removeThreshold } = optionsDialog(page);
+	const open = async (name: 'Interface' | 'Display') => {
+		await page.goto(`/admin/settings/data-model/${COLLECTION}/fresh`);
+		await tab(name);
+		await expect(option('inactiveColoring')).toHaveCount(1);
+	};
+
+	await put(null, null);
+
+	try {
+		// No thresholds: every colouring of the fill draws the same, and the dropdown is not there. The
+		// colouring of what is not filled does something without thresholds too, and stays.
+		await open('Interface');
+		await expect(option('thresholds')).toContainText('No items');
+		await expect(option('activeColoring')).toHaveCount(0);
+
+		// A threshold is added: the dropdown is there at once, with its default.
+		await addThreshold(40, AMBER);
+		await expect(option('activeColoring').locator('input')).toHaveValue('Value');
+
+		// The display has no list of its own and takes the interface's, as it is being edited.
+		await tab('Display');
+		await expect(option('thresholds')).toContainText('40');
+		await expect(option('activeColoring').locator('input')).toHaveValue('Value');
+
+		// The threshold is removed again: the dropdown goes, in both forms.
+		await tab('Interface');
+		await removeThreshold();
+		await expect(option('thresholds')).toContainText('No items');
+		await expect(option('activeColoring')).toHaveCount(0);
+		await expect(option('inactiveColoring')).toHaveCount(1);
+		await tab('Display');
+		await expect(option('activeColoring')).toHaveCount(0);
+
+		// A threshold of the display's own brings it back there, and only there.
+		await addThreshold(60, GREEN);
+		await expect(option('activeColoring')).toHaveCount(1);
+		await tab('Interface');
+		await expect(option('activeColoring')).toHaveCount(0);
+
+		// Chosen and saved, it is stored with the list which made it show. The threshold which the interface
+		// had for a moment left nothing behind.
+		await tab('Display');
+		await choose('activeColoring', 'Steps');
+		await save();
+		await expect.poll(stored).toEqual({ options: {}, display: { thresholds: [{ value: 60, color: GREEN }], activeColoring: 'steps' } });
+
+		// The interface has a threshold and the display has emptied its list, which the form stores as null and
+		// which means none: the dropdown shows in the form of the interface, and not in that of the display.
+		await put({ thresholds: [{ value: 40, color: AMBER }] }, { thresholds: null });
+		await open('Interface');
+		await expect(option('activeColoring')).toHaveCount(1);
+		await tab('Display');
+		await expect(option('thresholds')).toContainText('No items');
+		await expect(option('activeColoring')).toHaveCount(0);
+
+		// An empty list, as the API can be sent one, is no threshold either: in the interface, and in a display
+		// whose interface has one.
+		await put({ thresholds: [] }, null);
+		await open('Interface');
+		await expect(option('activeColoring')).toHaveCount(0);
+		await tab('Display');
+		await expect(option('activeColoring')).toHaveCount(0);
+
+		await put({ thresholds: [{ value: 40, color: AMBER }] }, { thresholds: [] });
+		await open('Display');
+		await expect(option('activeColoring')).toHaveCount(0);
+		await tab('Interface');
+		await expect(option('activeColoring')).toHaveCount(1);
+
+		// A display which never stored the key has the interface's threshold, and the dropdown.
+		await put({ thresholds: [{ value: 40, color: AMBER }] }, { max: 50 });
+		await open('Display');
+		await expect(option('thresholds')).toContainText('40');
+		await expect(option('activeColoring')).toHaveCount(1);
+	} finally {
+		await put(null, null);
+	}
+});
+
 test('in the field settings the note of a half-width option takes two lines at the most, in both options forms', async ({ page, api }) => {
-	// Every option which shows only sometimes shows: dots, a value text which has a prefix, and the relative method.
-	const all = { visualization: 'dots', indicatorFormat: 'value', input: 'relative' };
+	// Every option which shows only sometimes shows: dots, a value text which has a prefix, a threshold, and the
+	// relative method.
+	const all = { visualization: 'dots', indicatorFormat: 'value', thresholds: [{ value: 50, color: AMBER }], input: 'relative' };
 	await api.patch(`/fields/${COLLECTION}/fresh`, { meta: { options: all, display_options: { visualization: 'dots', indicatorFormat: 'value' } } });
 
 	try {

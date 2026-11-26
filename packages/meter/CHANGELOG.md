@@ -21,7 +21,7 @@
 - **Dots Layout** (`dotsLayout`): "Packed" from the start, or "Spread" from edge to edge.
 - **Grow** (`grow`, interface): the pieces which are not filled are drawn small, and grow as the value nears them. The number is how many can be growing at once.
 - **Fade In** (`fade`): the next piece, or the next few with a ramp or thin bars, takes on the colour of a filled one gradually, as the value nears it.
-- **Active Coloring** (`activeColoring`): "Value" (one colour, by the current value, as before), "Blend" (one colour which shifts towards the next threshold's), "Steps" (each place on the track has the colour of its threshold) or "Gradient" (those colours blended along the track).
+- **Active Coloring** (`activeColoring`): "Value" (one colour, by the current value, as before), "Blend" (one colour which shifts towards the next threshold's), "Steps" (each place on the track has the colour of its threshold) or "Gradient" (those colours blended along the track). The form shows it only while there is at least one threshold: without one all four draw the same.
 - **Inactive Coloring** (`inactiveColoring`): "Plain" (the track, as before), "Automatic" (as what is filled, faded) or one of the four, faded.
 - **The display** has every new option but Grow and the three of editing, and takes each from the interface of the field where it sets none of its own. Its Format can now be emptied, and is then the interface's again.
 - **In a stock Repeater** a Meter can be the interface of a field, and the Meter display can draw the rows.

@@ -2,6 +2,7 @@
 // really has them, and a meter as a field of a stock Repeater.
 import { expect, openItem, test } from '../../../sandbox/support/fixtures.ts';
 import {
+	AMBER,
 	COLLECTION,
 	EDIT,
 	EDIT_VALUES,
@@ -309,7 +310,7 @@ test.describe('a meter in a stock Repeater', () => {
 		// The fields of the Repeater are listed by their interface; the first meter is "level".
 		await dialogs.getByText('— meter', { exact: false }).first().click();
 
-		const { drawer: dialog, option, choose } = optionsDialog(page, '.extension-options');
+		const { drawer: dialog, option, choose, addThreshold } = optionsDialog(page, '.extension-options');
 
 		// It is the dialog of a Repeater's field: a key, a type, an interface and its options, and a display in a
 		// group which starts closed.
@@ -326,13 +327,18 @@ test.describe('a meter in a stock Repeater', () => {
 			'visualization',
 			'color',
 			'thresholds',
-			'activeColoring',
 			'inactiveColoring',
 			'input',
 			'step',
 		]) {
 			await expect(option(name), name).toHaveCount(1);
 		}
+
+		// The field has no thresholds, so the colouring of the fill is not asked for until it has one.
+		await expect(option('activeColoring')).toHaveCount(0);
+		await addThreshold(3, AMBER);
+		await expect(option('activeColoring').locator('input')).toHaveValue('Value');
+		await choose('activeColoring', 'Steps');
 
 		// The field draws pills, so the number of subdivisions shows, and the layout of dots does not.
 		await expect(option('visualization').locator('input')).toHaveValue('Pills');
@@ -406,6 +412,8 @@ test.describe('a meter in a stock Repeater', () => {
 				indicatorFormat: 'fraction',
 				color: '#2ECDA7',
 				input: 'relative',
+				thresholds: [{ value: 3, color: AMBER }],
+				activeColoring: 'steps',
 				sensitivity: 2,
 				dotsLayout: 'spread',
 				subdivisions: 4,

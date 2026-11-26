@@ -313,6 +313,10 @@ export async function seedMain(api: Api) {
 			// One colour which shifts towards the next threshold: ten pills with the rest faded, and one bar.
 			field('paint_mix', { visualization: 'pills', subdivisions: 10, ...SCALE, activeColoring: 'blend', inactiveColoring: 'automatic' }),
 			field('paint_mixbar', { ...SCALE, activeColoring: 'blend' }),
+			// One colour for what is filled, over a track which is painted by the place on the scale: one bar in
+			// the colour of the value before the faded steps, and ten pills which blend before the faded gradient.
+			field('paint_ahead', { ...SCALE, inactiveColoring: 'steps' }),
+			field('paint_ahead_pills', { visualization: 'pills', subdivisions: 10, ...SCALE, activeColoring: 'blend', inactiveColoring: 'gradient' }),
 			// A caption which is a translation string of the project, as the options form stores one which was
 			// picked from its list: the key, after `$t:`.
 			field('worded', { label: `$t:${CAPTION_KEY}` }),
@@ -446,6 +450,8 @@ export async function seedMain(api: Api) {
 		paint_tint: 50,
 		paint_mix: 60,
 		paint_mixbar: 20,
+		paint_ahead: 50,
+		paint_ahead_pills: 60,
 	};
 
 	ids['First'] = (await api.post(`/items/${COLLECTION}`, { ...values, title: 'First' })).id;
@@ -1336,7 +1342,9 @@ export async function removeUsers(api: Api) {
  * The options form which is open in the page, in the field settings or in the dialog of a Repeater's field.
  * `option` is the field of one option, `choose` picks a choice of a dropdown by the very text of the choice, `tab`
  * goes to a tab of the field settings, and `save` presses the button which saves the topmost drawer. `scope` narrows
- * `option` to a part of the topmost drawer, where the same keys are in the page more than once.
+ * `option` to a part of the topmost drawer, where the same keys are in the page more than once. `addThreshold`
+ * adds an entry to the list of thresholds, in the drawer the list opens for it, and `removeThreshold` removes the
+ * first entry, which the app asks to confirm.
  */
 export function optionsDialog(page: Page, scope = '') {
 	const dialogs = page.locator('#dialog-outlet');
@@ -1355,7 +1363,27 @@ export function optionsDialog(page: Page, scope = '') {
 	const tab = (name: 'Interface' | 'Display') => dialogs.getByText(name, { exact: true }).first().click();
 	const save = () => drawer.locator('header button').last().click();
 
-	return { dialogs, drawer, option, choose, tab, save };
+	const addThreshold = async (value: number, color: string) => {
+		const list = option('thresholds').locator('.v-list-item');
+		const before = await list.count();
+
+		await option('thresholds').getByRole('button', { name: 'Create New' }).click();
+		await drawer.locator('.field[data-field="value"] input').fill(String(value));
+		await drawer.locator('.field[data-field="color"] input[type="text"]').fill(color);
+		await save();
+		await expect(list).toHaveCount(before + 1);
+	};
+
+	const removeThreshold = async () => {
+		const list = option('thresholds').locator('.v-list-item');
+		const before = await list.count();
+
+		await list.first().locator('[data-icon="delete"]').click();
+		await dialogs.getByRole('button', { name: 'Delete', exact: true }).click();
+		await expect(list).toHaveCount(before - 1);
+	};
+
+	return { dialogs, drawer, option, choose, tab, save, addThreshold, removeThreshold };
 }
 
 /**

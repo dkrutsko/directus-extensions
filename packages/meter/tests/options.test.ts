@@ -150,22 +150,34 @@ describe('the options form of the display', () => {
  * app/src/utils/apply-conditions.ts:12-28 in Directus 11.17.4): the conditions of the field are gone through from the
  * last to the first, the first whose rule the values meet says whether the field is hidden, and without one the
  * field's own `hidden` holds. The values are the defaults of the form's fields with what was set laid over them;
- * an option which was emptied is `null` there, which meets no rule.
+ * an option which was emptied is `null` there, which meets no rule but one which asks for `null`. A rule on
+ * `count(key)` is on the length of the list under that key, and on `null` where there is no list
+ * (packages/utils/shared/functions.ts:52-54); a rule on a key which the values do not have is not met. With
+ * `counts` off it is an app which does not work out `count()`: no rule on it is ever met.
  */
-function shown(fields: ReturnType<typeof optionFields>, key: string, set: Record<string, unknown> = {}): boolean {
+function shown(fields: ReturnType<typeof optionFields>, key: string, set: Record<string, unknown> = {}, counts = true): boolean {
 	const defaults = Object.fromEntries(
 		fields.filter((field) => field.schema?.default_value !== undefined).map((field) => [field.field, field.schema?.default_value]),
 	);
 	const values: Record<string, unknown> = { ...defaults, ...set };
 	const field = fieldOf(fields, key);
-	const conditions = [...((field.meta?.conditions ?? []) as { rule: Record<string, { _eq?: unknown; _in?: unknown[] }>; hidden?: boolean }[])].reverse();
+	type Rule = Record<string, { _eq?: unknown; _in?: unknown[]; _null?: true; _nnull?: true; _gt?: number }>;
+	const conditions = [...((field.meta?.conditions ?? []) as { rule: Rule; hidden?: boolean }[])].reverse();
 
 	const met = conditions.find((condition) => {
 		const entries = Object.entries(condition.rule);
 		if (entries.length !== 1) return false;
 
 		const [name, test] = entries[0]!;
-		return '_eq' in test ? values[name] === test._eq : (test._in ?? []).includes(values[name]);
+		const counted = /^count\((.+)\)$/.exec(name)?.[1];
+		const list = counted === undefined ? undefined : values[counted];
+		const value = counted === undefined ? values[name] : !counts ? undefined : Array.isArray(list) ? list.length : null;
+
+		if (value === undefined) return false;
+		if (test._null === true) return value === null;
+		if (test._nnull === true) return value !== null;
+		if (test._gt !== undefined) return typeof value === 'number' && value > test._gt;
+		return '_eq' in test ? value === test._eq : (test._in ?? []).includes(value);
 	});
 
 	return !(met ? met.hidden : field.meta?.hidden);
@@ -218,21 +230,9 @@ describe('the options of the look', () => {
 		expect(shown(fields, 'subdivisions', { visualization: 'dots' })).toBe(true);
 		expect(shown(fields, 'dotsLayout', { visualization: 'dots' })).toBe(true);
 
-		// Every other option but the prefix and the suffix, the step and the sensitivity shows always: it has no
-		// condition and is not hidden.
-		for (const key of [
-			'min',
-			'max',
-			'label',
-			'indicator',
-			'indicatorFormat',
-			'visualization',
-			'color',
-			'thresholds',
-			'activeColoring',
-			'inactiveColoring',
-			'input',
-		]) {
+		// Every other option but the prefix and the suffix, the colouring of the fill, the step and the sensitivity
+		// shows always: it has no condition and is not hidden.
+		for (const key of ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'color', 'thresholds', 'inactiveColoring', 'input']) {
 			expect(fieldOf(fields, key).meta?.hidden, key).toBeUndefined();
 			expect(fieldOf(fields, key).meta?.conditions, key).toBeUndefined();
 		}
@@ -252,6 +252,110 @@ describe('the options of the look', () => {
 		]);
 
 		expect(fieldOf(fields, 'sensitivity').meta?.conditions).toEqual([{ name: 'Relative', rule: { input: { _eq: 'relative' } }, hidden: false }]);
+
+		// The colouring of the fill goes by the list of thresholds: by the key itself, whether it is `null`, and
+		// by the length of the list, which the app counts for a rule on `count(...)`. The app tries the last
+		// rule first, so the two which count decide wherever the app counts.
+		expect(fieldOf(fields, 'activeColoring').meta?.conditions).toEqual([
+			{ name: 'A list of thresholds', rule: { thresholds: { _nnull: true } }, hidden: false },
+			{ name: 'No thresholds', rule: { thresholds: { _null: true } }, hidden: true },
+			{ name: 'An empty list of thresholds', rule: { 'count(thresholds)': { _eq: 0 } }, hidden: true },
+			{ name: 'Thresholds', rule: { 'count(thresholds)': { _gt: 0 } }, hidden: false },
+		]);
+
+		// The app passes over a rule with more or fewer keys than one.
+		for (const form of [fields, optionFields({}, true), optionFields({}, true, undefined, false)]) {
+			for (const field of form) {
+				for (const condition of (field.meta?.conditions ?? []) as { rule: object }[]) expect(Object.keys(condition.rule), field.field).toHaveLength(1);
+			}
+		}
+	});
+
+	test('the colouring of the fill shows only while there are thresholds, in the form of the interface by its own list', () => {
+		const fields = optionFields({}, false);
+		const one = [{ value: 40, color: GREEN }];
+
+		// Never set, which the form shows as its default of none; emptied in the form; an empty list from the API.
+		expect(shown(fields, 'activeColoring')).toBe(false);
+		expect(shown(fields, 'activeColoring', { thresholds: null })).toBe(false);
+		expect(shown(fields, 'activeColoring', { thresholds: [] })).toBe(false);
+
+		expect(shown(fields, 'activeColoring', { thresholds: one })).toBe(true);
+		expect(shown(fields, 'activeColoring', { thresholds: [...one, { value: 80, color: GREEN }], activeColoring: 'steps' })).toBe(true);
+
+		// A colouring which was chosen does not keep the dropdown once the thresholds are gone.
+		expect(shown(fields, 'activeColoring', { thresholds: null, activeColoring: 'gradient' })).toBe(false);
+
+		// The same where the form was not told its field, as in the dialog of a Repeater's field: the list is its own.
+		const untold = optionFields({}, false, 'unknown', false);
+		expect(shown(untold, 'activeColoring')).toBe(false);
+		expect(shown(untold, 'activeColoring', { thresholds: one })).toBe(true);
+
+		// The colouring of what is not filled does something without thresholds too, and always shows.
+		for (const form of [fields, untold, optionFields({}, true), optionFields({}, true, undefined, false)]) {
+			expect(fieldOf(form, 'inactiveColoring').meta?.hidden).toBeUndefined();
+			expect(fieldOf(form, 'inactiveColoring').meta?.conditions).toBeUndefined();
+		}
+	});
+
+	test('where the app does not count a list, the colouring of the fill is never out of reach: any list shows it, and none hides it', () => {
+		const one = [{ value: 40, color: GREEN }];
+
+		for (const fields of [optionFields({}, false), optionFields({}, true), optionFields({ thresholds: one }, true)]) {
+			expect(shown(fields, 'activeColoring', { thresholds: one }, false)).toBe(true);
+			expect(shown(fields, 'activeColoring', { thresholds: null }, false)).toBe(false);
+
+			// An empty list cannot be told from one with entries there, and shows it.
+			expect(shown(fields, 'activeColoring', { thresholds: [] }, false)).toBe(true);
+		}
+
+		// Never stored: the default of the form, as where the app counts.
+		expect(shown(optionFields({}, false), 'activeColoring', {}, false)).toBe(false);
+		expect(shown(optionFields({}, true), 'activeColoring', {}, false)).toBe(false);
+		expect(shown(optionFields({ thresholds: one }, true), 'activeColoring', {}, false)).toBe(true);
+
+		// The form which is not told its field shows it whatever it holds.
+		const blind = optionFields({}, true, undefined, false);
+		for (const thresholds of [undefined, null, [], one]) expect(shown(blind, 'activeColoring', { thresholds }, false)).toBe(true);
+	});
+
+	test('in the form of the display it shows by the thresholds of the interface while its own were never stored, and by its own after that', () => {
+		const one = [{ value: 40, color: GREEN }];
+		const plain = optionFields({}, true);
+		const tinted = optionFields({ thresholds: one }, true);
+
+		// Never stored: the display draws by the interface's list, which the form shows as its default.
+		expect(shown(plain, 'activeColoring')).toBe(false);
+		expect(shown(tinted, 'activeColoring')).toBe(true);
+
+		// Emptied in the form of the display, or an empty list: none apply, whatever the interface has.
+		expect(shown(tinted, 'activeColoring', { thresholds: null })).toBe(false);
+		expect(shown(tinted, 'activeColoring', { thresholds: [] })).toBe(false);
+		expect(shown(plain, 'activeColoring', { thresholds: null })).toBe(false);
+
+		// A list of its own shows it, whatever the interface has.
+		expect(shown(plain, 'activeColoring', { thresholds: one })).toBe(true);
+		expect(shown(tinted, 'activeColoring', { thresholds: one })).toBe(true);
+
+		// An interface whose list holds nothing has none.
+		expect(shown(optionFields({ thresholds: [] }, true), 'activeColoring')).toBe(false);
+		expect(shown(optionFields({ thresholds: null }, true), 'activeColoring')).toBe(false);
+	});
+
+	test('a display which is not told its field shows it, since the thresholds of the interface are not known there, but for a list stored empty', () => {
+		const blind = optionFields({}, true, undefined, false);
+
+		// Never stored and emptied are both `null` to this form, and never stored means the interface's.
+		expect(shown(blind, 'activeColoring')).toBe(true);
+		expect(shown(blind, 'activeColoring', { thresholds: null })).toBe(true);
+		expect(shown(blind, 'activeColoring', { thresholds: [{ value: 40, color: GREEN }] })).toBe(true);
+		expect(shown(blind, 'activeColoring', { thresholds: [] })).toBe(false);
+
+		expect(fieldOf(blind, 'activeColoring').meta?.hidden).toBe(false);
+		expect(fieldOf(blind, 'activeColoring').meta?.conditions).toEqual([
+			{ name: 'An empty list of thresholds', rule: { 'count(thresholds)': { _eq: 0 } }, hidden: true },
+			{ name: 'Thresholds', rule: { 'count(thresholds)': { _gt: 0 } }, hidden: false },
+		]);
 	});
 
 	test('a whole-number input from 2 upward with no largest, which says that the width is the ceiling', () => {

@@ -57,6 +57,29 @@ const SHOWN_FOR_PIECES = [
 	{ name: 'Pieces', rule: { visualization: { _in: [...SHAPES] } }, hidden: false },
 ];
 
+/**
+ * The conditions of Active Coloring, which changes nothing while there are no thresholds: all four colourings of
+ * the fill then draw the one colour. The rules look at the form's own `thresholds`, or, while that key was never
+ * stored, at the default the form shows for it (app/src/utils/get-default-values-from-fields.ts:9 in Directus
+ * 11.17.4): `null` in the form of the interface, the interface's list in the form of the display. A list which is
+ * emptied in the form is `null` as well (app/src/interfaces/list/list.vue:201-203); one which the API was sent
+ * can be `[]`. No operator of the app's tells `[]` from a list with entries by the key itself (`_nnull` and
+ * `_nempty` both pass it), so two rules count the list: the app works out `count()` of a key before it tries a
+ * rule, and gives `null` for what is no list (packages/utils/shared/validate-payload.ts:57 and
+ * functions.ts:52-54).
+ *
+ * The app tries the last rule first. The first one here is for an app which does not count, where neither rule on
+ * `count()` is ever met: a list which is not `null` then shows the dropdown, where it would else be out of reach.
+ */
+const KNOWN_THRESHOLDS = [
+	{ name: 'A list of thresholds', rule: { thresholds: { _nnull: true } }, hidden: false },
+	{ name: 'No thresholds', rule: { thresholds: { _null: true } }, hidden: true },
+];
+const COUNTED_THRESHOLDS = [
+	{ name: 'An empty list of thresholds', rule: { 'count(thresholds)': { _eq: 0 } }, hidden: true },
+	{ name: 'Thresholds', rule: { 'count(thresholds)': { _gt: 0 } }, hidden: false },
+];
+
 /** The formats of the value text which have a prefix and a suffix. A percentage has neither. */
 const AFFIXED: readonly IndicatorFormat[] = FORMATS.filter((format) => format !== 'percent');
 
@@ -82,8 +105,9 @@ const AFFIXED: readonly IndicatorFormat[] = FORMATS.filter((format) => format !=
  * Some options apply only sometimes: the number of subdivisions, `grow` and
  * `fade` while the track is cut into pieces, the layout of the dots while
  * those pieces are dots, `prefix` and `suffix` while the format is not the
- * percentage, the sensitivity for the relative method, and the step for every
- * input method but `none`. `grow` is an option of the interface alone: the
+ * percentage, the colouring of the fill while there are thresholds, the
+ * sensitivity for the relative method, and the step for every input method
+ * but `none`. `grow` is an option of the interface alone: the
  * pieces of a display never grow. They are always in the list, with
  * conditions on the values of the form itself which show or hide them; the
  * form evaluates those wherever it is drawn. The list cannot be made to
@@ -182,6 +206,17 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 		choicesOf(DOTS_LAYOUTS, DOTS_LAYOUT_NAMES),
 		unsetLook.dotsLayout,
 		'Packed: from the start. Spread: from edge to edge.',
+	);
+
+	// Hidden while it is certain that no threshold applies. The form of a display which was not told its field
+	// shows `null` for the list also while the key was never stored, when the thresholds are the interface's
+	// and not known here: there only a list which is stored empty hides the dropdown.
+	const activeColoring = dropdown(
+		'activeColoring',
+		'Active Coloring',
+		choicesOf(COLORINGS, COLORING_NAMES),
+		unsetLook.activeColoring,
+		'Value, Blend: one color, by the value. Steps, Gradient: colors by their place.',
 	);
 
 	const fields: Fields = [
@@ -365,13 +400,14 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 				default_value: unsetOptions.thresholds.length > 0 ? unsetOptions.thresholds : null,
 			},
 		},
-		dropdown(
-			'activeColoring',
-			'Active Coloring',
-			choicesOf(COLORINGS, COLORING_NAMES),
-			unsetLook.activeColoring,
-			'Value, Blend: one color, by the value. Steps, Gradient: colors by their place.',
-		),
+		{
+			...activeColoring,
+			meta: {
+				...activeColoring.meta,
+				hidden: !blind && unsetOptions.thresholds.length === 0,
+				conditions: blind ? COUNTED_THRESHOLDS : [...KNOWN_THRESHOLDS, ...COUNTED_THRESHOLDS],
+			},
+		},
 		dropdown(
 			'inactiveColoring',
 			'Inactive Coloring',

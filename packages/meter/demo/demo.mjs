@@ -80,14 +80,16 @@ const RECIPES = [
 	}),
 ];
 
-// The five looks. Each shape in pairs: as many as the range and the width give, and a number which is set.
+// The five looks. Each shape in pairs: as many as the range and the width give, and a number which is set. A name
+// says "as many as fit" only where that is what the field draws at this width: twenty segments and all the bars do,
+// ten pills where fourteen fit do not.
 const VISUALIZATION = [
 	meter('bar', 'One bar', {
 		note: 'The default: one bar, filled exactly.',
 		options: {},
 		width: 'full',
 	}),
-	meter('pills', 'Pills, as many as fit', {
+	meter('pills', 'Pills, without a number', {
 		note: 'A hundred are wanted for 0 to 100, and about 14 fit here, so it draws the largest number which fits and divides a hundred: 10.',
 		options: { visualization: 'pills' },
 	}),
@@ -200,7 +202,9 @@ const GROW = [
 		options: { visualization: 'bars', grow: 4 },
 	}),
 	meter('fade_dots', 'Dots, fade in', {
-		note: 'The next dot takes on the color of a filled one as the value nears it. The display in the table fades too.',
+		note:
+			'The next dot takes on the color of a filled one as the value nears it. ' +
+			'The display fades too, as the bookmark "Grow and fade" of the table shows.',
 		options: { visualization: 'dots', subdivisions: 10, fade: true },
 	}),
 	meter('grow_fade', 'Segments, grow and fade', {
@@ -208,6 +212,10 @@ const GROW = [
 		options: { visualization: 'segments', subdivisions: 10, grow: 1, fade: true },
 	}),
 ];
+
+// The columns of the bookmark of this group: the two which tell that growth does not reach the display, and the two
+// which fade in.
+const GROWN_AND_FADED = GROW.filter((entry) => ['grow_none', 'grow_one', 'fade_dots', 'grow_fade'].includes(entry.field));
 
 const TEXT = [
 	meter('text_caption', 'Caption', {
@@ -334,8 +342,8 @@ const ABOUT_GROW =
 	'The pieces of the display never grow.';
 const ABOUT_TEXT = 'A value text is shown whole or not at all. Prefix and suffix belong to the value and the fraction.';
 const ABOUT_EDITING =
-	'Every meter here can be set with the pointer, or with the arrow keys, Page Up, Page Down, Home and End. Escape during a drag puts the value back. ' +
-	'The first six are one meter with each input method, and read-only.';
+	'Every meter here but "None" and "Read-only" can be set with the pointer, or with the arrow keys, Page Up, Page Down, Home and End. ' +
+	'Escape during a drag puts the value back. The first six are one meter with each input method, and read-only.';
 
 export default collection('demo_meter', {
 	name: 'Meter',
@@ -372,6 +380,9 @@ export default collection('demo_meter', {
 		}),
 		table(['name', ...keys(VISUALIZATION)], { bookmark: 'Visualization', widths: widthsOf(VISUALIZATION, 160, { pills: 190, segments: 210, bars: 190 }) }),
 		table(['name', ...keys(COLORING)], { bookmark: 'Coloring', widths: widthsOf(COLORING, 190) }),
+		// The pills with and without growth are drawn alike here, since the pieces of a display never grow. The
+		// two which fade in do so in the display as well.
+		table(['name', ...keys(GROWN_AND_FADED)], { bookmark: 'Grow and fade', widths: widthsOf(GROWN_AND_FADED, 190) }),
 		table(['name', ...keys(TEXT)], { bookmark: 'Text', widths: widthsOf(TEXT, 190, { text_fraction: 280, text_display: 210 }) }),
 	],
 });

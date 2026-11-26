@@ -1,10 +1,11 @@
 // Browser tests of the Meter bundle: a meter which can be edited. What the pointer, a finger and the keys write, by
 // every input method, what a field which cannot be edited is spared, and the options forms of editing.
-import { expect, test } from '../../../sandbox/support/fixtures.ts';
+import { expect, openItem, test } from '../../../sandbox/support/fixtures.ts';
 import {
 	EDIT,
 	EDIT_VALUES,
 	LISTENERS,
+	REPEATER,
 	asDecimal,
 	attributes,
 	clickAt,
@@ -27,6 +28,7 @@ import {
 	removeAll,
 	save,
 	seedEdit,
+	seedRepeater,
 	signedIn,
 	text,
 	token,
@@ -37,6 +39,7 @@ import type { Locator, Page } from './meter-support.ts';
 test.beforeAll(async ({ api }) => {
 	await removeAll(api);
 	await seedEdit(api);
+	await seedRepeater(api);
 });
 
 test.afterAll(async ({ api }) => {
@@ -571,6 +574,35 @@ test.describe('a meter which can be edited', () => {
 		expect(sent.values).toEqual({ whole: 70, vanishing: 50 });
 	});
 
+	test('a release which the meter never saw ends the drag with the next movement of the mouse, and nothing more is written', async ({ page }) => {
+		const start = await pointAt(page, 'whole', 0.2);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await page.mouse.move(start.x + start.width * 0.4, start.y, { steps: 3 });
+		await expect(text(page, 'whole')).toHaveText('60%');
+		await expect(line(page, 'whole')).toHaveClass(/mt-busy/);
+
+		// The meter loses the pointer without being told that the press is over, and the button comes up far
+		// below the field, where the meter no longer hears of it.
+		await line(page, 'whole').evaluate((element) => element.releasePointerCapture(1));
+		await page.mouse.move(start.x + start.width * 0.4, start.y + 300, { steps: 3 });
+		await page.mouse.up();
+		await expect(text(page, 'whole')).toHaveText('60%');
+
+		// The mouse comes back with no button held: the drag ends there, and the value does not follow it.
+		await page.mouse.move(start.x + start.width * 0.7, start.y, { steps: 5 });
+		await expect(line(page, 'whole')).not.toHaveClass(/mt-busy/);
+		await page.mouse.move(start.x - start.width * 0.1, start.y, { steps: 5 });
+		await expect(text(page, 'whole')).toHaveText('60%');
+
+		// The next press is a press like any other.
+		await clickAt(page, 'whole', 0.3);
+		await expect(text(page, 'whole')).toHaveText('30%');
+
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ whole: 30 });
+	});
+
 	test('a finger sets a meter by a tap or a sideways drag, writes nothing where it scrolls the page, and leaves no piece large', async ({ browser }) => {
 		// A page of its own which has a touch screen, signed in as the pages of these tests are. The fingers are
 		// sent through the tools of the browser, which can move one as well as put it down.
@@ -719,6 +751,78 @@ test.describe('a meter which can be edited', () => {
 			await expect(text(page, 'twin_locked')).toHaveText('40%');
 
 			await expect(edited(page)).toHaveCount(5);
+			quiet();
+		} finally {
+			await context.close();
+		}
+	});
+
+	test('a second finger neither starts a drag nor moves one: the meter is set by the first finger alone', async ({ browser }) => {
+		const { context, page, quiet } = await signedIn(browser, { hasTouch: true });
+
+		try {
+			await openEdit(page);
+
+			// The fingers which are down, each with its place. The browser is told all of them every time, and
+			// works out which one came down, moved or was lifted.
+			const client = await context.newCDPSession(page);
+			const fingers = (...touchPoints: { x: number; y: number; id: number }[]) =>
+				client.send('Input.dispatchTouchEvent', { type: touchPoints.length > 0 ? 'touchMove' : 'touchEnd', touchPoints });
+			const down = (...touchPoints: { x: number; y: number; id: number }[]) =>
+				client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints });
+			const frames = () => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))));
+
+			// What the browser calls each finger which comes down on a meter.
+			await page.evaluate(() => {
+				const seen = ((window as unknown as { primary: boolean[] }).primary = [] as boolean[]);
+				document.addEventListener('pointerdown', (event) => seen.push(event.isPrimary), true);
+			});
+			const primary = () => page.evaluate(() => (window as unknown as { primary: boolean[] }).primary.splice(0));
+
+			const whole = await pointAt(page, 'whole', 0);
+			const at = (share: number, id: number) => ({ x: whole.x + whole.width * share, y: whole.y, id });
+
+			// One finger drags the meter from 30 to 50.
+			await down(at(0.3, 1));
+			await fingers(at(0.4, 1));
+			await fingers(at(0.5, 1));
+			await expect(text(page, 'whole')).toHaveText('50%');
+
+			// A second finger comes down on the same meter, at 90, and moves along it. It is not the primary
+			// pointer: the value stays where the first finger has it.
+			await down(at(0.5, 1), at(0.9, 2));
+			await frames();
+			expect(await primary()).toEqual([true, false]);
+			await expect(text(page, 'whole')).toHaveText('50%');
+			for (const share of [0.85, 0.8, 0.75, 0.7]) await fingers(at(0.5, 1), at(share, 2));
+			await frames();
+			await expect(text(page, 'whole')).toHaveText('50%');
+
+			// The drag is still the first finger's, with the second one down.
+			await fingers(at(0.6, 1), at(0.7, 2));
+			await expect(text(page, 'whole')).toHaveText('60%');
+			await fingers();
+			await frames();
+			await expect(text(page, 'whole')).toHaveText('60%');
+
+			// A second finger on another meter, while the first rests on this one, is no tap there: lifted, the
+			// first finger has set its meter, and the other meter is as it was.
+			const tenth = await pointAt(page, 'tenth', 0.8);
+			await down(at(0.3, 1));
+			await down(at(0.3, 1), { x: tenth.x, y: tenth.y, id: 2 });
+			await frames();
+			expect(await primary()).toEqual([true, false]);
+			await fingers();
+			await expect(text(page, 'whole')).toHaveText('30%');
+			await frames();
+			await expect(text(page, 'tenth')).toHaveText('0.5');
+
+			// Alone, the same finger on that meter is a tap.
+			await page.touchscreen.tap(tenth.x, tenth.y);
+			await expect(text(page, 'tenth')).toHaveText('0.8');
+			expect(await primary()).toEqual([true]);
+
+			await expect(edited(page)).toHaveCount(2);
 			quiet();
 		} finally {
 			await context.close();
@@ -1198,7 +1302,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(slider).toHaveAttribute('aria-valuetext', '1%');
 
 		// Keys which are not the meter's change nothing, and neither do the meter's keys with a modifier.
-		for (const key of ['Space', 'Enter', 'a', '5', 'Delete', 'Control+ArrowRight', 'Alt+ArrowRight']) await press(key, '1%');
+		for (const key of ['Space', 'Enter', 'a', '5', 'Delete', 'Control+ArrowRight', 'Alt+ArrowRight', 'Meta+ArrowRight']) await press(key, '1%');
 		await expect(slider).toBeFocused();
 
 		// Steps of a tenth, without dust.
@@ -1291,6 +1395,112 @@ test.describe('a meter which can be edited', () => {
 		expect(sent.values).toEqual({ fine: 4567890.9 });
 	});
 
+	test('a key of the meter never scrolls the page, whether or not it changes the value, and during a drag every key but Escape is left alone', async ({
+		page,
+	}) => {
+		// Every scroll of anything in the page. A scroll event does not bubble, so it is caught on its way down.
+		await page.evaluate(() => {
+			const seen = window as unknown as { scrolls: number };
+			seen.scrolls = 0;
+			document.addEventListener('scroll', () => seen.scrolls++, true);
+		});
+		const scrolls = () => page.evaluate(() => (window as unknown as { scrolls: number }).scrolls);
+
+		// A scroll by a key is eased, and goes on for a moment: this waits until nothing has scrolled for six frames.
+		const rested = () =>
+			page.evaluate(async () => {
+				const seen = window as unknown as { scrolls: number };
+
+				for (let still = 0, last = seen.scrolls; still < 6; still++) {
+					await new Promise((done) => requestAnimationFrame(done));
+					if (seen.scrolls !== last) [still, last] = [0, seen.scrolls];
+				}
+			});
+		const top = () => line(page, 'offset').evaluate((element) => element.getBoundingClientRect().top);
+
+		// A meter in the middle of the form, which is longer than the window: the page can scroll both ways.
+		// With the focus on the label of the field the Page keys scroll it, as they do anywhere else.
+		await line(page, 'offset').scrollIntoViewIfNeeded();
+		await fieldOf(page, 'offset').locator('button.field-name').focus();
+		await rested();
+		const before = await scrolls();
+		await page.keyboard.press('PageDown');
+		await expect.poll(scrolls).toBeGreaterThan(before);
+		await rested();
+		const between = await scrolls();
+		await page.keyboard.press('PageUp');
+		await expect.poll(scrolls).toBeGreaterThan(between);
+		await rested();
+
+		// With the focus on the meter they, the arrows, Home and End are the meter's, and nothing scrolls: not
+		// for a key which changes the value, and not for one which finds it at the end of its range already.
+		await line(page, 'offset').evaluate((element) => (element as HTMLElement).focus({ preventScroll: true }));
+		await expect(line(page, 'offset')).toBeFocused();
+		await rested();
+		const [still, place] = [await scrolls(), await top()];
+
+		for (const [key, expected] of [
+			['End', '10'],
+			['End', '10'],
+			['PageUp', '10'],
+			['ArrowUp', '10'],
+			['ArrowDown', '9'],
+			['PageDown', '1'],
+			['PageDown', '1'],
+			['ArrowDown', '1'],
+			['Home', '1'],
+			['ArrowUp', '3'],
+			['PageUp', '10'],
+			['Home', '1'],
+			['ArrowRight', '3'],
+		] as const) {
+			await page.keyboard.press(key);
+			await expect(text(page, 'offset'), key).toHaveText(expected);
+			await rested();
+			expect(await scrolls(), `${key} scrolls nothing`).toBe(still);
+		}
+
+		expect(await top()).toBe(place);
+
+		// During a drag the keys are not the meter's: none of them changes the value, which is the pointer's.
+		// Everything the text says from here on is kept, so a value which a key wrote for a moment would show.
+		await text(page, 'whole').evaluate((element) => {
+			const said = ((window as unknown as { said: string[] }).said = [] as string[]);
+			new MutationObserver(() => said.push((element.textContent ?? '').trim())).observe(element, { subtree: true, childList: true, characterData: true });
+		});
+		const said = () => page.evaluate(() => (window as unknown as { said: string[] }).said);
+
+		const start = await pointAt(page, 'whole', 0.2);
+		await page.mouse.move(start.x, start.y);
+		await page.mouse.down();
+		await page.mouse.move(start.x + start.width * 0.5, start.y, { steps: 2 });
+		await expect(text(page, 'whole')).toHaveText('70%');
+		await expect(line(page, 'whole')).toBeFocused();
+		const heard = await said();
+		expect(heard.at(-1)).toBe('70%');
+
+		// The top of the form is in view again, so a key which is left to the browser has nothing to scroll up to.
+		for (const key of ['ArrowRight', 'ArrowUp', 'ArrowLeft', 'PageUp', 'Home']) {
+			await page.keyboard.press(key);
+			await rested();
+		}
+
+		await expect(text(page, 'whole')).toHaveText('70%');
+		expect(await said()).toEqual(heard);
+
+		// The pointer still has the value, Escape is still the meter's, and after the drag so are the other keys.
+		await page.mouse.move(start.x + start.width * 0.6, start.y);
+		await expect(text(page, 'whole')).toHaveText('80%');
+		await page.keyboard.press('Escape');
+		await expect(text(page, 'whole')).toHaveText('40%');
+		await page.mouse.up();
+		await page.keyboard.press('ArrowRight');
+		await expect(text(page, 'whole')).toHaveText('41%');
+
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ whole: 41, offset: 3 });
+	});
+
 	test('Escape during a drag puts back the value from before the press', async ({ page }) => {
 		const start = await pointAt(page, 'whole', 0.2);
 
@@ -1326,6 +1536,59 @@ test.describe('a meter which can be edited', () => {
 		await clickAt(page, 'whole', 0.3);
 		await page.keyboard.press('Escape');
 		await expect(text(page, 'whole')).toHaveText('30%');
+	});
+
+	test('Escape during a drag in a drawer puts the value back and leaves the drawer open, and without a drag it closes the drawer', async ({ page }) => {
+		// The drawer of a row of a stock Repeater, which the app closes on Escape.
+		await openItem(page, REPEATER, ids['Repeater']!);
+		await expect(page.locator('.hydrating')).toHaveCount(0);
+		await page.locator('main .v-form .field[data-field="rows"] .v-list-item').first().click();
+
+		const drawers = page.locator('#dialog-outlet .v-drawer');
+		const track = drawers.last().locator('.field[data-field="big"] .meter > :first-child');
+		const said = drawers.last().locator('.field[data-field="big"] .mt-text');
+		await expect(said).toHaveText('500');
+		await expect(track).toHaveAttribute('role', 'slider');
+
+		// The drawer slides in, so its meter is measured once it has been in one place for five frames.
+		await track.evaluate(async (element) => {
+			for (let still = 0, last = NaN; still < 5; still++) {
+				await new Promise((done) => requestAnimationFrame(done));
+				const now = element.getBoundingClientRect().left;
+				if (now !== last) [still, last] = [0, now];
+			}
+		});
+		const area = (await track.boundingBox())!;
+
+		// A drag from 200 to 700 of a thousand, and Escape with the button still held.
+		await page.mouse.move(area.x + area.width * 0.2, area.y + area.height / 2);
+		await page.mouse.down();
+		await page.mouse.move(area.x + area.width * 0.7, area.y + area.height / 2, { steps: 4 });
+		await expect(said).toHaveText('700');
+
+		// Every Escape which gets past the meter, to where the app listens for the key.
+		await page.evaluate(() => {
+			const seen = window as unknown as { escapes: number };
+			seen.escapes = 0;
+			document.addEventListener('keydown', (event) => (seen.escapes += event.key === 'Escape' ? 1 : 0));
+		});
+		const escapes = () => page.evaluate(() => (window as unknown as { escapes: number }).escapes);
+
+		await page.keyboard.press('Escape');
+		await expect(said).toHaveText('500');
+		await page.mouse.up();
+
+		// The key was the meter's and went no further: the drawer is still there, with the row as it was.
+		expect(await escapes()).toBe(0);
+		await expect(drawers).toHaveCount(1);
+		await expect(said).toHaveText('500');
+		await expect(track).toBeFocused();
+
+		// With no drag the same key on the same meter is the app's, and closes the drawer.
+		await page.keyboard.press('Escape');
+		expect(await escapes()).toBe(1);
+		await expect(drawers).toHaveCount(0);
+		await expect(edited(page)).toHaveCount(0);
 	});
 
 	test('a read-only field and a field which a condition closes do not change, are not focusable and keep the role of a meter', async ({ page }) => {

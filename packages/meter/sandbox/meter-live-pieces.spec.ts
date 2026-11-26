@@ -859,6 +859,38 @@ test.describe('the pieces of a meter which can be edited', () => {
 		}
 	});
 
+	test('a form which opens draws its meters with no transition: the first value is there at once, and only a later change is eased', async ({ page }) => {
+		// Every transition which starts inside a meter, counted from before the page has anything in it.
+		await page.addInitScript(() => {
+			const started = ((window as unknown as { started: string[] }).started = [] as string[]);
+
+			document.addEventListener('transitionrun', (event) => {
+				const target = event.target instanceof Element ? event.target : null;
+				if (target?.closest('.meter')) started.push(`${target.className}: ${event.propertyName}`);
+			});
+		});
+		const started = () => page.evaluate(() => (window as unknown as { started: string[] }).started);
+
+		// The form once more, from nothing, for a user who has not asked the system for less motion.
+		await page.emulateMedia({ reducedMotion: 'no-preference' });
+		await openEdit(page);
+		await expect(text(page, 'grow_segments')).toHaveText('3.3');
+
+		// The form drew every meter without a value first and then with its value, which is a change of size for
+		// the pieces which grow and of opacity for the one which fades in. Their transitions are switched on by
+		// now, and none of them has played.
+		const eased = ['grow_dots', 'grow_segments', 'fade_pills', 'grow_bars', 'grow_coarse', 'grow_three', 'grow_four', 'near_bars'];
+		for (const name of eased) await expect(line(page, name)).toHaveClass(/mt-eased/);
+		expect(await started()).toEqual([]);
+
+		// The same change later is eased: a key takes the segments from 3.3 to 3.4, and the fourth one grows
+		// and takes on its colour with a transition each.
+		await line(page, 'grow_segments').focus();
+		await page.keyboard.press('ArrowRight');
+		await expect(text(page, 'grow_segments')).toHaveText('3.4');
+		await expect.poll(async () => (await started()).sort()).toEqual(['mt-over: opacity', 'mt-part mt-under: transform']);
+	});
+
 	test('the piece which fades in: the look of a filled piece laid over the next one, as much as the value has come, alone or with pieces which grow', async ({
 		page,
 	}) => {
@@ -1418,21 +1450,26 @@ test.describe('the pieces of a meter which can be edited', () => {
 	test('while the value is dragged a place on the scale keeps its colour, and the place where a colour ends does not move', async ({ page }) => {
 		const distance = (one: number[], other: number[]) => Math.max(...one.map((channel, index) => Math.abs(channel - other[index]!)));
 
-		// A drag from 45 to 100 in steps of one, on each of the four meters: at every value one row of pixels
-		// across the track is read, through the middle of the track.
+		// A drag from 36 to 100 through eleven values, on each of the four meters: the two sides of 40 and of 80,
+		// where a colour of the scale ends, the values at which the fill is first well past such a place, and some
+		// between. At each one row of pixels across the track is read, through the middle of the track. Every
+		// value of the hundred would say the same of the same places, in four times as long.
+		const VALUES = [36, 40, 41, 45, 60, 79, 80, 81, 85, 90, 100];
+
 		const rows = async (name: string) => {
-			const start = await pointAt(page, name, 0.45);
+			const first = VALUES[0]! / 100;
+			const start = await pointAt(page, name, first);
 			const seen: { value: number; row: number[][] }[] = [];
 
 			// The length along which the value is spread: the track, and for bars the row of bars as it is drawn,
 			// which ends a little before the track does.
-			const left = start.x - start.width * 0.45;
+			const left = start.x - start.width * first;
 			const span = await line(page, name).evaluate((element) => {
 				const last = element.classList.contains('mt-bars') ? element.lastElementChild : null;
 				return (last ?? element).getBoundingClientRect().right - element.getBoundingClientRect().left;
 			});
 
-			await page.mouse.move(left + span * 0.45, start.y);
+			await page.mouse.move(left + span * first, start.y);
 
 			// In pieces, those which the press would fill are large under the pointer: from before the press, and
 			// more of them as the drag fills more. That size is eased, and it is no change of a colour: a large
@@ -1452,15 +1489,20 @@ test.describe('the pieces of a meter which can be edited', () => {
 
 			await page.mouse.down();
 
-			for (let value = 45; value <= 100; value++) {
+			for (const value of VALUES) {
 				await page.mouse.move(left + (span * value) / 100, start.y);
 				await expect(text(page, name)).toHaveText(`${value}%`);
 				if (cut) await rested();
-				seen.push({ value, row: await pixels(page, start.x - start.width * 0.45, start.y, start.width) });
+				seen.push({ value, row: await pixels(page, left, start.y, start.width) });
 			}
 
 			await page.mouse.up();
-			return { seen, width: start.width };
+
+			// The rows read while the fill was well past a place: the end of the fill of the one bar is round and
+			// has the handle on it, so a place counts once the fill is 16px past it.
+			const past = (place: number) => seen.filter((each) => (each.value / 100 - place) * start.width >= 16);
+
+			return { seen, past, width: start.width };
 		};
 
 		// Nothing about the colours is animated: no transition and no animation on the track, the fill or a piece.
@@ -1476,34 +1518,42 @@ test.describe('the pieces of a meter which can be edited', () => {
 			]);
 		}
 
-		// One bar in steps: red ends at 40% of the track and amber at 80%, at the same pixel whatever the value.
-		// The end of the fill itself is round and has the handle on it, so a place counts once the fill is 16px past it.
+		// The size of the pieces up to the pointer is eased, which other tests look at. Here it would only be
+		// waited for at every value, so the user of this test has asked for less motion.
+		await page.emulateMedia({ reducedMotion: 'reduce' });
+
+		// One bar in steps: red ends at 40% of the track and amber at 80%, at the same pixel whatever the value:
+		// from 45 and from 85, the first values at which the fill is well past those places.
 		const steps = await rows('flow_steps');
 		const ends = (row: number[][], from: string, to: string) => row.findIndex((colour) => distance(colour, rgb(to)) < distance(colour, rgb(from)));
-		const past = (place: number) => steps.seen.filter((each) => (each.value / 100 - place) * steps.width >= 16);
 
-		const red = past(0.4).map((each) => ends(each.row, RED, AMBER));
-		const amber = past(0.8).map((each) => ends(each.row.slice(Math.round(steps.width * 0.5)), AMBER, GREEN));
-		expect(red.length).toBeGreaterThan(40);
-		expect(amber.length).toBeGreaterThan(10);
+		const red = steps.past(0.4).map((each) => ends(each.row, RED, AMBER));
+		const amber = steps.past(0.8).map((each) => ends(each.row.slice(Math.round(steps.width * 0.5)), AMBER, GREEN));
+		expect(red).toHaveLength(8);
+		expect(amber).toHaveLength(3);
 		expect([...new Set(red)]).toEqual([Math.round(steps.width * 0.4)]);
 		expect([...new Set(amber)]).toEqual([Math.round(steps.width * 0.8) - Math.round(steps.width * 0.5)]);
 
-		// One bar which blends: the colours at fixed places which the fill covers at every value do not change at all.
-		const blend = await rows('flow_gradient');
+		// The colour at each of five fixed places, in every row read while the fill was well past the place: all
+		// eleven rows for the first four, and the eight from 45 for the last. It does not change at all.
 		const places = [0.03, 0.1, 0.2, 0.3, 0.39];
-		const at = (row: number[][], width: number) => places.map((place) => row[Math.round(width * place)]!.join(' ')).join(', ');
-		expect([...new Set(blend.seen.map((each) => at(each.row, blend.width)))]).toHaveLength(1);
-		expect([...new Set(steps.seen.map((each) => at(each.row, steps.width)))]).toHaveLength(1);
+		const kept = (read: Awaited<ReturnType<typeof rows>>) =>
+			places.map((place) => {
+				const colours = read.past(place).map((each) => each.row[Math.round(read.width * place)]!.join(' '));
+				return { place, rows: colours.length, colours: [...new Set(colours)].length };
+			});
+		const one = [11, 11, 11, 11, 8].map((count, index) => ({ place: places[index], rows: count, colours: 1 }));
+
+		// One bar which blends, and the one in steps.
+		const blend = await rows('flow_gradient');
+		expect(kept(blend)).toEqual(one);
+		expect(kept(steps)).toEqual(one);
 
 		// And they are the colours of those places.
-		for (const place of places) expectColour(blend.seen[0]!.row[Math.round(blend.width * place)]!, blended(place), 6);
+		for (const place of places) expectColour(blend.seen.at(-1)!.row[Math.round(blend.width * place)]!, blended(place), 6);
 
 		// In pieces, steps and blended: the same.
-		for (const name of ['flow_pills', 'flow_bars']) {
-			const pieces = await rows(name);
-			expect([...new Set(pieces.seen.map((each) => at(each.row, pieces.width)))], name).toHaveLength(1);
-		}
+		for (const name of ['flow_pills', 'flow_bars']) expect(kept(await rows(name)), name).toEqual(one);
 
 		await expect(edited(page)).toHaveCount(4);
 	});

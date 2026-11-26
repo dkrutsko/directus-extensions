@@ -39,7 +39,7 @@ The [changelog](https://github.com/dkrutsko/directus-extensions/blob/main/packag
 
 ## Options
 
-Every option is optional. "Display" says whether the display has the option too; where it does and sets none of its own, it takes the interface's (see [The display](#the-display)). The form shows the words of a dropdown capitalised ("Pills", "Position"), and `fraction` as "Value / Maximum".
+Every option is optional. "Display" says whether the display has the option too; where it does and sets none of its own, it takes the interface's (see [The display](https://github.com/dkrutsko/directus-extensions/blob/main/packages/meter/README.md#the-display)). The form shows the words of a dropdown capitalised ("Pills", "Position"), and `fraction` as "Value / Maximum".
 
 | Name | Key | Type | Default | What it does | Display |
 |---|---|---|---|---|---|
@@ -59,11 +59,11 @@ Every option is optional. "Display" says whether the display has the option too;
 | Thresholds | `thresholds` | list of `{ "value", "color" }` | none | From its value upward the bar has the colour of an entry; the highest one the value has reached counts. Values are in the units of the field. | yes |
 | Active Coloring | `activeColoring` | `value`, `blend`, `steps`, `gradient` | `value` | The colours of what is filled. `value`: one colour, that of the current value. `blend`: one colour which shifts towards the next threshold's as the value nears it. `steps`: each place on the track has the colour of its own threshold. `gradient`: those colours blended along the track. | yes |
 | Inactive Coloring | `inactiveColoring` | `plain`, `automatic`, `value`, `blend`, `steps`, `gradient` | `plain` | The colours of what is not filled. `plain`: the track. `automatic`: as what is filled, faded. The other four: that colouring, faded. | yes |
-| Input Method | `input` | `automatic`, `position`, `piece`, `relative`, `none` | `automatic` | How the pointer sets the value: see [Editing](#editing). `none`: the meter is not edited. | no |
+| Input Method | `input` | `automatic`, `position`, `piece`, `relative`, `none` | `automatic` | How the pointer sets the value: see [Editing](https://github.com/dkrutsko/directus-extensions/blob/main/packages/meter/README.md#editing). `none`: the meter is not edited. | no |
 | Step | `step` | number above 0 | by type and range | The distance between two values which can be set, counted from the minimum. Empty: 1 on an Integer or Big Integer field; on a Float or Decimal field the largest power of ten which gives the range at least a hundred steps, at most 1: 0.01 for 0 to 1, 0.1 for 0 to 10, 1 from a range of 100 on. The form shows what it comes to. | no |
 | Sensitivity | `sensitivity` | number above 0 | `1` | For `relative`: how many times the range one length of the meter covers. | no |
 
-Options which apply only sometimes are hidden in the form until they do: Subdivisions, Grow and Fade In need pieces, Dots Layout needs dots, Prefix and Suffix a format other than the percentage, Sensitivity the method "Relative", and Step any method but "None".
+Options which apply only sometimes are hidden in the form until they do: Subdivisions, Grow and Fade In need pieces, Dots Layout needs dots, Prefix and Suffix a format other than the percentage, Active Coloring at least one threshold (without one all four draw the same), Sensitivity the method "Relative", and Step any method but "None".
 
 ![Six meters in a form: one bar at 62%, 10 pills with 6 filled, 20 segments with 12 filled, 57 thin bars with 35 filled, 5 dots with 4 filled for "4.2 / 5", and 8 dots spread from edge to edge with 5 filled](https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/meter/docs/images/visualizations-light.png)
 
