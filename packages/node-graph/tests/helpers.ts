@@ -62,7 +62,7 @@ export function validWorkflow(): GraphDocument {
 			node('t', 'task', { title: 'Prepare access', assignee: 'it', due_days: 2 }),
 			node('a', 'approval', { approver: 'security', sla_hours: 24 }),
 			node('c', 'condition', { label: 'Which system?', branches: [{ label: 'Production' }, { label: 'Staging' }] }),
-			node('n', 'notify', { channel: 'slack', message: 'Access granted' }),
+			node('n', 'notify', { channel: 'chat', message: 'Access granted' }),
 			node('ok', 'end', { outcome: 'approved' }),
 			node('no', 'end', { outcome: 'rejected' }),
 		],

@@ -73,7 +73,20 @@ function random(seed: number): () => number {
 
 const FIRST_NAMES = ['Priya', 'Marco', 'Lena', 'Sam', 'Aiko', 'Tomasz', 'Guadalupe', 'Oluwaseun', 'Ingrid', 'Maximilian', 'Wei', 'Fatima'];
 
-const LAST_NAMES = ['Shah', 'Bianchi', 'Novak', 'Okafor', 'Tanaka', 'Kowalczyk', 'Hernandez-Villanueva', 'Adeyemi', 'Johansson', 'Fitzgerald-Montgomery', 'Lindqvist', 'Moreau'];
+const LAST_NAMES = [
+	'Shah',
+	'Bianchi',
+	'Novak',
+	'Okafor',
+	'Tanaka',
+	'Kowalczyk',
+	'Hernandez-Villanueva',
+	'Adeyemi',
+	'Johansson',
+	'Fitzgerald-Montgomery',
+	'Lindqvist',
+	'Moreau',
+];
 
 /** Groups of policies, each with a label for policy `n`. */
 const GROUPS: [string, (n: number) => string][] = [
@@ -210,10 +223,11 @@ export const LONG_TEXT = 'Long'.repeat(2500);
 export const HEBREW = '\u05E9\u05E8\u05D4 \u05DB\u05D4\u05DF';
 export const ARABIC = '\u0641\u0627\u0637\u0645\u0629 \u0627\u0644\u0632\u0647\u0631\u0627\u0621';
 export const OVERRIDE = 'evil\u202Etxt.exe';
+export const MARKS = 'left\u200Eright\u200Farabic\u061Cline\u2028paragraph\u2029end';
 export const EMOJI = '\u{1F469}\u200D\u{1F4BB} Dev \u{1F680}\u{1F525}';
 
 /** Where the cells of interest sit in the header row of `hostile()`. */
-export const HOSTILE = { markup: 1, badIcons: [8, 9], oddId: 11, createId: 12, lines: 14, mostParts: 15, sideBySide: 16 } as const;
+export const HOSTILE = { markup: 1, marks: 8, badIcons: [9, 10], oddId: 12, createId: 13, lines: 15, mostParts: 16, sideBySide: 17 } as const;
 
 /**
  * A valid table whose text tries everything: markup, template syntax, a
@@ -231,6 +245,7 @@ export function hostile(): Json {
 		{ text: HEBREW, tip: ARABIC },
 		{ text: OVERRIDE, tip: 'line one\nline two\ttab' },
 		{ text: EMOJI, tip: EMOJI.repeat(40) },
+		{ text: MARKS, tip: MARKS },
 		// Icon names which are not Material icon names are dropped.
 		{ text: 'Bad icon', icon: '"><script>alert(1)</script>', color: 'var(--theme--warning)' },
 		{ text: 'Odd icon', icon: 'Add Circle', color: 'var(--theme--primary)' },
@@ -241,7 +256,12 @@ export function hostile(): Json {
 		{ text: 'External', link: { collection: 'https://example.com', id: '//example.com' } },
 		// Parts on a line each: text, a part with everything of its own, and a shared cell.
 		{
-			text: [SCRIPT, { text: IMAGE, tip: MUSTACHE, link: { collection: 'javascript:alert(1)', id: '1' } }, { use: 'constructor', text: 'line one\nline two' }, LONG_TEXT],
+			text: [
+				SCRIPT,
+				{ text: IMAGE, tip: MUSTACHE, link: { collection: 'javascript:alert(1)', id: '1' } },
+				{ use: 'constructor', text: 'line one\nline two' },
+				LONG_TEXT,
+			],
 			tip: IMAGE,
 			color: 'var(--theme--no-such-colour)',
 			break: true,
@@ -250,7 +270,13 @@ export function hostile(): Json {
 		{ text: Array.from({ length: 10 }, (_, index) => `Line ${index + 1} ${MUSTACHE}`), break: true },
 		// Parts side by side, and one which starts a second line.
 		{
-			text: [{ text: 'Side', icon: 'info', color: '#0061FF' }, { text: SCRIPT, weight: 700 }, { text: IMAGE, italic: true, tip: MUSTACHE }, { text: 'Below', break: true, color: 'var(--theme--danger)' }, LONG_TEXT],
+			text: [
+				{ text: 'Side', icon: 'info', color: '#0061FF' },
+				{ text: SCRIPT, weight: 700 },
+				{ text: IMAGE, italic: true, tip: MUSTACHE },
+				{ text: 'Below', break: true, color: 'var(--theme--danger)' },
+				LONG_TEXT,
+			],
 		},
 	];
 
@@ -274,6 +300,13 @@ export function hostile(): Json {
 			[{ text: LONG_TEXT, icon: 'info', color: 'var(--theme--foreground-subdued)' }],
 			[{ text: 42 }, ...cells.map((_, column) => ({ text: column - 6.5 }))],
 		],
-		legend: ['constructor', 'valueOf', 'toString', { text: EMOJI, tip: LONG_TEXT }, { tip: HEBREW }, { text: [SCRIPT, IMAGE], tip: MUSTACHE, background: '#E3516940' }],
+		legend: [
+			'constructor',
+			'valueOf',
+			'toString',
+			{ text: EMOJI, tip: LONG_TEXT },
+			{ tip: HEBREW },
+			{ text: [SCRIPT, IMAGE], tip: MUSTACHE, background: '#E3516940' },
+		],
 	};
 }

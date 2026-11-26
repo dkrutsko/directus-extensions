@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { isEmpty, progressOf } from './steps';
+import { isEmpty, positionText, progressOf } from './steps';
 
 /**
  * The Steps display: a pip per step, filled up to the current one, and the
- * label of the current step, on one line.
+ * name of the current step, on one line.
  *
  * The app hands a display the value, the type of the field and the options of
  * the field's interface, among other things
@@ -26,8 +26,14 @@ const props = defineProps<{
 
 const progress = computed(() => progressOf(props.value, props.interfaceOptions, props.type));
 
+// "Step 2 of 4", which is what assistive technology is told in place of the
+// pips, which are a drawing, and of the count, which it would read as
+// "5 slash 12".
+const position = computed(() => positionText(progress.value) ?? undefined);
+
 // The app draws its own placeholder for `null` and does not call a display
-// for it, but an empty text does arrive here. It gets the same placeholder.
+// for it (app/src/views/private/components/render-display.vue:25), but an
+// empty text does arrive here. It gets the same placeholder.
 const empty = computed(() => isEmpty(props.value));
 
 // The styles carry no comments, because the build keeps them in the bundle.
@@ -40,21 +46,27 @@ const empty = computed(() => isEmpty(props.value));
 // are each isolated for the order of the line: in a right-to-left page a
 // count followed by a label in Latin letters would otherwise be one
 // left-to-right run, with the count on the far side of the label.
+//
+// A pip which is not filled is in the subdued text colour. The accent colour
+// of the borders, which it had at first, is about 1.4 to 1 against the page:
+// such a pip could be overlooked, and "2 of 4" then reads as "2".
+//
+// Under a contrast theme of the system (`forced-colors: active`) the browser
+// takes every background colour which is not a system colour away, and a pip
+// is nothing but its background. There a pip which is not filled is a ring in
+// the colour of text (`CanvasText`) and a filled one a dot in the system's
+// `Highlight`, so the two differ by more than their colour. The ring is a
+// border inside the pip (`border-box`), so no size changes.
 </script>
 
 <template>
 	<value-null v-if="empty" />
 
 	<span v-else class="steps-display">
-		<span
-			v-if="progress.pips"
-			class="sd-pips"
-			role="img"
-			:aria-label="`Step ${progress.position} of ${progress.count}`"
-		>
+		<span v-if="progress.pips" class="sd-pips" role="img" :aria-label="position">
 			<span v-for="(filled, index) in progress.pips" :key="index" class="sd-pip" :class="{ 'sd-filled': filled }" />
 		</span>
-		<span v-else-if="progress.position !== null" class="sd-count" v-text="`${progress.position}/${progress.count}`" />
+		<span v-else-if="progress.position !== null" class="sd-count" role="img" :aria-label="position" v-text="`${progress.position}/${progress.count}`" />
 		<span class="sd-label" v-text="progress.text" />
 	</span>
 </template>
@@ -77,7 +89,7 @@ const empty = computed(() => isEmpty(props.value));
 .sd-pip {
 	inline-size: 0.375rem;
 	block-size: 0.375rem;
-	background-color: var(--theme--border-color-accent);
+	background-color: var(--theme--foreground-subdued);
 	border-radius: 50%;
 }
 
@@ -94,5 +106,18 @@ const empty = computed(() => isEmpty(props.value));
 .sd-count,
 .sd-label {
 	unicode-bidi: isolate;
+}
+
+@media (forced-colors: active) {
+	.sd-pip {
+		box-sizing: border-box;
+		background-color: Canvas;
+		border: 1px solid CanvasText;
+	}
+
+	.sd-pip.sd-filled {
+		background-color: Highlight;
+		border-color: Highlight;
+	}
 }
 </style>

@@ -66,7 +66,7 @@ describe('nodeTitle, edgeLabel, nodeSummary', () => {
 		expect(nodeTitle(example, node('a', 'approval', {}))).toBe('Approval');
 		expect(nodeTitle(example, node('e', 'end', { outcome: 'cancelled' }))).toBe('End: Cancelled');
 		expect(nodeTitle(example, node('e', 'end', {}))).toBe('End');
-		expect(nodeTitle(example, node('n', 'notify', { channel: 'slack' }))).toBe('Notify via Slack');
+		expect(nodeTitle(example, node('n', 'notify', { channel: 'chat' }))).toBe('Notify via Chat');
 		expect(nodeTitle(example, node('g', 'retired', {}))).toBe('retired');
 		expect(nodeTitle(null, node('t', 'task', { title: 'X' }))).toBe('task');
 	});

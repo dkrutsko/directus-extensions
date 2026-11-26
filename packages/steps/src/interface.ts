@@ -39,7 +39,11 @@ export default defineInterface({
 			meta: {
 				width: 'full',
 				interface: 'list',
-				note: 'In the order in which they are drawn. A step without a value, or with a value an earlier step already has, is left out.',
+				// An integer field is told the one rule more which holds for it.
+				note:
+					'In the order in which they are drawn. A step without a value' +
+					(field?.type === 'integer' ? ', with a value which is not a whole number' : '') +
+					', or with a value an earlier step already has, is left out.',
 				options: {
 					template: '{{ text }} ({{ value }})',
 					fields: [
@@ -91,7 +95,7 @@ export default defineInterface({
 			meta: {
 				width: 'half',
 				interface: 'boolean',
-				note: 'Off: the markers alone, as high as an input. The name of a step shows as a tooltip.',
+				note: 'Off: the markers alone, as high as an input. The name of a step shows as a tooltip, also where the field cannot be edited.',
 				options: {
 					label: 'Text under the markers',
 				},

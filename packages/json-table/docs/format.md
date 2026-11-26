@@ -63,7 +63,7 @@ Any other field next to these is ignored, so a writer can keep bookkeeping of it
 
 - **Rows.** A row has exactly one cell per column. The first cell of a row is the header of that row: it is drawn in the first column, which stays in view while the table scrolls sideways.
 - **Headings.** A row with a single cell, in a table with more than one column, is a heading which spans the whole table. Use it for groups, or for a note such as "120 more rows are not shown".
-- **Legend.** Each entry is drawn the way it is drawn in the table, followed by its `tip` as the label. Naming the shared cells is usually all it takes: `"legend": ["gains", "loses"]`.
+- **Legend.** Each entry is drawn the way it is drawn in the table, followed by its `tip` as the label. Naming the shared cells is usually all it takes: `"legend": ["gains", "loses"]`. A cell which is only a `background` is drawn as a swatch of it. A cell which is only a `color` draws nothing, as in the table, and only its label shows. A `link` is not drawn in the legend: an entry explains a cell and opens nothing. A legend can have 200 entries.
 - **Empty cells.** `{}` is an empty cell. A row cannot be shorter than `columns`.
 - Other fields in the table are ignored, like those next to `data`.
 
@@ -90,7 +90,7 @@ Any field can be `null`, which means "nothing here" and matters when a cell inhe
 
 ### Text
 
-Text is plain text. Markup, Markdown and template syntax are shown as they are written and never interpreted. Control characters, line breaks included, become spaces, and text longer than 200 characters is cut and ends in three dots. A number is turned into text as it is, so format it yourself (`"1,204"`) when you want it formatted.
+Text is plain text. Markup, Markdown and template syntax are shown as they are written and never interpreted. Control characters, line breaks and the line and paragraph separators (U+2028, U+2029) included, become spaces. Characters which only steer the direction of text are removed: the embeddings, overrides and isolates (U+202A to U+202E, U+2066 to U+2069) and the marks (U+200E, U+200F, U+061C). Letters of right-to-left scripts are kept as they are. Text longer than 200 characters is cut and ends in three dots. A number is turned into text as it is, so format it yourself (`"1,204"`) when you want it formatted.
 
 A cell with text is as wide as its text, up to a limit, and a cell never wraps: text which does not fit is cut with an ellipsis, and the tooltip shows it in full for header cells and row headers.
 
@@ -112,7 +112,10 @@ The link is only offered when the collection exists and the user may read it. Ot
 ### Tooltips
 
 - A header cell, a row header and a heading show their text, which may be cut off, and then their `tip`.
-- Any other cell with a `tip` shows it after the text of its column header and of its row header: `Priya Shah - billing-engineers: Gains`. In a large table the two headers can be far away from the cell.
+- Any other cell with a `tip` shows it after the text of its column header and of its row header: `Priya Shah - billing-engineers: Gains`. In a large table the two headers can be far away from the cell. A header without text is left out, and with neither the tooltip is the `tip` alone.
+- A [part](#parts-and-lines) whose `tip` is not the one of its cell shows its own in the same way, in place of the cell's.
+- A cell without a `tip` has no tooltip, except the three kinds of the first line.
+- For assistive technology a cell without text is called by its `tip`, put together the same way, or else by the name of its icon as words: `check_circle` is "check circle". A cell of several parts without a `tip` of its own is called by what each part has to say, its own `tip` or else the name of its icon: `Priya Shah - billing-engineers: Gained, Lost`. The name of an icon is never read out in front of text.
 
 ## Shared cells
 
@@ -127,7 +130,7 @@ The link is only offered when the collection exists and the user may read it. Ot
 
 - A cell with `use` starts from the shared cell of that name. Its own fields win, field by field: `{ "use": "plus", "text": "+3" }` is a bold green `+3` on the shaded background.
 - A field set to `null` takes away what the shared cell had: `{ "use": "plus", "background": null }`.
-- A shared cell can `use` another shared cell. A chain which leads back to itself is rejected.
+- A shared cell can `use` another shared cell. A chain which leads back to itself is rejected, and so is a chain of more than 32 shared cells which each use the next.
 - A name which is not in `shared` is rejected, and so is a shared cell which is not an object. Every shared cell is checked, whether the table uses it or not.
 - Do not call a shared cell `__proto__` or `hasOwnProperty`. Directus loses the first when it saves the value and replaces the second in the form, and the table is then rejected. Any other name works, one-character names included.
 
@@ -147,7 +150,7 @@ When `text` is a list, each entry is a part: a piece of the cell with its own co
 - **A part starts from the fields of its cell.** `color`, `weight`, `italic`, `icon`, `tip`, `link` and `break` on the cell apply to every part which does not set its own, and a part can set any of them to `null`. So `"break": true` on the cell, or on a shared cell it uses, puts every part on a line of its own, and `"break": false` on one part keeps that part on the line.
 - The order in which fields are taken is: the part's own fields, the shared cell the part uses, the fields of its cell, the shared cell its cell uses. Because of that, keep `break` out of a shared cell which parts use for their colour.
 - A part cannot hold parts: its `text` is a string or a number.
-- A list with one part is the same as that part written as the cell. An empty list is no text. A cell can have 10 parts at most.
+- A list with one part is the same as that part written as the cell. An empty list is no text. A cell can have 10 parts at most, and the cells of a table 100,000 parts between them, where a cell which is not a list of several parts counts none.
 
 For example, with `"stack": { "use": "total", "break": true }` in `shared`, a totals row whose cells are `{ "use": "stack", "text": [...] }` shows what is gained over what is lost and keeps its columns narrow, while a totals column with `{ "use": "total", "text": [...] }` shows the two side by side and keeps its rows low. [`examples/access-review.json`](../examples/access-review.json) does both.
 
@@ -213,8 +216,11 @@ value = {
 | Columns | 200, counting the first column | The table is rejected. |
 | Rows | 1,000, counting headings | The table is rejected. |
 | Parts in a cell | 10 | The table is rejected. |
+| Parts in all cells together | 100,000, counting every use of a shared cell and only the cells with several parts | The table is rejected. |
+| Legend entries | 200 | The table is rejected. |
+| Shared cells in a chain, each using the next | 32 | The table is rejected. |
 | Text and tips | 200 characters | Cut, ending in three dots. |
-| A compressed table | 8 MB packed, and 8 MB unpacked | The table is rejected. |
+| A compressed table | 8 MB of base64, which is about 6 MB of gzip, and 8 MB unpacked | The table is rejected. |
 
 A table over a limit is never cut, because the part left out could be the part which matters, such as the totals. A writer with more to show has to choose what to leave out, and can say so in a row of the table.
 
@@ -222,22 +228,64 @@ Every cell is an element in the page, so the time to draw a table grows with its
 
 ## Invalid values
 
-A value which breaks the format is not drawn at all. The field shows "Unable to display this table" and the first problem found, with the place it was found in:
+A value which breaks the format is not drawn at all. The field shows "Unable to display this table" and the first problem found, with the place it was found in. Indexes count from 0, and the places in the examples (`rows[4][2]`, `shared["total"]`) stand for any place: a cell of `columns`, `rows`, `legend` or `shared`, or a part of one (`rows[4][2].text[1]`).
+
+The value as a whole:
 
 | Message | Meaning |
 |---|---|
-| `version "2" is not supported, expected 1` | Another version of the format, or a value in another format altogether. |
+| `The value is not valid JSON` | The field holds text which is not JSON. |
+| `The value must be an object` | The field holds a list, a number or `true`. |
+| `version "2" is not supported, expected 1`, `version must be 1` | Another version of the format, no version, or a value in another format altogether. |
 | `data must be an object` | `data` is missing, or the table sits next to `version` and not inside `data`. |
 | `data is text, which needs "encoding": "gzip"` | A compressed table without its `encoding`. |
-| `encoding "zstd" is not supported, expected "gzip" or none` | gzip is the only encoding. |
-| `data is not valid base64`, `data is not valid gzip`, `data does not unpack to valid JSON` | The step of unpacking which failed. |
-| `data unpacks to more than 8 MB` | The compressed table is too large. |
-| `columns must be an array`, `rows must be an array` | A required field is missing. |
-| `rows[4] has 5 cells but there are 6 columns` | A row is neither as long as the header row nor a heading. Indexes count from 0. |
+| `encoding "zstd" is not supported, expected "gzip" or none`, `encoding must be "gzip" or left out` | gzip is the only encoding. |
+
+A compressed value:
+
+| Message | Meaning |
+|---|---|
+| `data must be a base64 string when encoding is "gzip"` | `encoding` is set and `data` is still the table itself. |
+| `This browser cannot unpack a compressed table` | The browser has no `DecompressionStream`: it is older than Chrome 80, Firefox 113 or Safari 16.4. The value may be fine. |
+| `data is larger than 8 MB` | The base64 text itself is over the limit, and was not unpacked. |
+| `data is not valid base64` | Characters outside the two alphabets, or a length no base64 has. |
+| `data is not valid gzip` | The bytes are not gzip, or the stream is cut short or damaged. |
+| `data does not unpack to UTF-8 text` | It is gzip, and what was packed is not UTF-8: text in another encoding, for example. |
+| `data unpacks to more than 8 MB` | The table is too large unpacked. The unpacking stops there. |
+| `data does not unpack to valid JSON`, `data must unpack to an object` | What was packed is not the JSON of a table. |
+
+The table:
+
+| Message | Meaning |
+|---|---|
+| `columns must be an array`, `rows must be an array`, `legend must be an array` | A required field is missing, or a field is not a list. |
+| `shared must be an object` | `shared` is a list or text. |
+| `rows[4] must be an array of cells` | A row is not a list. |
+| `rows[4] has 5 cells but there are 6 columns` | A row is neither as long as the header row nor a heading. |
+| `columns has 201 cells, and a table can have at most 200 columns`, `rows has 1001 rows, and a table can have at most 1000`, `legend has 201 entries, and a table can have at most 200` | See [Limits](#limits). These are checked before any cell. |
+| `rows[50][0] brings the parts of all cells to more than 100000, the most a table can have` | See [Limits](#limits). The place is the cell at which the count went over. |
+
+A cell or a part:
+
+| Message | Meaning |
+|---|---|
+| `rows[4][2] must be an object or the name of a shared cell` | A cell is a number, a list, `null` or `true`. |
 | `rows[4][2] is "gained", which is not a name in shared` | A cell written as a string which names no shared cell. |
-| `rows[4][2].color "red" must be a hex colour such as #E35169 or a theme variable such as var(--theme--success)` | See [Colours](#colours). |
+| `rows[4][2].use must be the name of a shared cell`, `rows[4][2].use is "gained", which is not a name in shared` | `use` is not a string, or names no shared cell. |
+| `shared["total"] must be an object` | A shared cell is written as a string, a list or anything else. |
 | `shared["total"] uses itself: "total" > "plus" > "total"` | Shared cells which lead back to each other. |
-| `columns has 201 cells, and a table can have at most 200 columns` | See [Limits](#limits). |
+| `shared["a"] starts a chain of more than 32 shared cells, each using the next` | See [Limits](#limits). |
+| `rows[4][2].text must be a string, a number or a list of parts`, `rows[4][2].text[1].text must be a string or a number`, `rows[4][2].text[1].text must be a string or a number: a part cannot hold parts` | The text of a cell is a string, a number or a list of parts, and the text of a part a string or a number. |
+| `rows[4][2].text[1] must be text, a number or an object` | A part is a list, `null` or `true`. |
+| `rows[4][2].text has 11 parts, and a cell can have at most 10` | See [Limits](#limits). |
+| `rows[4][2].text[1].use is "stack", which has parts, and a part cannot hold parts` | A part uses a shared cell whose `text` is a list. |
+| `rows[4][2].color "red" must be a hex colour such as #E35169 or a theme variable such as var(--theme--success)`, `rows[4][2].color must be a string` | See [Colours](#colours). The same for `background`. |
+| `rows[4][2].icon must be a string`, `rows[4][2].tip must be a string` | Another type than the field takes. |
+| `rows[4][2].weight must be a number from 1 to 1000` | See [Cells](#cells). |
+| `rows[4][2].italic must be true or false`, `rows[4][2].break must be true or false` | Another type than the field takes. |
+| `rows[4][2].link must be an object`, `rows[4][2].link.collection must be a non-empty string`, `rows[4][2].link.id must be a non-empty string` | See [Links](#links). The `id` is a string, also for a numeric key. |
+
+`Unexpected error` is none of these: it means the interface itself failed on the value, and is a bug to report.
 
 ## Writing the value
 

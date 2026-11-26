@@ -90,7 +90,7 @@ export default defineInterface({
 			meta: {
 				width: 'half',
 				interface: 'select-color',
-				note: 'Primary colour when empty.',
+				note: 'Primary color when empty. A theme variable such as `var(--theme--success)` can be typed in.',
 			},
 		},
 		{
@@ -100,7 +100,7 @@ export default defineInterface({
 			meta: {
 				width: 'half',
 				interface: 'select-color',
-				note: 'Grey when empty.',
+				note: 'Gray when empty. A theme variable such as `var(--theme--danger)` can be typed in.',
 			},
 		},
 	],

@@ -4,7 +4,7 @@ import { textHandler } from './steps';
 
 /**
  * The Steps display, for layouts and display templates: a pip per step,
- * filled up to the current one, and the label of the current step.
+ * filled up to the current one, and the name of the current step.
  *
  * Directus 11.17.4 hands a display the options of the field's interface as
  * `interfaceOptions` (app/src/views/private/components/render-display.vue:28-37),
@@ -21,7 +21,7 @@ import { textHandler } from './steps';
 export default defineDisplay({
 	id: 'steps',
 	name: 'Steps',
-	description: 'The step a field is at: its label, and how far along the list it is',
+	description: 'The step a field is at: its name, and how far along the list it is',
 	icon: 'step',
 	types: ['string', 'integer'],
 	component: DisplayComponent,

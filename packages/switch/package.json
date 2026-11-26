@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-switch",
   "description": "Switch interface for Directus boolean fields: an on/off switch with a label and a line of description, sized and styled like the stock inputs",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",
@@ -44,7 +44,7 @@
     "validate": "directus-extension validate",
     "check": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "prepublishOnly": "npm run check && npm test && npm run build && npm run validate"
+    "prepublishOnly": "npm run check && npm run build && npm test && npm run validate"
   },
   "engines": {
     "node": ">= 22.0.0"

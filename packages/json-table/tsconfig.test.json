@@ -1,10 +1,11 @@
 {
 	// Type-checks the tests together with the framework-free code they import
-	// (src/table.ts). `npm run check` runs it after vue-tsc. There is no DOM
-	// library here on purpose: table.ts also has to run in Node, where the
-	// tests run it, so any accidental use of a browser-only global fails this
-	// check. The streams, `atob` and `TextDecoder` it does use are globals in
-	// Node as well, and come from the Node typings.
+	// (src/table.ts and src/view.ts). `npm run check` runs it after vue-tsc.
+	// There is no DOM library here on purpose: both files also have to run in
+	// Node, where the tests run them, so any accidental use of a browser-only
+	// global fails this check. The streams, `atob` and `TextDecoder` which
+	// table.ts does use are globals in Node as well, and come from the Node
+	// typings.
 	"extends": "@directus/tsconfig/base",
 	"compilerOptions": {
 		"target": "ES2022",
@@ -19,6 +20,7 @@
 	},
 	"include": [
 		"./src/table.ts",
+		"./src/view.ts",
 		"./tests/**/*.ts",
 		"./vitest.config.ts"
 	],

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_TEXT_LENGTH } from '../src/table';
+import { MAX_SHARED_DEPTH, MAX_TEXT_LENGTH } from '../src/table';
 import { cell, cellProblem, lineTexts, plain, problem, valid } from './helpers';
 
 /** Shared cells which build on each other, for the tests of what wins over what. */
@@ -37,6 +37,15 @@ describe('the fields of a cell', () => {
 			text: 'line one line two tab',
 			tip: 'eviltxt.exe',
 		});
+	});
+
+	test('the line and paragraph separators become spaces too, so a line stays a line', async () => {
+		expect(await cell({ text: 'one\u2028two\u2029three', tip: 'a\u2028b' })).toEqual({ text: 'one two three', tip: 'a b' });
+	});
+
+	test('the marks which have a direction but no glyph are removed, and the letters around them kept', async () => {
+		// Left-to-right mark, right-to-left mark and Arabic letter mark.
+		expect(await cell({ text: 'a\u200Eb\u200Fc\u061Cd', tip: '\u200F\u05E9\u05E8\u05D4\u200E' })).toEqual({ text: 'abcd', tip: '\u05E9\u05E8\u05D4' });
 	});
 
 	test('an icon which is not the name of a Material icon is no icon', async () => {
@@ -151,6 +160,46 @@ describe('shared cells and use', () => {
 		expect(await cellProblem({}, { a: { use: 'b' }, b: { text: [{ use: 'a', text: 'x' }] } })).toBe('shared["a"] uses itself: "a" > "b" > "a"');
 	});
 
+	/** Shared cells `c0`, `c1` and so on, each using the next, written from the start of the chain or from its end. */
+	const chain = (length: number, fromEnd = false) => {
+		const entries = Array.from({ length }, (_, index): [string, object] => [`c${index}`, index < length - 1 ? { use: `c${index + 1}` } : { text: 'end' }]);
+
+		return Object.fromEntries(fromEnd ? entries.reverse() : entries);
+	};
+
+	test('a chain of shared cells can be as long as the limit, whichever end is written first', async () => {
+		expect(await cell('c0', chain(MAX_SHARED_DEPTH))).toEqual({ text: 'end' });
+		expect(await cell('c0', chain(MAX_SHARED_DEPTH, true))).toEqual({ text: 'end' });
+	});
+
+	test('a longer chain is rejected with a message of its own, whichever end is written first', async () => {
+		const tooLong = `shared["c0"] starts a chain of more than ${MAX_SHARED_DEPTH} shared cells, each using the next`;
+
+		expect(await cellProblem({}, chain(MAX_SHARED_DEPTH + 1))).toBe(tooLong);
+		expect(await cellProblem({}, chain(MAX_SHARED_DEPTH + 1, true))).toBe(tooLong);
+	});
+
+	test('a chain of thousands is rejected the same way, and does not run out of stack', async () => {
+		expect(await cellProblem({}, chain(20_000))).toMatch(/^shared\["c0"\] starts a chain of more than/);
+		expect(await cellProblem({}, chain(20_000, true))).toMatch(/^shared\["c\d+"\] starts a chain of more than/);
+	});
+
+	test('a chain through the parts of shared cells counts as well', async () => {
+		const shared: Record<string, object> = { c0: { text: 'end' } };
+		for (let index = 1; index <= MAX_SHARED_DEPTH; index++) shared[`c${index}`] = { text: ['x', { use: `c${index - 1}`, text: 'y' }] };
+
+		expect(await cellProblem({}, shared)).toBe(
+			`shared["c${MAX_SHARED_DEPTH}"] starts a chain of more than ${MAX_SHARED_DEPTH} shared cells, each using the next`,
+		);
+	});
+
+	test('many shared cells which use the same one are not a chain', async () => {
+		const shared: Record<string, object> = { base: { weight: 600 } };
+		for (let index = 0; index < 500; index++) shared[`c${index}`] = { use: 'base', text: String(index) };
+
+		expect(await cell('c499', shared)).toEqual({ text: '499', weight: 600 });
+	});
+
 	test('a name which every object has as a member is only a name', async () => {
 		const shared = { constructor: { text: 'c' }, valueOf: { text: 'v' }, toString: { use: 'valueOf', icon: 'info' } };
 
@@ -164,7 +213,8 @@ describe('shared cells and use', () => {
 		// Directus they do not survive: the API drops a `__proto__` key when the
 		// value is saved, and the form hands interfaces a function for
 		// `hasOwnProperty`. The table is then rejected, which is the safe outcome.
-		const value = '{"version":1,"data":{"shared":{"__proto__":{"text":"p"},"hasOwnProperty":{"use":"__proto__"}},"columns":["__proto__","hasOwnProperty"],"rows":[]}}';
+		const shared = '{"__proto__":{"text":"p"},"hasOwnProperty":{"use":"__proto__"}}';
+		const value = `{"version":1,"data":{"shared":${shared},"columns":["__proto__","hasOwnProperty"],"rows":[]}}`;
 
 		expect((await valid(value)).columns).toEqual([{ text: 'p' }, { text: 'p' }]);
 	});

@@ -9,8 +9,10 @@ import {
 	UNSET_ICON,
 	colorOr,
 	descriptionText,
+	fieldNameFor,
 	iconOr,
 	isColor,
+	isDimmed,
 	isInert,
 	labelText,
 	lookOf,
@@ -31,9 +33,14 @@ describe('the state of a value', () => {
 		expect(stateOf(undefined)).toBe('unset');
 	});
 
-	test('a value of another type counts by whether it is truthy', () => {
-		for (const value of [1, -1, 'yes', 'false', [], {}, () => false]) expect(stateOf(value)).toBe('on');
-		for (const value of [0, -0, Number.NaN, '', 0n]) expect(stateOf(value)).toBe('off');
+	test('a value of another type is on where Directus reads it as true', () => {
+		for (const value of [1, '1', 'true']) expect(stateOf(value)).toBe('on');
+	});
+
+	test('and off for everything else, text which says no included', () => {
+		for (const value of [0, -0, '0', 'false', '']) expect(stateOf(value)).toBe('off');
+		for (const value of [2, -1, Number.NaN, 1n, 'yes', 'on', 'True', 'TRUE', ' true', ' 1 ', '1.0']) expect(stateOf(value)).toBe('off');
+		for (const value of [[], [true], {}, { value: true }, () => true]) expect(stateOf(value)).toBe('off');
 	});
 });
 
@@ -51,8 +58,12 @@ describe('a toggle', () => {
 	test('always writes a boolean, whatever the field held', () => {
 		for (const value of [true, false, null, undefined, 0, 1, '', 'text', Number.NaN, {}, []]) {
 			expect(typeof toggled(value)).toBe('boolean');
-			expect(toggled(value)).toBe(stateOf(value) !== 'on');
 		}
+	});
+
+	test('turns off what is drawn as on, and on what is drawn as off', () => {
+		for (const value of [1, '1', 'true']) expect(toggled(value)).toBe(false);
+		for (const value of [0, '0', 'false', '', 'yes', 2, {}, []]) expect(toggled(value)).toBe(true);
 	});
 
 	test('toggling twice from an answer comes back to it', () => {
@@ -72,6 +83,63 @@ describe('a switch which may not change', () => {
 	test('is no other', () => {
 		expect(isInert({})).toBe(false);
 		expect(isInert({ disabled: false, nonEditable: false, loading: false })).toBe(false);
+	});
+});
+
+describe('a switch which is dimmed', () => {
+	test('is one which is disabled', () => {
+		expect(isDimmed({ disabled: true })).toBe(true);
+		expect(isDimmed({ disabled: true, nonEditable: false })).toBe(true);
+	});
+
+	test('is not one in a comparison, which is there to be read', () => {
+		expect(isDimmed({ disabled: true, nonEditable: true })).toBe(false);
+		expect(isDimmed({ nonEditable: true })).toBe(false);
+	});
+
+	test('is no other: a form which is loading is inert, but not dimmed', () => {
+		expect(isDimmed({})).toBe(false);
+		expect(isDimmed({ disabled: false, nonEditable: false })).toBe(false);
+
+		const loading = { loading: true };
+		expect(isInert(loading)).toBe(true);
+		expect(isDimmed(loading)).toBe(false);
+	});
+
+	test('is always inert as well', () => {
+		for (const disabled of [true, false]) {
+			for (const nonEditable of [true, false]) {
+				const flags = { disabled, nonEditable };
+				if (isDimmed(flags)) expect(isInert(flags)).toBe(true);
+			}
+		}
+	});
+});
+
+describe('the name of the field in front of the label', () => {
+	test('is the name the form gives, trimmed', () => {
+		expect(fieldNameFor('Newsletter', 'Enabled')).toBe('Newsletter');
+		expect(fieldNameFor('  Allow comments \n', 'Enabled')).toBe('Allow comments');
+	});
+
+	test('is left out where the form gives none', () => {
+		for (const name of [undefined, null, '', '   ', 7, true, {}, ['Newsletter']]) expect(fieldNameFor(name, 'Enabled')).toBeNull();
+	});
+
+	test('is left out where it says what the label says', () => {
+		expect(fieldNameFor('Published', 'Published')).toBeNull();
+		expect(fieldNameFor('published', 'Published')).toBeNull();
+		expect(fieldNameFor(' Published ', 'Published')).toBeNull();
+		expect(fieldNameFor('Allow Comments', 'Allow comments')).toBeNull();
+	});
+
+	test('is kept where it only starts or ends like the label', () => {
+		expect(fieldNameFor('Published', 'Published on the site')).toBe('Published');
+		expect(fieldNameFor('Is published', 'Published')).toBe('Is published');
+	});
+
+	test('keeps markup as text', () => {
+		expect(fieldNameFor('<b>Bold</b>', 'Enabled')).toBe('<b>Bold</b>');
 	});
 });
 

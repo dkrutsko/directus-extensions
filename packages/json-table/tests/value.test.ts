@@ -98,9 +98,16 @@ describe('a compressed table', () => {
 		expect(await problem(value('This is not base64!'))).toBe('data is not valid base64');
 		expect(await problem(value(whole.subarray(0, 60).toString('base64')))).toBe('data is not valid gzip');
 		expect(await problem(value(Buffer.concat([whole, Buffer.from('more')]).toString('base64')))).toBe('data is not valid gzip');
-		expect(await problem(value(gzipSync(Buffer.from([0x7b, 0xff, 0xfe, 0x7d])).toString('base64')))).toBe('data is not valid gzip');
 		expect(await problem(value(pack('nope')))).toBe('data does not unpack to valid JSON');
 		expect(await problem(value(pack('[]')))).toBe('data must unpack to an object');
+	});
+
+	test('gzip which is whole but does not hold UTF-8 text is not called bad gzip', async () => {
+		const value = (bytes: number[]) => ({ version: 1, encoding: 'gzip', data: gzipSync(Buffer.from(bytes)).toString('base64') });
+
+		// A byte which no UTF-8 text has, and a character which is cut off at the end.
+		expect(await problem(value([0x7b, 0xff, 0xfe, 0x7d]))).toBe('data does not unpack to UTF-8 text');
+		expect(await problem(value([0x7b, 0x7d, 0xe2, 0x82]))).toBe('data does not unpack to UTF-8 text');
 	});
 
 	test('the table which comes out goes through the same checks', async () => {

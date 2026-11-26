@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+- **The example ruleset "Approval workflow" names no product.** The second channel of its Notify node is "Chat" with the value `chat`, where it named a chat product. Only a ruleset loaded from the example from now on has the new choice: a stored ruleset and its graphs are left as they are.
+- The README no longer says that Directus 11.15.0 is the first release with the `nonEditable` state. That state is older; `^11.15.0` is the range every extension of the repository declares, and only Directus 11.17.4 is tested.
+
 ## 0.2.1
 
 - The extension moved to the [directus-extensions](https://github.com/dkrutsko/directus-extensions) repository, which now holds its source and issues. The package name and the extension itself are unchanged.

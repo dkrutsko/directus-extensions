@@ -3,11 +3,16 @@
 // that the built bundle loads in a real Data Studio, that the track draws
 // every state, that a click or a key press ends up in the saved item in the
 // type of the field, and that the display draws in a layout.
-import { expect, openItem, test } from '../../../sandbox/support/fixtures.ts';
+import { expect, openItem, test, type Api } from '../../../sandbox/support/fixtures.ts';
+import { ADMIN, BASE_URL } from '../../../sandbox/support/sandbox.ts';
 
 type Page = Parameters<typeof openItem>[0];
+type Locator = ReturnType<Page['locator']>;
 
 const COLLECTION = 'sandbox_steps';
+
+// A collection with a stock Repeater, one of whose fields is a track.
+const ROWS = 'sandbox_steps_rows';
 
 const STAGES = [
 	{ text: 'Draft', value: 'draft' },
@@ -61,24 +66,37 @@ const WORDY = [
 ];
 
 // Entries which are left out: a value an earlier step has, and no value. The last has no text.
-const MESSY = [
-	{ text: 'First', value: 'one' },
-	{ text: 'Again', value: 'one' },
-	{ text: 'Nothing' },
-	{ text: '', value: 'two' },
-];
+const MESSY = [{ text: 'First', value: 'one' }, { text: 'Again', value: 'one' }, { text: 'Nothing' }, { text: '', value: 'two' }];
 
 // Some steps with a text and some without. The last carries a key which hid the label of a step before the field had
 // an option for it; it is ignored, like any key an entry may hold.
-const MIXED = [
-	{ text: 'Start', value: 'a' },
-	{ value: 'b' },
-	{ text: '', value: 'c' },
-	{ text: 'End', value: 'd', showLabel: false },
-];
+const MIXED = [{ text: 'Start', value: 'a' }, { value: 'b' }, { text: '', value: 'c' }, { text: 'End', value: 'd', showLabel: false }];
 
 // Steps without a text: there is no label to show, whatever the field says about labels.
 const NAMELESS = [{ value: 'low' }, { value: 'mid' }, { value: 'high' }];
+
+// Steps whose texts are strings of the app, which every user reads in their own language.
+const WORDED = [
+	{ text: '$t:draft', value: 'draft' },
+	{ text: '$t:published', value: 'published' },
+	{ text: '$t:archived', value: 'archived' },
+];
+
+// The fields of the Repeater, as the dialog of a Repeater's field stores them: the key and the type once more among the rest.
+const ROW_FIELDS = [
+	{ field: 'name', name: 'name', type: 'string', meta: { field: 'name', type: 'string', interface: 'input', width: 'half' } },
+	{
+		field: 'phase',
+		name: 'phase',
+		type: 'integer',
+		meta: { field: 'phase', type: 'integer', interface: 'steps', display: 'steps', width: 'half', options: { choices: PHASES } },
+	},
+];
+
+const ROW_VALUES = [
+	{ name: 'First', phase: 2 },
+	{ name: 'Second', phase: 4 },
+];
 
 /** A field on the Steps interface and display, half as wide as the form. */
 const field = (name: string, choices: object[] | undefined, meta: object = {}, type = 'string', schema: object = {}) => ({
@@ -89,7 +107,7 @@ const field = (name: string, choices: object[] | undefined, meta: object = {}, t
 });
 
 // What the layout shows, in this order.
-const COLUMNS = ['title', 'stage', 'phase', 'grade', 'delivery', 'year', 'stray', 'empty', 'stock'];
+const COLUMNS = ['title', 'stage', 'phase', 'grade', 'delivery', 'year', 'stray', 'empty', 'stock', 'worded'];
 
 // The day both items are on in the calendar, and what the calendar writes on an entry.
 const DAY = '2026-03-12';
@@ -99,11 +117,76 @@ const TITLE = '{{title}}: {{stage}} | {{grade}} | {{year}} | {{stray}} | {{stock
 let id: number;
 let still: number;
 
+// The item with the Repeater.
+let rows: number;
+
 // The bookmark which shows the collection as a calendar.
 let calendar: number;
 
+/** Who signs in: the administrator of the sandbox, or a user of these tests' own. */
+interface Credentials {
+	email: string;
+	password: string;
+}
+
+// Users of these tests' own, so that no test changes the administrator, whom every other test signs in as. They are
+// told by the start of their address, and removed by it.
+const OWN = 'sandbox-steps-';
+let dark: Credentials;
+let german: Credentials;
+
+/** A user with the role of the administrator and settings of its own, such as an appearance or a language. */
+async function makeUser(api: Api, name: string, settings: object): Promise<Credentials> {
+	const credentials = { email: `${OWN}${name}@example.com`, password: `${OWN}${name}` };
+	const role: string = (await api.get('/users/me?fields=role')).role;
+
+	await api.post('/users', { ...credentials, role, first_name: 'Steps', last_name: name, ...settings });
+	return credentials;
+}
+
+async function removeUsers(api: Api) {
+	const users = await api.get<{ id: string }[]>(`/users?fields=id&limit=-1&filter[email][_starts_with]=${OWN}`);
+	for (const user of users) await api.delete(`/users/${user.id}`);
+}
+
+type Browser = NonNullable<ReturnType<ReturnType<Page['context']>['browser']>>;
+
+// What the Directus app logs on its own, with or without extensions: the same as the fixture of every test passes over.
+const NOISE = /favicon|ResizeObserver loop|auth\/refresh/;
+
+/**
+ * A signed-in page of its own, for a test which needs another user than the `page` of the fixture has. `quiet()`
+ * fails when that page logged an error or threw, as the fixture does for its own: a test calls it at its end, and
+ * closes the context itself.
+ */
+async function signedIn(browser: Browser, user: Credentials = ADMIN) {
+	const context = await browser.newContext({ baseURL: BASE_URL, viewport: { width: 1440, height: 900 } });
+	await context.addCookies([{ name: 'license-banner-dismissed', value: 'true', url: BASE_URL }]);
+
+	const response = await context.request.post('/auth/login', { data: { ...user, mode: 'session' } });
+	if (!response.ok()) throw new Error(`Could not sign in to the sandbox as ${user.email}: ${response.status()}`);
+
+	const page = await context.newPage();
+	const errors: string[] = [];
+
+	page.on('console', (message) => {
+		if (message.type() === 'error') errors.push(`console: ${message.text()} ${message.location().url ?? ''}`);
+	});
+
+	page.on('pageerror', (error) => errors.push(`page: ${String(error)}`));
+
+	const quiet = () =>
+		expect(
+			errors.filter((error) => !NOISE.test(error)),
+			'errors logged or thrown by the page',
+		).toEqual([]);
+
+	return { context, page, quiet };
+}
+
 test.beforeAll(async ({ api }) => {
-	await api.drop(COLLECTION);
+	await removeUsers(api);
+	await api.drop(COLLECTION, ROWS);
 
 	await api.post('/collections', {
 		collection: COLLECTION,
@@ -147,6 +230,11 @@ test.beforeAll(async ({ api }) => {
 			{ field: 'flag', type: 'boolean', schema: {}, meta: { interface: 'boolean', special: ['cast-boolean'], width: 'half' } },
 			// And the labels switched on, with no text to show.
 			field('nameless', NAMELESS, { options: { choices: NAMELESS, showLabels: true } }),
+			// The compact form in a field which cannot be edited: nothing but a tooltip says what its steps are.
+			field('sealed', STAGES, { readonly: true, options: { choices: STAGES, showLabels: false } }),
+			// Read-only by a condition, for as long as the input `beside` holds "locked".
+			field('gated', STAGES, { conditions: [{ name: 'Locked', rule: { _and: [{ beside: { _eq: 'locked' } }] }, readonly: true }] }),
+			field('worded', WORDED),
 			// For the calendar layout, which draws the titles of its entries as plain text.
 			{ field: 'day', type: 'date', schema: {}, meta: { interface: 'datetime', hidden: true } },
 		],
@@ -191,10 +279,37 @@ test.beforeAll(async ({ api }) => {
 		crowd: 'dec',
 		flag: true,
 		nameless: 'mid',
+		sealed: 'approved',
+		gated: 'review',
+		worded: 'draft',
 	};
 
 	still = (await api.post(`/items/${COLLECTION}`, values)).id;
 	id = (await api.post(`/items/${COLLECTION}`, { ...values, title: 'Changed' })).id;
+
+	await api.post('/collections', {
+		collection: ROWS,
+		meta: { icon: 'step' },
+		schema: {},
+		fields: [
+			{ field: 'id', type: 'integer', schema: { is_primary_key: true, has_auto_increment: true }, meta: { hidden: true } },
+			{
+				field: 'rows',
+				type: 'json',
+				schema: {},
+				meta: { interface: 'list', special: ['cast-json'], width: 'full', options: { template: '{{ name }}: {{ phase }}', fields: ROW_FIELDS } },
+			},
+		],
+	});
+
+	rows = (await api.post(`/items/${ROWS}`, { rows: ROW_VALUES })).id;
+
+	dark = await makeUser(api, 'dark', { appearance: 'dark' });
+	german = await makeUser(api, 'german', { language: 'de-DE' });
+});
+
+test.afterAll(async ({ api }) => {
+	await removeUsers(api);
 });
 
 const fieldOf = (page: Page, name: string) => page.locator(`.field[data-field="${name}"]`);
@@ -234,8 +349,8 @@ const strays = (page: Page) =>
 	page.evaluate(() => Array.from(document.querySelectorAll('*')).filter((element) => element.scrollLeft !== 0 && !element.matches('.st-track')).length);
 
 /** Saves the item, and returns what the form sent: the changed fields, in the types the interfaces reported them. */
-async function save(page: Page): Promise<Record<string, unknown>> {
-	const request = page.waitForRequest((sent) => sent.method() === 'PATCH' && sent.url().includes(`/items/${COLLECTION}/`));
+async function save(page: Page, collection = COLLECTION): Promise<Record<string, unknown>> {
+	const request = page.waitForRequest((sent) => sent.method() === 'PATCH' && sent.url().includes(`/items/${collection}/`));
 	await page.keyboard.press('ControlOrMeta+s');
 	const changes = (await request).postDataJSON();
 	await expect(edited(page)).toHaveCount(0);
@@ -243,9 +358,37 @@ async function save(page: Page): Promise<Record<string, unknown>> {
 }
 
 /** Puts fields of the item the tests change back to a known value, whatever an earlier test or run left. */
-async function reset(api: { patch: (path: string, body: unknown) => Promise<unknown> }, values: object) {
+async function reset(api: Api, values: object) {
 	await api.patch(`/items/${COLLECTION}/${id}`, values);
 }
+
+/**
+ * Waits for the tooltip of the app over a step. The app shows a tooltip a
+ * moment after the mouse arrives, and drops one which is still waiting
+ * whenever a component with a tooltip is drawn again
+ * (app/src/directives/tooltip.ts:29-50 in Directus 11.17.4), as happens
+ * while a page settles or scrolls: so the mouse comes back until it shows.
+ */
+async function expectTooltip(page: Page, target: Locator, expected: string) {
+	await expect(async () => {
+		await page.mouse.move(0, 0);
+		await target.hover();
+		await expect(page.locator('#tooltip.visible')).toHaveText(expected, { timeout: 2000 });
+	}).toPass();
+}
+
+/**
+ * Checks that a step has no tooltip and never had one, without waiting for one to stay away: the app's directive
+ * marks an element with `data-tooltip` when it is given a text to show, and not before
+ * (app/src/directives/tooltip.ts:20-27).
+ */
+const expectNoTooltip = (target: Locator) => expect(target).not.toHaveAttribute('data-tooltip');
+
+/** How many steps of a field the Tab key stops at. */
+const stops = (page: Page, name: string) => box(page, name).locator('.st-button[tabindex="0"]:not(:disabled)').count();
+
+/** Whether the focus is on a step of a field. */
+const focusWithin = (page: Page, name: string) => box(page, name).evaluate((element) => element.contains(document.activeElement));
 
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -276,7 +419,12 @@ const geometry = (page: Page, name: string) =>
 					line:
 						line.content === 'none'
 							? null
-							: { left: from, right: from + Number.parseFloat(line.width), middle: outer.top + Number.parseFloat(line.top) + Number.parseFloat(line.height) / 2, color: line.backgroundColor },
+							: {
+									left: from,
+									right: from + Number.parseFloat(line.width),
+									middle: outer.top + Number.parseFloat(line.top) + Number.parseFloat(line.height) / 2,
+									color: line.backgroundColor,
+								},
 				};
 			}),
 		);
@@ -311,9 +459,17 @@ test('draws the track in the state of the value', async ({ page }) => {
 	// The steps before the current one are done, those after it are still to come.
 	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
 
-	// An ordered list with a name, a button per step which is named by its label alone, and one current step.
-	const list = box(page, 'stage').getByRole('list', { name: 'Steps' });
+	// An ordered list named after its field, a button per step which is named by its label alone, and one current
+	// step. The role is written out, because a list without bullets is no list to Safari with VoiceOver.
+	const list = box(page, 'stage').getByRole('list', { name: 'Stage' });
 	await expect(list.getByRole('listitem')).toHaveCount(4);
+	await expect(track(page, 'stage')).toHaveAttribute('role', 'list');
+	await expect(box(page, 'delivery').getByRole('list', { name: 'Delivery' })).toHaveCount(1);
+
+	// No two tracks of the form have the same name.
+	const names = await page.locator('main .v-form .st-track').evaluateAll((lists) => lists.map((each) => each.getAttribute('aria-label')));
+	expect(names.length).toBeGreaterThan(10);
+	expect(new Set(names).size).toBe(names.length);
 	await expect(list.getByRole('button')).toHaveText(['1Draft', '2In review', '3Approved', '4Published']);
 
 	for (const label of ['Draft', 'In review', 'Approved', 'Published']) await expect(step(page, 'stage', label)).toBeVisible();
@@ -393,23 +549,34 @@ test('a click on a step makes it the current one, and the item saves its value',
 	await expect(edited(page)).toHaveCount(0);
 });
 
-test('Enter and Space choose a step, the arrows, Home and End only move the focus', async ({ page, api }) => {
+test('the field is one tab stop: Tab enters at the current step and leaves again, the arrows only move the focus, Enter and Space choose', async ({
+	page,
+	api,
+}) => {
 	await reset(api, { delivery: 'sent' });
 	await openItem(page, COLLECTION, id);
 	await expect.poll(() => states(page, 'delivery')).toEqual(['done', 'done', 'current', 'upcoming']);
 
-	// Reached with the Tab key, from the label of its field. Every step is a tab stop.
+	// One step of every track takes the Tab key, however many it has, and none of a field which cannot be edited.
+	for (const name of ['stage', 'delivery', 'year', 'empty', 'stray', 'compact', 'mixed']) expect(await stops(page, name), name).toBe(1);
+	expect(await stops(page, 'locked')).toBe(0);
+
+	// Reached with the Tab key, from the label of its field: the current step, not the first.
 	await fieldOf(page, 'delivery').locator('button.field-name').focus();
 	await page.keyboard.press('Tab');
-	await expect(step(page, 'delivery', 'Ordered')).toBeFocused();
-	await expect(step(page, 'delivery', 'Ordered')).toHaveCSS('outline-style', 'solid');
-	await page.keyboard.press('Tab');
-	await expect(step(page, 'delivery', 'Packed')).toBeFocused();
-
-	await page.keyboard.press('ArrowRight');
 	await expect(step(page, 'delivery', 'Sent')).toBeFocused();
-	await page.keyboard.press('ArrowLeft');
-	await page.keyboard.press('ArrowLeft');
+	await expect(step(page, 'delivery', 'Sent')).toHaveCSS('outline-style', 'solid');
+
+	// The next Tab leaves the track, and Shift + Tab comes back to the same step.
+	await page.keyboard.press('Tab');
+	expect(await focusWithin(page, 'delivery')).toBe(false);
+	await page.keyboard.press('Shift+Tab');
+	await expect(step(page, 'delivery', 'Sent')).toBeFocused();
+
+	// The arrows go along the track from there.
+	await page.keyboard.press('ArrowRight');
+	await expect(step(page, 'delivery', 'Delivered')).toBeFocused();
+	for (let press = 0; press < 3; press++) await page.keyboard.press('ArrowLeft');
 	await expect(step(page, 'delivery', 'Ordered')).toBeFocused();
 
 	// The focus stops at the first step, and none of this has changed the value.
@@ -424,6 +591,23 @@ test('Enter and Space choose a step, the arrows, Home and End only move the focu
 	expect(await states(page, 'delivery')).toEqual(['done', 'done', 'current', 'upcoming']);
 	await expect(edited(page)).toHaveCount(0);
 
+	// Tab leaves the track from the step the arrows went to as well, with the current step still ahead of it, and
+	// the track is entered at the current step again.
+	expect(await stops(page, 'delivery')).toBe(1);
+	await page.keyboard.press('Tab');
+	expect(await focusWithin(page, 'delivery')).toBe(false);
+	await page.keyboard.press('Shift+Tab');
+	await expect(step(page, 'delivery', 'Sent')).toBeFocused();
+
+	// Backwards too, from a step after the current one.
+	await page.keyboard.press('End');
+	await expect(step(page, 'delivery', 'Delivered')).toBeFocused();
+	await page.keyboard.press('Shift+Tab');
+	expect(await focusWithin(page, 'delivery')).toBe(false);
+	await page.keyboard.press('Tab');
+	await expect(step(page, 'delivery', 'Sent')).toBeFocused();
+
+	await page.keyboard.press('Home');
 	await page.keyboard.press('Enter');
 	await expect.poll(() => states(page, 'delivery')).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
 
@@ -431,6 +615,20 @@ test('Enter and Space choose a step, the arrows, Home and End only move the focu
 	await page.keyboard.press('Space');
 	await expect.poll(() => states(page, 'delivery')).toEqual(['done', 'done', 'done', 'current']);
 	await expect(step(page, 'delivery', 'Delivered')).toBeFocused();
+
+	// The step which was chosen is where the track is entered from now on.
+	await page.keyboard.press('Shift+Tab');
+	expect(await focusWithin(page, 'delivery')).toBe(false);
+	await page.keyboard.press('Tab');
+	await expect(step(page, 'delivery', 'Delivered')).toBeFocused();
+	expect(await stops(page, 'delivery')).toBe(1);
+
+	// A field which holds nothing has no current step, and is entered at its first.
+	await fieldOf(page, 'empty').locator('button.field-name').focus();
+	await page.keyboard.press('Tab');
+	await expect(step(page, 'empty', 'Draft')).toBeFocused();
+	await page.keyboard.press('Tab');
+	expect(await focusWithin(page, 'empty')).toBe(false);
 
 	await save(page);
 	expect((await api.get(`/items/${COLLECTION}/${id}`)).delivery).toBe('delivered');
@@ -495,6 +693,176 @@ test('a read-only field shows its progress dimmed and cannot be changed', async 
 	expect((await api.get(`/items/${COLLECTION}/${id}`)).locked).toBe('approved');
 });
 
+test('a field without labels which cannot be edited still shows the names of its steps as tooltips', async ({ page }) => {
+	await openItem(page, COLLECTION, still);
+	await expect.poll(() => states(page, 'sealed')).toEqual(['done', 'done', 'current', 'upcoming']);
+
+	// The markers alone, dimmed, and no step to be chosen: nothing on the page says what the four numbers stand for.
+	const sealed = box(page, 'sealed');
+	await expect(sealed).toHaveClass(/st-compact/);
+	await expect(sealed).toHaveClass(/st-dimmed/);
+	await expect(sealed.locator('.st-label')).toHaveCount(0);
+	for (const button of await sealed.getByRole('button').all()) await expect(button).toBeDisabled();
+
+	// The mouse on a step does.
+	await sealed.scrollIntoViewIfNeeded();
+	await expectTooltip(page, step(page, 'sealed', 'Published'), 'Published');
+	await expectTooltip(page, step(page, 'sealed', 'Draft'), 'Draft');
+	await page.mouse.move(0, 0);
+
+	// A read-only field whose labels show has none: the labels say it.
+	await expectNoTooltip(step(page, 'locked', 'Draft'));
+
+	// It is still not to be changed.
+	await step(page, 'sealed', 'Published').click({ force: true });
+	expect(await states(page, 'sealed')).toEqual(['done', 'done', 'current', 'upcoming']);
+	await expect(edited(page)).toHaveCount(0);
+});
+
+test('a condition which makes the field read-only makes the track inert and dimmed, and gives it back when it is lifted', async ({ page, api }) => {
+	await reset(api, { gated: 'review', beside: 'A stock input' });
+	await openItem(page, COLLECTION, id);
+	await expect.poll(() => states(page, 'gated')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+
+	const gated = box(page, 'gated');
+	const input = fieldOf(page, 'beside').locator('input');
+
+	await expect(gated).not.toHaveClass(/st-inert/);
+	expect(await stops(page, 'gated')).toBe(1);
+
+	// The condition matches as soon as the other field holds its word, before anything is saved.
+	await input.fill('locked');
+	await expect(gated).toHaveClass(/st-inert/);
+	await expect(gated).toHaveClass(/st-dimmed/);
+	await expect(gated).toHaveCSS('background-color', await token(page, '--theme--form--field--input--background-subdued'));
+	for (const button of await gated.getByRole('button').all()) await expect(button).toBeDisabled();
+	expect(await stops(page, 'gated')).toBe(0);
+
+	await step(page, 'gated', 'Published').click({ force: true });
+	expect(await states(page, 'gated')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+	await expect(fieldOf(page, 'gated').locator('.field-label.edited')).toHaveCount(0);
+
+	// Lifted again, the track is the one it was: one tab stop, and a click chooses.
+	await input.fill('open');
+	await expect(gated).not.toHaveClass(/st-inert/);
+	await expect(gated).not.toHaveClass(/st-dimmed/);
+	expect(await stops(page, 'gated')).toBe(1);
+
+	await step(page, 'gated', 'Published').click();
+	await expect.poll(() => states(page, 'gated')).toEqual(['done', 'done', 'done', 'current']);
+	expect(await save(page)).toEqual({ beside: 'open', gated: 'published' });
+});
+
+test('in the comparison of two revisions the tracks keep their full colours and cannot be changed', async ({ page, api }) => {
+	// Two more revisions of the item, and the form again, which reads them when it opens.
+	await reset(api, { stage: 'approved' });
+	await reset(api, { stage: 'draft' });
+	await openItem(page, COLLECTION, id);
+	await expect.poll(() => states(page, 'stage')).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
+
+	// Whatever the page sends from here on which is not a question.
+	const written: string[] = [];
+	page.on('request', (sent) => {
+		if (sent.method() !== 'GET' && sent.url().includes('/items/')) written.push(`${sent.method()} ${sent.url()}`);
+	});
+
+	await page.getByText('Revisions', { exact: true }).first().click();
+	await page.locator('.revision-item').nth(1).click();
+
+	// The comparison shows the item twice, as it was before and after the change. Both tracks of the field show
+	// their step, at full strength.
+	const dialogs = page.locator('#dialog-outlet');
+	const sides = dialogs.locator('.field[data-field="stage"] .steps');
+	await expect(sides).toHaveCount(2);
+
+	const stateOf = (side: Locator) =>
+		side.locator('.st-step').evaluateAll((items) => items.map((item) => /st-(done|current|upcoming)/.exec(item.className)?.[1]));
+	await expect
+		.poll(async () => [await stateOf(sides.first()), await stateOf(sides.last())].map((each) => each.join(' ')).sort())
+		.toEqual(['current upcoming upcoming upcoming', 'done done current upcoming'].sort());
+
+	const paper = await token(page, '--theme--form--field--input--background');
+	const quiet = await token(page, '--theme--foreground-subdued');
+
+	// Every track of the comparison is inert and none is dimmed, the one of the field which is read-only in the
+	// form included: the value has to stay readable.
+	const all = dialogs.locator('.steps');
+	expect(await all.count()).toBeGreaterThan(20);
+	expect(await all.evaluateAll((boxes) => boxes.filter((each) => !each.classList.contains('st-inert') || each.classList.contains('st-dimmed')).length)).toBe(
+		0,
+	);
+	expect(await dialogs.locator('.st-button:not(:disabled)').count()).toBe(0);
+
+	for (const name of ['stage', 'locked']) {
+		const shown = dialogs.locator(`.field[data-field="${name}"] .steps`).first();
+
+		await expect(shown).toHaveCSS('background-color', paper);
+		await expect(shown.locator('.st-done .st-marker, .st-current .st-marker').first()).toHaveCSS('opacity', '1');
+		await expect(shown.locator('.st-label').first()).not.toHaveCSS('color', quiet);
+	}
+
+	// A track without labels says what its steps are there too.
+	const compared = dialogs.locator('.field[data-field="compact"] .steps').first();
+	await compared.scrollIntoViewIfNeeded();
+	await expectTooltip(page, compared.getByRole('button', { name: 'Published', exact: true }), 'Published');
+	await page.mouse.move(0, 0);
+
+	// A click on a step changes nothing, on either side.
+	const before = [await stateOf(sides.first()), await stateOf(sides.last())];
+	await sides.first().scrollIntoViewIfNeeded();
+	await sides.first().getByRole('button', { name: 'Published', exact: true }).click({ force: true });
+	await sides.last().getByRole('button', { name: 'Published', exact: true }).click({ force: true });
+	expect([await stateOf(sides.first()), await stateOf(sides.last())]).toEqual(before);
+
+	// The comparison is closed again: the form has nothing to save, and nothing was sent.
+	await dialogs.getByRole('button', { name: 'Cancel' }).click();
+	await expect(dialogs.locator('.steps')).toHaveCount(0);
+	expect(await states(page, 'stage')).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
+	await expect(edited(page)).toHaveCount(0);
+	expect(written).toEqual([]);
+	expect((await api.get(`/items/${COLLECTION}/${id}`)).stage).toBe('draft');
+});
+
+test('colours change softly only after a step was chosen by hand, and not at all for someone who asks for less motion', async ({ page, api }) => {
+	await reset(api, { stage: 'review' });
+	await openItem(page, COLLECTION, id);
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+
+	const stage = box(page, 'stage');
+	const first = stage.locator('.st-step').first();
+
+	// How long the marker, the label and the line of the first step, and the box itself, take to change colour.
+	const durations = () =>
+		first.evaluate((item) => ({
+			marker: getComputedStyle(item.querySelector('.st-marker')!).transitionDuration,
+			label: getComputedStyle(item.querySelector('.st-label')!).transitionDuration,
+			line: getComputedStyle(item, '::after').transitionDuration,
+			box: getComputedStyle(item.closest('.steps')!).transitionDuration,
+		}));
+
+	// Until a step is chosen nothing in the track fades: the first change of state is the item arriving in the form.
+	await expect(stage).not.toHaveClass(/st-animated/);
+	expect(await durations()).toMatchObject({ marker: '0s', label: '0s', line: '0s' });
+
+	await step(page, 'stage', 'Approved').click();
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'done', 'current', 'upcoming']);
+	await expect(stage).toHaveClass(/st-animated/);
+
+	const moving = await durations();
+	for (const part of Object.values(moving)) expect(part).not.toBe('0s');
+
+	// Less motion asked for: nothing takes any time, and a step is chosen as before.
+	await page.emulateMedia({ reducedMotion: 'reduce' });
+	expect(await durations()).toEqual({ marker: '0s', label: '0s', line: '0s', box: '0s' });
+
+	await step(page, 'stage', 'Published').click();
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'done', 'done', 'current']);
+	await expect(stage).toHaveClass(/st-animated/);
+
+	await page.emulateMedia({ reducedMotion: 'no-preference' });
+	expect(await durations()).toEqual(moving);
+});
+
 test('a value which is not one of the steps is named, until a step is chosen', async ({ page, api }) => {
 	await reset(api, { stray: 'archived' });
 	await openItem(page, COLLECTION, id);
@@ -503,11 +871,16 @@ test('a value which is not one of the steps is named, until a step is chosen', a
 	const warning = stray.locator('.st-warning');
 
 	await expect(warning).toBeVisible();
-	await expect(warning).toContainText('archived');
+	await expect(warning).toHaveText('The value “archived” is not one of the steps.');
 	await expect(warning.locator('.st-value')).toHaveText('archived');
 	await expect(warning.locator('[data-icon="warning"]')).toBeVisible();
 	expect(await states(page, 'stray')).toEqual(['upcoming', 'upcoming', 'upcoming', 'upcoming']);
 	await expect(stray.locator('[aria-current]')).toHaveCount(0);
+
+	// The sentence is tied to the list, so someone who enters the track without seeing it is told why no step is
+	// the current one. A list of a field whose value is a step has no such description.
+	await expect(stray.getByRole('list', { name: 'Stray' })).toHaveAccessibleDescription('The value “archived” is not one of the steps.');
+	await expect(track(page, 'stage')).not.toHaveAttribute('aria-describedby');
 
 	// The line is inside the box, under the track.
 	expect(within((await warning.boundingBox())!, (await stray.boundingBox())!)).toBe(true);
@@ -518,6 +891,15 @@ test('a value which is not one of the steps is named, until a step is chosen', a
 
 	await save(page);
 	expect((await api.get(`/items/${COLLECTION}/${id}`)).stray).toBe('review');
+
+	// A value which differs from a step by its spaces alone, as an import can leave one: the spaces show, between
+	// the quotation marks, so the sentence does not seem to name a step of the field.
+	await reset(api, { stray: ' draft  ' });
+	await page.reload();
+	await expect(warning).toBeVisible();
+	await expect(warning.locator('.st-value')).toHaveCSS('white-space', 'pre-wrap');
+	await expect.poll(() => warning.evaluate((element: HTMLElement) => element.innerText.trim())).toBe('The value “ draft  ” is not one of the steps.');
+	expect(await states(page, 'stray')).toEqual(['upcoming', 'upcoming', 'upcoming', 'upcoming']);
 });
 
 test('a field without steps says so', async ({ page }) => {
@@ -638,6 +1020,53 @@ test('a step chosen with the pointer stays under the pointer, one chosen with th
 	expect(await strays(page)).toBe(0);
 });
 
+test('a key typed into another field makes no track read the layout of its labels again', async ({ page }) => {
+	await openItem(page, COLLECTION, still);
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+	await page.evaluate(() => document.fonts.ready);
+
+	// A track finds the labels which are cut by asking each for its `scrollHeight`. The page counts those questions.
+	await page.evaluate(() => {
+		const asked = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollHeight')!;
+		const counter = window as unknown as { labelsMeasured: number };
+		counter.labelsMeasured = 0;
+
+		Object.defineProperty(Element.prototype, 'scrollHeight', {
+			configurable: true,
+			get(this: Element) {
+				if (this.classList.contains('st-label')) counter.labelsMeasured++;
+				return asked.get!.call(this);
+			},
+		});
+	});
+
+	const measured = () => page.evaluate(() => (window as unknown as { labelsMeasured: number }).labelsMeasured);
+
+	// A page which was just opened may still be laying itself out: the count is taken once it stands still. The first
+	// reading cannot equal -1, so the two readings which agree are at least one interval of the poll apart.
+	let rest = -1;
+
+	await expect
+		.poll(async () => {
+			const next = await measured();
+			const same = next === rest;
+			rest = next;
+			return same;
+		})
+		.toBe(true);
+
+	// The form hands every field its options again with every key, as a new object which says the same.
+	await fieldOf(page, 'title').locator('input').pressSequentially(' and ten more');
+	await expect(fieldOf(page, 'title').locator('.field-label.edited')).toHaveCount(1);
+	await expect(fieldOf(page, 'title').locator('input')).toHaveValue(/ and ten more/);
+	expect(await measured()).toBe(rest);
+
+	// The count does count: a step which is chosen changes which label is bold, and the labels are measured again.
+	await step(page, 'stage', 'Approved').click();
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'done', 'current', 'upcoming']);
+	await expect.poll(measured).toBeGreaterThan(rest);
+});
+
 test('a field with its labels switched off is exactly as high as the stock input beside it', async ({ page, api }) => {
 	await reset(api, { compact: 'review' });
 	await openItem(page, COLLECTION, id);
@@ -705,17 +1134,9 @@ test('a field with its labels switched off is exactly as high as the stock input
 	expect((await area(box(page, 'nameless'))).height).toBe(input.height);
 	await expect(step(page, 'nameless', 'mid')).toHaveAttribute('aria-current', 'step');
 
-	// A step whose text does not show has it as a tooltip. The app drops a tooltip which is still waiting whenever a
-	// component with a tooltip is drawn again, so the mouse comes back until it shows.
-	const tooltip = page.locator('#tooltip.visible');
+	// A step whose text does not show has it as a tooltip.
 	await compact.scrollIntoViewIfNeeded();
-
-	await expect(async () => {
-		await page.mouse.move(0, 0);
-		await step(page, 'compact', 'Published').hover();
-		await expect(tooltip).toHaveText('Published', { timeout: 2000 });
-	}).toPass();
-
+	await expectTooltip(page, step(page, 'compact', 'Published'), 'Published');
 	await page.mouse.move(0, 0);
 
 	// It is the same control: a click chooses, and the item saves the value.
@@ -751,27 +1172,22 @@ test('a step without a label is still named, to assistive technology and in a to
 	await expect(step(page, 'mixed', 'Start').locator('.st-label')).toBeVisible();
 	await expect(box(page, 'stage').locator('.st-label')).toHaveText(['Draft', 'In review', 'Approved', 'Published']);
 
-	// The mouse on a step without a label: its name as a tooltip. The app drops a tooltip which is still waiting
-	// whenever a component with a tooltip is drawn again, so the mouse comes back until it shows.
+	// The mouse on a step without a label: its name as a tooltip.
 	await mixed.scrollIntoViewIfNeeded();
+	await expectTooltip(page, step(page, 'mixed', 'b'), 'b');
 
-	await expect(async () => {
-		await page.mouse.move(0, 0);
-		await step(page, 'mixed', 'b').hover();
-		await expect(tooltip).toHaveText('b', { timeout: 2000 });
-	}).toPass();
-
-	// A step whose label shows in full has none.
+	// A step whose label shows in full has none: the tooltip of the app goes away, and that step never had one.
 	await step(page, 'mixed', 'Start').hover();
 	await expect(tooltip).toHaveCount(0);
-	await page.waitForTimeout(1000);
-	await expect(tooltip).toHaveCount(0);
+	await expectNoTooltip(step(page, 'mixed', 'Start'));
+	await expectNoTooltip(step(page, 'mixed', 'End'));
 
-	// The keyboard on a step without a label: the same tooltip, with the mouse out of the way.
+	// The keyboard on a step without a label: the same tooltip, with the mouse out of the way. Tab enters the track
+	// at its current step, which is such a step.
 	await page.mouse.move(0, 0);
 	await fieldOf(page, 'mixed').locator('button.field-name').focus();
 	await page.keyboard.press('Tab');
-	await expect(step(page, 'mixed', 'Start')).toBeFocused();
+	await expect(step(page, 'mixed', 'b')).toBeFocused();
 
 	await expect(async () => {
 		await page.keyboard.press('Home');
@@ -843,25 +1259,14 @@ test('a long label stays in its column on two lines, and shows in full as a tool
 	expect(await track(page, 'wordy').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 	await expectJoined(page, 'wordy');
 
-	// The label which was cut has the whole text as a tooltip. The app shows
-	// a tooltip half a second after the mouse arrives, and drops one which is
-	// still waiting whenever a component with a tooltip is drawn again
-	// (app/src/directives/tooltip.ts:29-50 in Directus 11.17.4), as happens while a page settles
-	// or scrolls: so the mouse comes back until the tooltip shows.
-	const tooltip = page.locator('#tooltip.visible');
+	// The label which was cut has the whole text as a tooltip.
 	await box(page, 'wordy').scrollIntoViewIfNeeded();
+	await expectTooltip(page, step(page, 'wordy', LONG_LABEL), LONG_LABEL);
 
-	await expect(async () => {
-		await page.mouse.move(0, 0);
-		await step(page, 'wordy', LONG_LABEL).hover();
-		await expect(tooltip).toHaveText(LONG_LABEL, { timeout: 2000 });
-	}).toPass();
-
-	// A label which shows in full has none: the tooltip of the app goes away and does not come back.
+	// A label which shows in full has none: the tooltip of the app goes away, and that step never had one.
 	await step(page, 'wordy', 'Short').hover();
-	await expect(tooltip).toHaveCount(0);
-	await page.waitForTimeout(1000);
-	await expect(tooltip).toHaveCount(0);
+	await expect(page.locator('#tooltip.visible')).toHaveCount(0);
+	await expectNoTooltip(step(page, 'wordy', 'Short'));
 });
 
 test('an icon name which is not an icon stays inside its marker', async ({ page }) => {
@@ -975,7 +1380,7 @@ test('a new item starts from the default value of the field', async ({ page }) =
 	await expect(edited(page)).toHaveCount(0);
 });
 
-test('the display shows pips and the label of the step in the table layout', async ({ page }) => {
+test('the display shows pips and the name of the step in the table layout', async ({ page }) => {
 	await page.goto(`/admin/content/${COLLECTION}`);
 
 	const row = page.locator('table tbody tr.table-row', { hasText: 'Untouched' });
@@ -1006,6 +1411,9 @@ test('the display shows pips and the label of the step in the table layout', asy
 	await expect(cell('year').locator('.sd-count')).toHaveText('12/12');
 	await expect(cell('year').locator('.steps-display')).toHaveText('12/12Dec');
 
+	// The count is told to assistive technology in the words of the pips, not as "12 slash 12".
+	await expect(cell('year').getByRole('img')).toHaveAccessibleName('Step 12 of 12');
+
 	// A value which is not a step shows as it is; a field without a value is left to the app.
 	await expect(cell('stray').locator('.steps-display')).toHaveText('archived');
 	await expect(pips('stray')).toHaveCount(0);
@@ -1023,14 +1431,19 @@ test('the display shows pips and the label of the step in the table layout', asy
 	expect(filled.height).toBe(6);
 	await expect(cell('stage').locator('.sd-pip.sd-filled').first()).toHaveCSS('background-color', await token(page, '--theme--primary'));
 	await expect(pips('stage').last()).not.toHaveCSS('background-color', await token(page, '--theme--primary'));
+
+	// A pip which is not filled is in the subdued colour of text, which shows on the page; the accent colour of the
+	// borders, which it had once, hardly does.
+	expect(await token(page, '--theme--foreground-subdued')).not.toBe(await token(page, '--theme--border-color-accent'));
+	await expect(pips('stage').last()).toHaveCSS('background-color', await token(page, '--theme--foreground-subdued'));
 });
 
-test('the display as plain text is the label of the step, in the titles of the calendar layout', async ({ page }) => {
+test('the display as plain text is the name of the step, in the titles of the calendar layout', async ({ page }) => {
 	await page.goto(`/admin/content/${COLLECTION}?bookmark=${calendar}`);
 
 	// The calendar renders its template to a string, for which the app asks the display of each field for text. The
 	// string field, the integer field whose steps hold text, the field of twelve steps and the field of the stock
-	// Dropdown give the label of their step; a value which is not a step gives itself, and an empty field nothing.
+	// Dropdown give the name of their step; a value which is not a step gives itself, and an empty field nothing.
 	const entry = page.locator('.fc-event', { hasText: 'Untouched' });
 	await expect(entry).toHaveCount(1);
 	await expect(entry).toHaveText('Untouched: In review | Medium | Dec | archived | Packed |');
@@ -1049,6 +1462,9 @@ test('the options form gives the steps of an integer field numbers', async ({ pa
 	// The drawer of one step: a text, a value which is a number input because the field is an integer, and an icon.
 	const value = dialogs.locator('.field[data-field="value"] input');
 	await expect(value).toHaveAttribute('type', 'number');
+
+	// Behind the drawer, the note of the list says which steps are left out, with the rule of an integer field.
+	await expect(dialogs.getByText('with a value which is not a whole number')).toHaveCount(1);
 	await dialogs.locator('.field[data-field="text"] input').fill('Seventh');
 	await value.fill('7');
 
@@ -1064,4 +1480,283 @@ test('the options form gives the steps of an integer field numbers', async ({ pa
 	await openItem(page, COLLECTION, id);
 	await expect.poll(() => states(page, 'fresh')).toEqual(['current']);
 	await expect(step(page, 'fresh', 'Seventh')).toHaveAttribute('aria-current', 'step');
+});
+
+test('a track in a row of a stock Repeater shows the step of the row, and a click writes a number into the row', async ({ page, api }) => {
+	await api.patch(`/items/${ROWS}/${rows}`, { rows: ROW_VALUES });
+	await openItem(page, ROWS, rows);
+
+	// The rows are drawn by the display of the field: pips and the name of the step.
+	const list = page.locator('main .v-form .field[data-field="rows"] .v-list-item');
+	await expect(list).toHaveCount(2);
+	await expect(list.first().locator('.steps-display')).toHaveText('Planned');
+	await expect(list.first().locator('.sd-pip.sd-filled')).toHaveCount(2);
+	await expect(list.last().locator('.steps-display')).toHaveText('Shipped');
+
+	// The drawer of the first row: the track of its field, named after it, at the step of the row.
+	await list.first().click();
+	const drawer = page.locator('#dialog-outlet .v-drawer').last();
+	await expect(drawer.locator('.field[data-field="phase"]').getByRole('list', { name: 'Phase' })).toHaveCount(1);
+	await expect.poll(() => states(page, 'phase')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+	expect(await stops(page, 'phase')).toBe(1);
+
+	await step(page, 'phase', 'Building').click();
+	await expect.poll(() => states(page, 'phase')).toEqual(['done', 'done', 'current', 'upcoming']);
+
+	// The drawer is confirmed and the item saved: the row holds a number, and the other row is as it was.
+	await drawer.locator('header button').last().click();
+	await expect(page.locator('#dialog-outlet .v-drawer')).toHaveCount(0);
+	await expect(list.first().locator('.steps-display')).toHaveText('Building');
+
+	expect(await save(page, ROWS)).toEqual({ rows: [{ name: 'First', phase: 3 }, ROW_VALUES[1]] });
+
+	const stored = (await api.get(`/items/${ROWS}/${rows}`)).rows;
+	expect(stored).toEqual([{ name: 'First', phase: 3 }, ROW_VALUES[1]]);
+	expect(typeof stored[0].phase).toBe('number');
+});
+
+test('under a contrast theme of the system the states of the track and the pips of the display are still told apart', async ({ page }) => {
+	await page.emulateMedia({ forcedColors: 'active' });
+	await openItem(page, COLLECTION, still);
+	await expect.poll(() => states(page, 'stage')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+
+	// Chromium's emulation of the mode has colours of its own. So no colour is written here: what is painted is
+	// compared with the ground it stands on, and one state with another.
+	const ground = await box(page, 'stage').evaluate((element) => getComputedStyle(element).backgroundColor);
+
+	// A colour shows when it is not the one it lies on and not see-through, which is `rgba()` with a last part of 0.
+	const shows = (color: string, on = ground) => color !== on && !/^rgba\(.*,\s*0\)$/.test(color);
+
+	/** How each step of a field is painted: its marker, the label under it and the line after it. */
+	const painted = (name: string) =>
+		box(page, name)
+			.locator('.st-step')
+			.evaluateAll((items) =>
+				items.map((item) => {
+					const marker = item.querySelector('.st-marker')!;
+					const style = getComputedStyle(marker);
+					const label = item.querySelector('.st-label');
+					const line = getComputedStyle(item, '::after');
+					const bounds = marker.getBoundingClientRect();
+
+					return {
+						fill: style.backgroundColor,
+						text: style.color,
+						ring: style.borderTopColor,
+						ringWidth: parseFloat(style.borderTopWidth),
+						strength: style.opacity,
+						size: `${bounds.width} by ${bounds.height}`,
+						label: label ? getComputedStyle(label).color : null,
+						line: line.content === 'none' ? null : line.backgroundColor,
+						lineStrength: line.content === 'none' ? null : line.opacity,
+					};
+				}),
+			);
+
+	const stage = await painted('stage');
+	const [done, current, upcoming, last] = [stage[0]!, stage[1]!, stage[2]!, stage[3]!];
+
+	// A done step is filled, with a number which is not the colour of the fill. The mode takes a background in a
+	// colour of the theme away, and a done marker was then the ring an upcoming one is.
+	expect(shows(done.fill), `a done marker in ${done.fill} on ${ground}`).toBe(true);
+	expect(done.ring).toBe(done.fill);
+	expect(done.text).not.toBe(done.fill);
+
+	// The current and an upcoming step are rings, and the ring of the current one is twice as wide, in the colour
+	// of what is done. So the three states differ without any colour.
+	for (const hollow of [current, upcoming, last]) {
+		expect(hollow.fill).toBe(ground);
+		expect(shows(hollow.ring), `a ring in ${hollow.ring}`).toBe(true);
+		expect(shows(hollow.text), `a number in ${hollow.text}`).toBe(true);
+	}
+
+	expect(current.ringWidth).toBe(2 * upcoming.ringWidth);
+	expect(current.ring).toBe(done.fill);
+	expect(last.ringWidth).toBe(upcoming.ringWidth);
+
+	// The wider ring is inside the marker: every marker is as large as the others.
+	expect(new Set(stage.map((step) => step.size)).size).toBe(1);
+
+	// The lines are backgrounds too. The one after a done step is in the colour of its marker, the others show.
+	expect(done.line).toBe(done.fill);
+	expect(shows(current.line!), `a line in ${current.line}`).toBe(true);
+	expect(shows(upcoming.line!), `a line in ${upcoming.line}`).toBe(true);
+	expect(last.line).toBeNull();
+
+	// Chromium paints a plate in the colour of the page behind text in this mode, which would hide the number of a
+	// done step. The marker opts out of the mode, so every colour of it has to be set, for the mouse as well: the
+	// rules for hover would otherwise paint it in the colours of the theme.
+	await expect(step(page, 'stage', 'Draft').locator('.st-marker')).toHaveCSS('forced-color-adjust', 'none');
+
+	for (const [index, label] of [
+		[0, 'Draft'],
+		[2, 'Approved'],
+	] as const) {
+		await step(page, 'stage', label).hover();
+		await expect.poll(() => step(page, 'stage', label).evaluate((element) => element.matches(':hover'))).toBe(true);
+		expect((await painted('stage'))[index]).toEqual(stage[index]);
+	}
+
+	await page.mouse.move(0, 0);
+
+	// A read-only field: nothing is at half strength, which the mode is not for, and the number and the ring of a
+	// marker are in the colour the browser gives the label of a step which cannot be chosen.
+	const locked = await painted('locked');
+	expect(locked.map((step) => step.strength)).toEqual(['1', '1', '1', '1']);
+	expect(locked.map((step) => step.lineStrength)).toEqual(['1', '1', '1', null]);
+	expect(locked[0]!.fill).toBe(done.fill);
+	expect(locked[2]!.text).toBe(locked[2]!.label);
+	expect(locked[3]!.text).toBe(locked[3]!.label);
+	expect(locked[3]!.ring).toBe(locked[3]!.label);
+
+	// Without labels the ring is all which marks the current step. The ring of the keyboard focus round a marker is
+	// in a colour of the system as well, the one of what is done, and not in the primary colour of the theme.
+	const compact = await painted('compact');
+	expect(shows(compact[0]!.fill)).toBe(true);
+	expect(compact[1]!.ringWidth).toBe(2 * compact[2]!.ringWidth);
+
+	await fieldOf(page, 'compact').locator('button.field-name').focus();
+	await page.keyboard.press('Tab');
+	await expect(step(page, 'compact', 'In review')).toBeFocused();
+	await expect(step(page, 'compact', 'In review').locator('.st-marker')).toHaveCSS('outline-style', 'solid');
+	await expect(step(page, 'compact', 'In review').locator('.st-marker')).toHaveCSS('outline-color', done.fill);
+
+	// The thumb of the scrollbar is a background as well.
+	expect(shows(await track(page, 'year').evaluate((element) => getComputedStyle(element, '::-webkit-scrollbar-thumb').backgroundColor))).toBe(true);
+
+	// The display in the table. A pip is nothing but its background, so without rules of its own every pip was gone.
+	// A filled one is a dot, one which is not filled a ring, and both are as large as they are otherwise.
+	await page.goto(`/admin/content/${COLLECTION}`);
+
+	const cell = page.locator('table tbody tr.table-row', { hasText: 'Untouched' }).locator('td.cell:not(.select)').nth(COLUMNS.indexOf('stage'));
+	await expect(cell.locator('.sd-pip')).toHaveCount(4);
+
+	const paper = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+
+	const pips = await cell.locator('.sd-pip').evaluateAll((items) =>
+		items.map((item) => {
+			const style = getComputedStyle(item);
+			const bounds = item.getBoundingClientRect();
+
+			return {
+				filled: item.classList.contains('sd-filled'),
+				fill: style.backgroundColor,
+				ring: style.borderTopColor,
+				outline: `${style.borderTopWidth} ${style.borderTopStyle}`,
+				size: `${bounds.width} by ${bounds.height}`,
+			};
+		}),
+	);
+
+	expect(pips.map((pip) => pip.filled)).toEqual([true, true, false, false]);
+	expect(pips.map((pip) => pip.size)).toEqual(['6 by 6', '6 by 6', '6 by 6', '6 by 6']);
+	expect(pips.map((pip) => pip.outline)).toEqual(['1px solid', '1px solid', '1px solid', '1px solid']);
+
+	for (const pip of pips) {
+		expect(shows(pip.ring, paper), `a pip with an edge in ${pip.ring} on ${paper}`).toBe(true);
+		expect(shows(pip.fill, paper), `a pip filled with ${pip.fill} on ${paper}`).toBe(pip.filled);
+		if (pip.filled) expect(pip.ring).toBe(pip.fill);
+	}
+});
+
+test('in the dark theme the track and the display are painted from the dark tokens', async ({ browser, page }) => {
+	const NAMES = {
+		paper: '--theme--form--field--input--background',
+		faint: '--theme--form--field--input--background-subdued',
+		edge: '--theme--form--field--input--border-color',
+		text: '--theme--form--field--input--foreground',
+		quiet: '--theme--foreground-subdued',
+		primary: '--theme--primary',
+		tint: '--theme--primary-background',
+	};
+
+	const tokensOf = async (from: Page) =>
+		Object.fromEntries(await Promise.all(Object.entries(NAMES).map(async ([key, name]) => [key, await token(from, name)]))) as Record<
+			keyof typeof NAMES,
+			string
+		>;
+
+	// The tokens of the light theme, from the page of the administrator, to tell the dark ones from.
+	await openItem(page, COLLECTION, still);
+	const light = await tokensOf(page);
+
+	const session = await signedIn(browser, dark);
+
+	try {
+		const shown = session.page;
+		await openItem(shown, COLLECTION, still);
+		await expect(shown.locator('body')).toHaveClass(/dark/);
+		await expect.poll(() => states(shown, 'stage')).toEqual(['done', 'current', 'upcoming', 'upcoming']);
+
+		// It is another theme: the box, its border and both colours of text are not what they are in the light one.
+		const tokens = await tokensOf(shown);
+		for (const key of ['paper', 'faint', 'edge', 'text', 'quiet'] as const) expect(tokens[key], key).not.toBe(light[key]);
+
+		// The box of an input, with a done, a current and an upcoming step in the colours of this theme.
+		await expect(box(shown, 'stage')).toHaveCSS('background-color', tokens.paper);
+		await expect(box(shown, 'stage')).toHaveCSS('border-top-color', tokens.edge);
+
+		const done = step(shown, 'stage', 'Draft');
+		const current = step(shown, 'stage', 'In review');
+		const upcoming = step(shown, 'stage', 'Published');
+
+		await expect(done.locator('.st-marker')).toHaveCSS('background-color', tokens.primary);
+		await expect(done.locator('.st-marker')).toHaveCSS('color', tokens.paper);
+		await expect(done.locator('.st-label')).toHaveCSS('color', tokens.text);
+		await expect(current.locator('.st-marker')).toHaveCSS('background-color', tokens.tint);
+		await expect(current.locator('.st-label')).toHaveCSS('color', tokens.primary);
+		await expect(upcoming.locator('.st-marker')).toHaveCSS('color', tokens.quiet);
+		await expect(upcoming.locator('.st-marker')).toHaveCSS('border-top-color', tokens.edge);
+		await expect(upcoming.locator('.st-label')).toHaveCSS('color', tokens.text);
+
+		// A read-only field, and a value which is not a step.
+		await expect(box(shown, 'locked')).toHaveCSS('background-color', tokens.faint);
+		await expect(step(shown, 'locked', 'Draft').locator('.st-label')).toHaveCSS('color', tokens.quiet);
+		await expect(box(shown, 'stray').locator('.st-warning')).toHaveCSS('color', tokens.text);
+
+		// The display in the table: filled pips in the primary colour, the others in the subdued colour of this theme.
+		await shown.goto(`/admin/content/${COLLECTION}`);
+		const cell = shown.locator('table tbody tr.table-row', { hasText: 'Untouched' }).locator('td.cell:not(.select)').nth(COLUMNS.indexOf('stage'));
+		await expect(cell.locator('.sd-pip')).toHaveCount(4);
+		await expect(cell.locator('.sd-pip.sd-filled').first()).toHaveCSS('background-color', tokens.primary);
+		await expect(cell.locator('.sd-pip').last()).toHaveCSS('background-color', tokens.quiet);
+
+		session.quiet();
+	} finally {
+		await session.context.close();
+	}
+});
+
+test('for a user with another language the notice and the texts of the steps are in that language', async ({ browser, page }) => {
+	// The administrator reads English.
+	await openItem(page, COLLECTION, still);
+	await expect(box(page, 'worded').getByRole('button')).toHaveText(['1Draft', '2Published', '3Archived']);
+
+	const session = await signedIn(browser, german);
+
+	try {
+		const shown = session.page;
+		await openItem(shown, COLLECTION, still);
+
+		// The notice of a field without steps is the app's own string.
+		await expect(fieldOf(shown, 'bare').locator('.v-notice')).toHaveText('Keine Optionen verfügbar');
+
+		// Steps whose texts are strings of the app: labels and names in the language of the user.
+		await expect.poll(() => states(shown, 'worded')).toEqual(['current', 'upcoming', 'upcoming']);
+		await expect(box(shown, 'worded').getByRole('button')).toHaveText(['1Entwurf', '2Veröffentlicht', '3Archiviert']);
+		await expect(step(shown, 'worded', 'Entwurf')).toHaveAttribute('aria-current', 'step');
+
+		// The steps of the other fields are what was typed in, whoever reads them.
+		await expect(box(shown, 'stage').locator('.st-label')).toHaveText(['Draft', 'In review', 'Approved', 'Published']);
+
+		// The display names the step in that language too.
+		await shown.goto(`/admin/content/${COLLECTION}`);
+		const cell = shown.locator('table tbody tr.table-row', { hasText: 'Untouched' }).locator('td.cell:not(.select)').nth(COLUMNS.indexOf('worded'));
+		await expect(cell.locator('.steps-display')).toHaveText('Entwurf');
+		await expect(cell.getByRole('img')).toHaveAccessibleName('Step 1 of 3');
+
+		session.quiet();
+	} finally {
+		await session.context.close();
+	}
 });

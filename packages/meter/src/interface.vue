@@ -862,9 +862,12 @@ onBeforeUnmount(() => {
 //   inline colour would otherwise win against. A system colour is left as it
 //   is by the mode. Sizes, `grow` and `fade` are untouched: the track and the
 //   pieces are border boxes, so an outline changes no size.
-// - A browser prints no backgrounds unless it is asked to, so the root asks
-//   (`print-color-adjust: exact`, which is inherited, with the older name
-//   beside it): a printed form keeps its bars.
+// - A browser prints no backgrounds unless it is asked to, so the track and
+//   the row of pieces ask (`print-color-adjust: exact`, which is inherited,
+//   with the older name beside it): a printed form keeps its bars. The root
+//   does not ask: a browser which prints without backgrounds darkens light
+//   text for the white paper, and would leave the value text of the dark
+//   theme as light as it is on the screen.
 //
 // The package's AGENTS.md, "How it works", has the rest.
 </script>
@@ -930,6 +933,10 @@ onBeforeUnmount(() => {
 	justify-content: center;
 	min-block-size: var(--theme--form--field--input--height);
 	color: var(--theme--foreground);
+}
+
+.mt-track,
+.mt-strip {
 	-webkit-print-color-adjust: exact;
 	print-color-adjust: exact;
 }

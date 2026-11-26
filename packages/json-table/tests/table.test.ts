@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_COLUMNS, MAX_PARTS, MAX_ROWS } from '../src/table';
+import { MAX_COLUMNS, MAX_LEGEND, MAX_PARTS, MAX_ROWS, MAX_TABLE_PARTS } from '../src/table';
 import { accessReview, cell, cellProblem, example, packed, plain, problem, valid } from './helpers';
 
 const columns = (count: number) => Array.from({ length: count }, (_, index) => ({ text: `C${index}` }));
@@ -108,6 +108,62 @@ describe('the limits', () => {
 		);
 		expect(await cellProblem({}, { tall: { text: Array.from({ length: MAX_PARTS + 1 }, () => 'x') } })).toBe(
 			`shared["tall"].text has ${MAX_PARTS + 1} parts, and a cell can have at most ${MAX_PARTS}`,
+		);
+	});
+
+	test('a legend at the limit is whole, and one entry more is rejected, never cut', async () => {
+		const shared = { a: { icon: 'info', tip: 'A' } };
+		const legend = (count: number) => plain({ shared, columns: [], rows: [], legend: Array.from({ length: count }, () => 'a') });
+
+		expect((await valid(legend(MAX_LEGEND))).legend).toHaveLength(MAX_LEGEND);
+		expect(await problem(legend(MAX_LEGEND + 1))).toBe(`legend has ${MAX_LEGEND + 1} entries, and a table can have at most ${MAX_LEGEND}`);
+	});
+
+	test('a legend which is far too long is counted before any cell is checked, compressed or not', async () => {
+		const legend = Array.from({ length: 100_000 }, (_, index) => (index === 5 ? 7 : 'a'));
+		const table = { shared: { a: {} }, columns: [], rows: [], legend };
+
+		expect(await problem(plain(table))).toBe(`legend has 100000 entries, and a table can have at most ${MAX_LEGEND}`);
+		expect(await problem(packed(table))).toBe(`legend has 100000 entries, and a table can have at most ${MAX_LEGEND}`);
+	});
+
+	// A table of two-part cells, `wide` to a row, which has `parts` parts in all.
+	const twoParts = (parts: number, wide = 100) => {
+		const rows = Array.from({ length: parts / 2 / wide }, () => Array.from({ length: wide + 1 }, (_, index) => (index === 0 ? {} : 'pair')));
+
+		return { shared: { pair: { text: ['+1', '-1'] } }, columns: columns(wide + 1), rows };
+	};
+
+	test('the parts of all cells together have a limit: a table at it is whole', async () => {
+		const table = await valid(plain(twoParts(MAX_TABLE_PARTS)));
+
+		expect(table.rows.flat().filter((entry) => entry.lines).length * 2).toBe(MAX_TABLE_PARTS);
+	});
+
+	test('one cell of parts more is rejected, and the message says where the limit was passed', async () => {
+		const table = twoParts(MAX_TABLE_PARTS);
+		const rows = [...table.rows, [{ text: 'Last' }, { text: ['a', 'b'] }, ...columns(99).map(() => ({}))]];
+
+		expect(await problem(plain({ ...table, rows }))).toBe(
+			`rows[${table.rows.length}][1] brings the parts of all cells to more than ${MAX_TABLE_PARTS}, the most a table can have`,
+		);
+	});
+
+	test('a cell which is not a list of parts does not count, and neither does a list of one', async () => {
+		const table = twoParts(MAX_TABLE_PARTS);
+		const rows = [...table.rows, ...Array.from({ length: 200 }, () => columns(101).map((_, index) => ({ text: index % 2 ? 'plain' : ['one'] })))];
+
+		expect((await valid(plain({ ...table, rows }))).rows).toHaveLength(table.rows.length + 200);
+	});
+
+	test('the largest table of cells with ten parts each is rejected, where it used to freeze the page', async () => {
+		const ten = { text: Array.from({ length: MAX_PARTS }, (_, index) => index) };
+		const rows = Array.from({ length: MAX_ROWS }, () => columns(MAX_COLUMNS).map(() => 'ten'));
+		const table = { shared: { ten }, columns: columns(MAX_COLUMNS), rows };
+
+		// The first row of 200 cells has 2,000 parts, so the limit is passed in row 50.
+		expect(await problem(plain(table))).toBe(
+			`rows[50][0] brings the parts of all cells to more than ${MAX_TABLE_PARTS}, the most a table can have`,
 		);
 	});
 

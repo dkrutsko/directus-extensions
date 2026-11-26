@@ -1,18 +1,20 @@
 import { defineInterface } from '@directus/extensions-sdk';
 import InterfaceComponent from './interface.vue';
+import preview from './preview';
 
 /**
- * Builder (M2A) Viewable
+ * Builder (M2A) Viewable: the stock Builder (M2A) interface (`list-m2a`), in
+ * a wrapper which keeps the rows of a read-only field clickable. A click
+ * opens the item in the side drawer, where it can be read and not changed.
+ * `interface.vue` says how.
  *
- * A thin wrapper around the built-in `list-m2a` ("Builder (M2A)") interface.
- * The only behavioural difference is that items in the list remain clickable
- * when the field is read-only (field "Read-only" toggle, missing update
- * permission, batch mode, etc.), opening the related item in the side drawer
- * in view-only mode.
- *
- * The option list below mirrors the built-in interface one-to-one (same field
- * names, same `$t:` translation keys), plus one extra option controlling how
- * many items are listed while in view-only mode.
+ * The manifest and the options are those of the stock interface in Directus
+ * 11.17.4 (app/src/interfaces/list-m2a/index.ts:5-85): the same keys, the
+ * same defaults and the same `$t:` names. That is on purpose, and the one
+ * place where this package repeats what the app has. The wrapper hands the
+ * options to the stock component, which reads them by these keys, and a field
+ * must be able to go from one interface to the other and back with its stored
+ * options untouched. `viewLimit` is the one option of our own.
  */
 export default defineInterface({
 	id: 'list-m2a-viewable',
@@ -65,6 +67,27 @@ export default defineInterface({
 				default_value: 15,
 			},
 		},
+		// Ours, beside Per Page, which it stands in for while the field is
+		// read-only. The order of the options is not stored. With
+		// QUERY_LIMIT_MAX set, the API makes that maximum of -1
+		// (api/src/utils/sanitize-query.ts:38), and the app cuts a larger
+		// number down to it (app/src/composables/use-page-size.ts:27).
+		{
+			field: 'viewLimit',
+			name: 'Items Shown When Read-only',
+			type: 'integer',
+			meta: {
+				interface: 'input',
+				width: 'half',
+				options: {
+					min: -1,
+				},
+				note: 'Pagination is hidden while read-only. -1 lists all, up to QUERY_LIMIT_MAX.',
+			},
+			schema: {
+				default_value: -1,
+			},
+		},
 		{
 			field: 'allowDuplicates',
 			name: '$t:allow_duplicates',
@@ -74,19 +97,6 @@ export default defineInterface({
 			meta: {
 				interface: 'boolean',
 				width: 'half',
-			},
-		},
-		{
-			field: 'viewLimit',
-			name: 'Items Shown When Read-only',
-			type: 'integer',
-			meta: {
-				interface: 'input',
-				width: 'half',
-				note: 'Pagination is hidden while the field is read-only, so this many items are listed at once. Use -1 to list all items.',
-			},
-			schema: {
-				default_value: -1,
 			},
 		},
 		{
@@ -109,4 +119,5 @@ export default defineInterface({
 						},
 		},
 	],
+	preview,
 });

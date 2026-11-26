@@ -1,7 +1,8 @@
 // The part of the bundle which needs no Vue, DOM or Directus: what the
 // `choices` option comes to, which step a stored value is, what choosing a
-// step writes, and what the display shows. The interface and the display both
-// work from it, and the unit tests run it in Node.
+// step writes, which step has a tooltip and which is the tab stop, when the
+// track moves, and what the display shows. The interface and the display
+// both work from it, and the unit tests run it in Node.
 
 /** One step of the track, as `readSteps` hands it out. */
 export interface Step {
@@ -181,6 +182,36 @@ export function isCompact(steps: readonly Step[]): boolean {
 	return steps.length > 0 && steps.every((step) => step.label === null);
 }
 
+/**
+ * What the list of steps is called for assistive technology: the name of its
+ * field, which the form prints above the track but does not tie to it, so one
+ * track can be told from the next. "Steps" for a field without a name.
+ */
+export function trackName(fieldName: unknown): string {
+	return typeof fieldName === 'string' && fieldName.trim() !== '' ? fieldName : 'Steps';
+}
+
+/**
+ * What says whether two lists of steps are laid out alike: the keys and the
+ * labels, in their order. The form can hand the same options over as a new
+ * list with every change anywhere in it, and a track which is the same by
+ * this text has nothing to measure again.
+ */
+export function signatureOf(steps: readonly Step[]): string {
+	return JSON.stringify(steps.map((step) => [step.key, step.label]));
+}
+
+/**
+ * The tooltip of a step: its name, where the page does not show it in full.
+ * That is always so for a step without a label, and for one whose label is
+ * `cut`. A step which cannot be chosen has it as well: in a read-only field
+ * without labels nothing else says what its steps are.
+ */
+export function tooltipOf(step: Step | undefined, cut = false): string | null {
+	if (!step) return null;
+	return step.label === null || cut ? step.name : null;
+}
+
 /** The index of the step a value is, or -1. */
 export function indexOfValue(steps: readonly Step[], value: unknown, type?: unknown): number {
 	const key = keyOf(value, type);
@@ -236,6 +267,19 @@ export function focusTarget(key: string, index: number, count: number, rtl = fal
 	return null;
 }
 
+/**
+ * The one step of a track which the Tab key stops at, by its index, so the
+ * field is one stop in the form however many steps it has. While the focus
+ * is on a step (`focused`), it is that one, so the next Tab leaves the track.
+ * Otherwise it is the current step, and the first where there is none. -1 for
+ * a track without steps.
+ */
+export function tabStop(current: number, count: number, focused = -1): number {
+	if (count <= 0) return -1;
+	if (focused >= 0 && focused < count) return focused;
+	return current >= 0 && current < count ? current : 0;
+}
+
 /** The left and the right edge of something on the page, in pixels. */
 export interface Span {
 	start: number;
@@ -254,6 +298,33 @@ export function revealOffset(step: Span, view: Span, centred: boolean): number {
 	if (step.start < view.start) return step.start - view.start;
 	if (step.end > view.end) return step.end - view.end;
 	return 0;
+}
+
+/**
+ * Whether a click was made with the pointer, from the `detail` of its event:
+ * the number of clicks in a row. A click which Enter or Space made on a
+ * button counts none, and has no pointer to keep the step under.
+ */
+export function byPointer(detail: number): boolean {
+	return detail > 0;
+}
+
+/**
+ * Whether a track moves for its current step, and how. Steps are told by
+ * their keys: `current` is the step the value is at now, `shown` the one the
+ * track was last moved for, `pointed` the one which was last chosen with the
+ * pointer.
+ *
+ * - `null`: the track stays. There is no current step, or it is the one the
+ *   track already moved for. The form hands over nothing for a moment around
+ *   a save and then the same value again, which is no new step.
+ * - `'nearest'`: the step was chosen with the pointer and has to stay under
+ *   it, so the track moves no further than it takes to show the step whole.
+ * - `'centred'`: any other new current step goes to the middle of what shows.
+ */
+export function revealFor(current: string | null, shown: string | null, pointed: string | null): 'centred' | 'nearest' | null {
+	if (current === null || current === shown) return null;
+	return current === pointed ? 'nearest' : 'centred';
 }
 
 /**
@@ -284,6 +355,15 @@ export function progressText(value: unknown, interfaceOptions?: unknown, type?: 
 }
 
 /**
+ * Where the current step stands, in words, for assistive technology: the pips
+ * are a drawing and the count "5/12" would be read as "5 slash 12". `null`
+ * when the value is not a step.
+ */
+export function positionText(progress: Pick<Progress, 'position' | 'count'>): string | null {
+	return progress.position === null ? null : `Step ${progress.position} of ${progress.count}`;
+}
+
+/**
  * The display's `handler`, which the app calls where it renders a template to
  * a string instead of to components: the calendar layout, for one
  * (app/src/utils/render-string-template.ts:54-97 in Directus 11.17.4). It
@@ -293,11 +373,7 @@ export function progressText(value: unknown, interfaceOptions?: unknown, type?: 
  * text is the name the track and the display's component go by. A field
  * without a value has no text.
  */
-export function textHandler(
-	value: unknown,
-	_options?: unknown,
-	context?: { interfaceOptions?: unknown; field?: { type?: unknown } | null },
-): string | null {
+export function textHandler(value: unknown, _options?: unknown, context?: { interfaceOptions?: unknown; field?: { type?: unknown } | null }): string | null {
 	if (isEmpty(value)) return null;
 	return progressText(value, context?.interfaceOptions, context?.field?.type);
 }

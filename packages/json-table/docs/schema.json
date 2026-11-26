@@ -1,8 +1,8 @@
 {
 	"$schema": "https://json-schema.org/draft/2020-12/schema",
-	"$id": "https://raw.githubusercontent.com/dkrutsko/directus-extension-json-table/main/docs/schema.json",
+	"$id": "https://raw.githubusercontent.com/dkrutsko/directus-extensions/main/packages/json-table/docs/schema.json",
 	"title": "JSON Table value",
-	"description": "The value of a field which uses the JSON Table interface of directus-extension-json-table (format version 1). See docs/format.md. The schema checks the structure. The interface also checks what a schema cannot: that every row has as many cells as there are columns (or one), that every name is in `shared`, that no shared cell leads back to itself, and that a part does not use a shared cell which has parts.",
+	"description": "The value of a field which uses the JSON Table interface of directus-extension-json-table (format version 1). See docs/format.md. The schema checks the structure. The interface also checks what a schema cannot: that every row has as many cells as there are columns (or one), that every name is in `shared`, that no shared cell leads back to itself, that a chain of shared cells which use each other is at most 32 long, that a part does not use a shared cell which has parts, and that the cells have at most 100,000 parts between them.",
 	"oneOf": [
 		{ "type": "null" },
 		{ "$ref": "#/$defs/plainValue" },
@@ -62,6 +62,7 @@
 				"legend": {
 					"description": "Cells drawn under the table, each followed by its `tip`.",
 					"type": ["array", "null"],
+					"maxItems": 200,
 					"items": { "$ref": "#/$defs/cell" }
 				}
 			}

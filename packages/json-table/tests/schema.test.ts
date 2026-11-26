@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { describe, expect, test } from 'vitest';
-import { MAX_COLUMNS, MAX_PARTS, MAX_ROWS } from '../src/table';
+import { MAX_COLUMNS, MAX_LEGEND, MAX_PARTS, MAX_ROWS, MAX_TABLE_PARTS } from '../src/table';
 import { accessReview, example, hostile, pack, packed, parse, plain } from './helpers';
 
 /**
@@ -33,8 +33,8 @@ describe('docs/schema.json', () => {
 	});
 
 	test('accepts every way of leaving a field out', () => {
-		const everyNull = { use: null, text: null, icon: null, color: null, background: null, weight: null, italic: null, tip: null, link: null, break: null };
-		const value = plain({ shared: null, legend: null, columns: [everyNull, { text: [{ ...everyNull, background: undefined }] }], rows: [] });
+		const most = { use: null, text: null, icon: null, color: null, weight: null, italic: null, tip: null, link: null, break: null };
+		const value = plain({ shared: null, legend: null, columns: [{ ...most, background: null }, { text: [most] }], rows: [] });
 
 		expect(accepts(JSON.parse(JSON.stringify(value))), JSON.stringify(accepts.errors)).toBe(true);
 	});
@@ -69,17 +69,43 @@ describe('docs/schema.json', () => {
 		['one column too many', plain({ columns: columns(MAX_COLUMNS + 1), rows: [] })],
 		['one row too many', plain({ columns: columns(1), rows: Array.from({ length: MAX_ROWS + 1 }, () => [{}]) })],
 		['one part too many', cells({ text: Array.from({ length: MAX_PARTS + 1 }, () => 'x') })],
+		['one legend entry too many', plain({ columns: [], rows: [], legend: Array.from({ length: MAX_LEGEND + 1 }, () => ({})) })],
 	])('rejects %s, as the interface does', async (_name, value) => {
 		expect(accepts(value)).toBe(false);
 		expect((await parse(value)).kind).toBe('invalid');
+	});
+
+	test('accepts a table at every limit it states', () => {
+		const table = {
+			columns: columns(MAX_COLUMNS),
+			rows: Array.from({ length: MAX_ROWS }, () => [{ text: Array.from({ length: MAX_PARTS }, () => 'x') }]),
+			legend: Array.from({ length: MAX_LEGEND }, () => ({})),
+		};
+
+		expect(accepts(plain(table)), JSON.stringify(accepts.errors)).toBe(true);
+	});
+
+	test('states the limits of the validator, and no other', () => {
+		const { table, cellObject } = schema.$defs;
+
+		expect(table.properties.columns.maxItems).toBe(MAX_COLUMNS);
+		expect(table.properties.rows.maxItems).toBe(MAX_ROWS);
+		expect(table.properties.rows.items.maxItems).toBe(MAX_COLUMNS);
+		expect(table.properties.legend.maxItems).toBe(MAX_LEGEND);
+		expect(cellObject.properties.text.oneOf[1].maxItems).toBe(MAX_PARTS);
+		expect(JSON.stringify(schema).match(/"maxItems"/g)).toHaveLength(5);
 	});
 
 	test('leaves to the interface what a schema cannot check', async () => {
 		const wrongLength = plain({ columns: columns(3), rows: [[{}, {}]] });
 		const unknownName = cells('gained');
 		const loop = plain({ shared: { a: { use: 'a' } }, columns: [], rows: [] });
+		const links = Array.from({ length: 40 }, (_, index) => [`c${index}`, index ? { use: `c${index - 1}` } : {}]);
+		const chain = plain({ shared: Object.fromEntries(links), columns: [], rows: [] });
+		const pair = { text: ['a', 'b'] };
+		const manyParts = plain({ columns: columns(101), rows: Array.from({ length: MAX_TABLE_PARTS / 200 + 1 }, () => columns(101).map(() => pair)) });
 
-		for (const value of [wrongLength, unknownName, loop]) {
+		for (const value of [wrongLength, unknownName, loop, chain, manyParts]) {
 			expect(accepts(value)).toBe(true);
 			expect((await parse(value)).kind).toBe('invalid');
 		}

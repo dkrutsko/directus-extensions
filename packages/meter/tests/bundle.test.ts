@@ -112,6 +112,20 @@ describe('the styles of the components', () => {
 	});
 });
 
+describe('print', () => {
+	// The rule is inherited. On a root it would also reach the text, which a browser printing without backgrounds
+	// then no longer darkens for the paper: the text of the dark theme would be printed light on white.
+	test.each([
+		['interface.vue', ['.mt-track', '.mt-strip']],
+		['display.vue', ['.md-track', '.md-strip']],
+	] as const)('%s asks for exact colours on its bar, and nowhere else', (component, bar) => {
+		const rules = [...styleOf(component).matchAll(/([^{}]+)\{[^{}]*\bprint-color-adjust:\s*exact;[^{}]*\}/g)];
+		const selectors = rules.flatMap((rule) => rule[1]!.split(',').map((selector) => selector.trim()));
+
+		expect(selectors).toEqual(bar);
+	});
+});
+
 describe('the built bundle', () => {
 	test('holds no comment: not from a style block, and not from anywhere else', (context) => {
 		if (!existsSync(BUNDLE)) {

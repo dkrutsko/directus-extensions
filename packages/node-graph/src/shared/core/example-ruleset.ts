@@ -189,7 +189,7 @@ export const exampleRuleset: Ruleset = {
 			label: 'Notify',
 			icon: 'notifications',
 			category: 'Actions',
-			description: 'Sends a message by email or Slack. Can be triggered by an escalation.',
+			description: 'Sends a message by email or chat. Can be triggered by an escalation.',
 			titleTemplate: 'Notify via {{channel}}',
 			fields: [
 				{
@@ -202,7 +202,7 @@ export const exampleRuleset: Ruleset = {
 						options: {
 							choices: [
 								{ text: 'Email', value: 'email' },
-								{ text: 'Slack', value: 'slack' },
+								{ text: 'Chat', value: 'chat' },
 							],
 						},
 					},

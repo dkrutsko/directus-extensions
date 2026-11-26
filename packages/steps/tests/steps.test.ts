@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
 	MAX_PIPS,
+	byPointer,
 	chosen,
 	focusTarget,
 	indexOfValue,
@@ -9,13 +10,19 @@ import {
 	isInert,
 	keyOf,
 	labelsShown,
+	positionText,
 	progressOf,
 	progressText,
 	readSteps,
+	revealFor,
 	revealOffset,
+	signatureOf,
 	storedForm,
+	tabStop,
 	textHandler,
 	textOf,
+	tooltipOf,
+	trackName,
 	trackOf,
 } from '../src/steps';
 
@@ -94,7 +101,14 @@ describe('the steps of a field', () => {
 	});
 
 	test('on an integer field spaces around a number do not matter', () => {
-		const steps = readSteps([{ text: 'Spaced', value: ' 3 ' }, { text: 'Tabbed', value: '\t-4\n' }, { text: 'Plain', value: '5' }], 'integer');
+		const steps = readSteps(
+			[
+				{ text: 'Spaced', value: ' 3 ' },
+				{ text: 'Tabbed', value: '\t-4\n' },
+				{ text: 'Plain', value: '5' },
+			],
+			'integer',
+		);
 
 		expect(steps.map((step) => [step.name, step.value, step.key])).toEqual([
 			['Spaced', 3, '3'],
@@ -132,7 +146,14 @@ describe('the steps of a field', () => {
 	});
 
 	test('on a string field a number is kept as its text', () => {
-		const steps = readSteps([{ text: 'Three', value: 3 }, { text: 'Half', value: 1.5 }, { text: 'Word', value: 'abc' }], 'string');
+		const steps = readSteps(
+			[
+				{ text: 'Three', value: 3 },
+				{ text: 'Half', value: 1.5 },
+				{ text: 'Word', value: 'abc' },
+			],
+			'string',
+		);
 
 		expect(steps.map((step) => step.value)).toEqual(['3', '1.5', 'abc']);
 	});
@@ -146,7 +167,15 @@ describe('the steps of a field', () => {
 
 	test('a step is named by its text, or by its value when it has none', () => {
 		const steps = readSteps(
-			[{ text: 'Draft', value: 'a' }, { value: 'b' }, { text: null, value: 'c' }, { text: '', value: 'd' }, { text: '   ', value: 'e' }, { text: { en: 'F' }, value: 'f' }, { value: 7 }],
+			[
+				{ text: 'Draft', value: 'a' },
+				{ value: 'b' },
+				{ text: null, value: 'c' },
+				{ text: '', value: 'd' },
+				{ text: '   ', value: 'e' },
+				{ text: { en: 'F' }, value: 'f' },
+				{ value: 7 },
+			],
 			'string',
 		);
 
@@ -154,14 +183,23 @@ describe('the steps of a field', () => {
 	});
 
 	test('a step without a text has no label, only a name', () => {
-		const steps = readSteps([{ text: 'Draft', value: 'a' }, { value: 'b' }, { text: '', value: 'c' }, { text: '  ', value: 'd' }, { text: null, value: 5 }], 'string');
+		const steps = readSteps(
+			[{ text: 'Draft', value: 'a' }, { value: 'b' }, { text: '', value: 'c' }, { text: '  ', value: 'd' }, { text: null, value: 5 }],
+			'string',
+		);
 
 		expect(steps.map((step) => step.label)).toEqual(['Draft', null, null, null, null]);
 		for (const step of steps) expect(step.name).not.toBe('');
 	});
 
 	test('a text is trimmed, and a number is a text', () => {
-		const steps = readSteps([{ text: '  Draft  ', value: 'a' }, { text: 2024, value: 'b' }], 'string');
+		const steps = readSteps(
+			[
+				{ text: '  Draft  ', value: 'a' },
+				{ text: 2024, value: 'b' },
+			],
+			'string',
+		);
 
 		expect(steps.map((step) => step.name)).toEqual(['Draft', '2024']);
 		expect(steps.map((step) => step.label)).toEqual(['Draft', '2024']);
@@ -194,7 +232,13 @@ describe('the steps of a field', () => {
 	});
 
 	test('a key of an entry which once hid its label is ignored, like any key it does not know', () => {
-		const steps = readSteps([{ text: 'Draft', value: 'draft', showLabel: false }, { text: 'Done', value: 'done', showLabel: true }], 'string');
+		const steps = readSteps(
+			[
+				{ text: 'Draft', value: 'draft', showLabel: false },
+				{ text: 'Done', value: 'done', showLabel: true },
+			],
+			'string',
+		);
 
 		expect(steps.map((step) => step.label)).toEqual(['Draft', 'Done']);
 		expect(isCompact(steps)).toBe(false);
@@ -256,7 +300,10 @@ describe('the steps of a field', () => {
 	});
 
 	test('the option is not changed', () => {
-		const choices = [{ text: ' Draft ', value: '1', icon: '' }, { text: 'Again', value: 1 }];
+		const choices = [
+			{ text: ' Draft ', value: '1', icon: '' },
+			{ text: 'Again', value: 1 },
+		];
 		const before = JSON.stringify(choices);
 
 		readSteps(choices, 'integer');
@@ -312,7 +359,14 @@ describe('matching a value', () => {
 	});
 
 	test('the number 2 finds a step whose value is the text 2', () => {
-		const steps = readSteps([{ text: 'One', value: '1' }, { text: 'Two', value: '2' }, { text: 'Three', value: '3' }], 'integer');
+		const steps = readSteps(
+			[
+				{ text: 'One', value: '1' },
+				{ text: 'Two', value: '2' },
+				{ text: 'Three', value: '3' },
+			],
+			'integer',
+		);
 
 		expect(indexOfValue(steps, 2, 'integer')).toBe(1);
 		expect(indexOfValue(steps, '2', 'integer')).toBe(1);
@@ -355,7 +409,14 @@ describe('where a value stands in the steps', () => {
 	});
 
 	test('a number on a track of text values, and the other way around', () => {
-		const texts = readSteps([{ text: 'One', value: '1' }, { text: 'Two', value: '2' }, { text: 'Three', value: '3' }], 'integer');
+		const texts = readSteps(
+			[
+				{ text: 'One', value: '1' },
+				{ text: 'Two', value: '2' },
+				{ text: 'Three', value: '3' },
+			],
+			'integer',
+		);
 		const numbers = readSteps(numbered(3), 'integer');
 
 		expect(trackOf(texts, 2, 'integer').states).toEqual(['done', 'current', 'upcoming']);
@@ -414,7 +475,13 @@ describe('choosing a step', () => {
 	});
 
 	test('writes a number on an integer field, whatever the option holds', () => {
-		const [low, high] = readSteps([{ text: 'Low', value: '1' }, { text: 'High', value: '3' }], 'integer');
+		const [low, high] = readSteps(
+			[
+				{ text: 'Low', value: '1' },
+				{ text: 'High', value: '3' },
+			],
+			'integer',
+		);
 
 		expect(chosen(high!, 1, 'integer')).toBe(3);
 		expect(chosen(low!, 3, 'integer')).toBe(1);
@@ -483,6 +550,139 @@ describe('moving the focus', () => {
 	});
 });
 
+describe('the one tab stop of a track', () => {
+	test('it is the current step', () => {
+		expect(tabStop(0, 4)).toBe(0);
+		expect(tabStop(2, 4)).toBe(2);
+		expect(tabStop(3, 4)).toBe(3);
+	});
+
+	test('it is the first step where no step is the current one', () => {
+		expect(tabStop(-1, 4)).toBe(0);
+		expect(tabStop(-1, 1)).toBe(0);
+	});
+
+	test('while the focus is on a step it is that step, so the next Tab leaves the track', () => {
+		expect(tabStop(2, 4, 0)).toBe(0);
+		expect(tabStop(2, 4, 3)).toBe(3);
+		expect(tabStop(-1, 4, 1)).toBe(1);
+		expect(tabStop(2, 4, 2)).toBe(2);
+	});
+
+	test('a focus on a step which is no longer there counts for nothing', () => {
+		expect(tabStop(2, 4, -1)).toBe(2);
+		expect(tabStop(2, 4, 4)).toBe(2);
+		expect(tabStop(-1, 4, 9)).toBe(0);
+	});
+
+	test('a current step beyond the track falls back to the first, and a track without steps has no stop', () => {
+		expect(tabStop(7, 4)).toBe(0);
+		expect(tabStop(0, 0)).toBe(-1);
+		expect(tabStop(-1, 0, 0)).toBe(-1);
+	});
+
+	test('exactly one step of a track is the stop, whatever the value and the focus', () => {
+		for (let count = 1; count <= 5; count++) {
+			for (let current = -1; current < count; current++) {
+				for (let focused = -1; focused < count; focused++) {
+					const stop = tabStop(current, count, focused);
+					const stops = Array.from({ length: count }, (_, index) => index === stop).filter(Boolean);
+
+					expect(stops).toHaveLength(1);
+				}
+			}
+		}
+	});
+});
+
+describe('the name of the list', () => {
+	test('it is the name of its field', () => {
+		expect(trackName('Status')).toBe('Status');
+		expect(trackName('Sign Off')).toBe('Sign Off');
+	});
+
+	test('a field without a name leaves it "Steps"', () => {
+		for (const name of [undefined, null, '', '   ', 7, {}, ['Status'], true]) expect(trackName(name)).toBe('Steps');
+	});
+});
+
+describe('the tooltip of a step', () => {
+	const [labelled, bare] = readSteps([{ text: 'Draft', value: 'draft' }, { value: 'review' }], 'string');
+	const [hidden] = readSteps([{ text: 'Draft', value: 'draft' }], 'string', false);
+
+	test('a step without a label has its name as a tooltip', () => {
+		expect(tooltipOf(bare)).toBe('review');
+		expect(tooltipOf(bare, false)).toBe('review');
+		expect(tooltipOf(hidden)).toBe('Draft');
+	});
+
+	test('a step whose label shows in full has none', () => {
+		expect(tooltipOf(labelled)).toBeNull();
+		expect(tooltipOf(labelled, false)).toBeNull();
+	});
+
+	test('a step whose label is cut has its name', () => {
+		expect(tooltipOf(labelled, true)).toBe('Draft');
+		expect(tooltipOf(bare, true)).toBe('review');
+	});
+
+	test('no step, no tooltip', () => {
+		expect(tooltipOf(undefined)).toBeNull();
+		expect(tooltipOf(undefined, true)).toBeNull();
+	});
+});
+
+describe('what says that two lists of steps are laid out alike', () => {
+	test('the same options read twice give the same text, though not the same list', () => {
+		const first = readSteps(STAGES, 'string');
+		const second = readSteps(structuredClone(STAGES), 'string');
+
+		expect(second).not.toBe(first);
+		expect(signatureOf(second)).toBe(signatureOf(first));
+	});
+
+	test('a step more, a step less, another order, another value and another text each change it', () => {
+		const base = signatureOf(readSteps(STAGES, 'string'));
+		const changed = [
+			[...STAGES, { text: 'Archived', value: 'archived' }],
+			STAGES.slice(1),
+			[...STAGES].reverse(),
+			STAGES.map((stage, index) => (index === 1 ? { ...stage, value: 'checked' } : stage)),
+			STAGES.map((stage, index) => (index === 1 ? { ...stage, text: 'Being reviewed' } : stage)),
+		];
+
+		for (const choices of changed) expect(signatureOf(readSteps(choices, 'string'))).not.toBe(base);
+	});
+
+	test('labels switched off change it: there is nothing left to measure', () => {
+		expect(signatureOf(readSteps(STAGES, 'string', false))).not.toBe(signatureOf(readSteps(STAGES, 'string', true)));
+	});
+
+	test('what changes no label and no column leaves it alone: an icon, a key the track ignores', () => {
+		const base = signatureOf(readSteps(STAGES, 'string'));
+		const dressed = STAGES.map((stage) => ({ ...stage, icon: 'check', color: '#2ECDA7' }));
+
+		expect(signatureOf(readSteps(dressed, 'string'))).toBe(base);
+	});
+
+	test('a text cannot pass for two steps, nor a value for a text', () => {
+		const one = readSteps([{ text: 'a","b', value: 'x' }], 'string');
+		const two = readSteps(
+			[
+				{ text: 'a', value: 'x' },
+				{ text: 'b', value: 'y' },
+			],
+			'string',
+		);
+		const nameless = readSteps([{ value: 'a' }], 'string');
+		const named = readSteps([{ text: 'a', value: 'a' }], 'string');
+
+		expect(signatureOf(one)).not.toBe(signatureOf(two));
+		expect(signatureOf(nameless)).not.toBe(signatureOf(named));
+		expect(signatureOf([])).toBe('[]');
+	});
+});
+
 describe('a value as text', () => {
 	test('text stays, the rest is written out', () => {
 		expect(textOf('draft')).toBe('draft');
@@ -504,7 +704,7 @@ describe('a value as text', () => {
 });
 
 describe('the display', () => {
-	test('shows the label of the step and a pip per step, filled up to the current one', () => {
+	test('shows the name of the step and a pip per step, filled up to the current one', () => {
 		expect(progressOf('review', { choices: STAGES }, 'string')).toEqual({
 			text: 'In review',
 			position: 2,
@@ -517,7 +717,12 @@ describe('the display', () => {
 	});
 
 	test('matches as loosely as the interface', () => {
-		const options = { choices: [{ text: 'Low', value: '1' }, { text: 'High', value: '2' }] };
+		const options = {
+			choices: [
+				{ text: 'Low', value: '1' },
+				{ text: 'High', value: '2' },
+			],
+		};
 
 		expect(progressOf(2, options, 'integer').text).toBe('High');
 		expect(progressOf('2', { choices: numbered(3) }, 'string').text).toBe('Step 2');
@@ -609,7 +814,7 @@ describe('the display', () => {
 		expect(progressOf('sent', options, 'string')).toEqual({ text: 'Sent', position: 2, count: 2, pips: [true, true] });
 	});
 
-	test('as plain text it is the label, or the value when it is not a step', () => {
+	test('as plain text it is the name, or the value when it is not a step', () => {
 		expect(progressText('approved', { choices: STAGES }, 'string')).toBe('Approved');
 		expect(progressText(3, { choices: numbered(12) }, 'integer')).toBe('Step 3');
 		expect(progressText('archived', { choices: STAGES }, 'string')).toBe('archived');
@@ -617,8 +822,27 @@ describe('the display', () => {
 	});
 });
 
+describe('where the step stands, in words', () => {
+	test('position and count, for the pips and for the count alike', () => {
+		expect(positionText(progressOf('review', { choices: STAGES }, 'string'))).toBe('Step 2 of 4');
+		expect(positionText(progressOf(12, { choices: numbered(12) }, 'integer'))).toBe('Step 12 of 12');
+		expect(positionText({ position: 1, count: 1 })).toBe('Step 1 of 1');
+	});
+
+	test('a value which is not a step stands nowhere', () => {
+		expect(positionText(progressOf('archived', { choices: STAGES }, 'string'))).toBeNull();
+		expect(positionText(progressOf('draft', {}, 'string'))).toBeNull();
+	});
+});
+
 describe('the display as text, as the app asks for it', () => {
-	const options = { choices: [{ text: 'Low', value: '1' }, { text: 'Half', value: 1.5 }, { text: 'High', value: '02' }] };
+	const options = {
+		choices: [
+			{ text: 'Low', value: '1' },
+			{ text: 'Half', value: 1.5 },
+			{ text: 'High', value: '02' },
+		],
+	};
 
 	test('takes the choices from the options of the interface, not from its own', () => {
 		expect(textHandler('review', {}, { interfaceOptions: { choices: STAGES }, field: { type: 'string' } })).toBe('In review');
@@ -647,7 +871,12 @@ describe('the display as text, as the app asks for it', () => {
 	});
 
 	test('zero is a value', () => {
-		const zero = { choices: [{ text: 'None', value: 0 }, { text: 'One', value: 1 }] };
+		const zero = {
+			choices: [
+				{ text: 'None', value: 0 },
+				{ text: 'One', value: 1 },
+			],
+		};
 
 		expect(textHandler(0, {}, { interfaceOptions: zero, field: { type: 'integer' } })).toBe('None');
 		expect(isEmpty(0)).toBe(false);
@@ -658,6 +887,39 @@ describe('the display as text, as the app asks for it', () => {
 		expect(textHandler('draft')).toBe('draft');
 		expect(textHandler('draft', undefined, {})).toBe('draft');
 		expect(textHandler('draft', null, { interfaceOptions: null, field: null })).toBe('draft');
+	});
+});
+
+describe('whether the track moves for its current step', () => {
+	test('a step it has not moved for goes to the middle', () => {
+		expect(revealFor('review', null, null)).toBe('centred');
+		expect(revealFor('review', 'draft', null)).toBe('centred');
+	});
+
+	test('a step which was chosen with the pointer is only brought into view, so it stays under the pointer', () => {
+		expect(revealFor('review', 'draft', 'review')).toBe('nearest');
+		expect(revealFor('review', null, 'review')).toBe('nearest');
+	});
+
+	test('a step which another one was pointed at before goes to the middle', () => {
+		expect(revealFor('review', 'draft', 'approved')).toBe('centred');
+	});
+
+	test('the step it already moved for does not move it again, however it was chosen', () => {
+		expect(revealFor('review', 'review', null)).toBeNull();
+		expect(revealFor('review', 'review', 'review')).toBeNull();
+	});
+
+	test('no current step moves nothing: the form hands over nothing around a save, and then the same value', () => {
+		expect(revealFor(null, 'review', null)).toBeNull();
+		expect(revealFor(null, null, null)).toBeNull();
+		expect(revealFor(null, 'review', 'review')).toBeNull();
+	});
+
+	test('a click of the pointer counts its clicks, one made with Enter or Space counts none', () => {
+		expect(byPointer(1)).toBe(true);
+		expect(byPointer(2)).toBe(true);
+		expect(byPointer(0)).toBe(false);
 	});
 });
 
@@ -676,7 +938,12 @@ describe('bringing a step into view', () => {
 	});
 
 	test('a point on the visible part of a step is still on the step afterwards', () => {
-		for (const step of [{ start: 70, end: 142 }, { start: 370, end: 442 }, { start: 99, end: 171 }, { start: 329, end: 401 }]) {
+		for (const step of [
+			{ start: 70, end: 142 },
+			{ start: 370, end: 442 },
+			{ start: 99, end: 171 },
+			{ start: 329, end: 401 },
+		]) {
 			const offset = revealOffset(step, view, false);
 
 			// Every pixel of the step which showed before the move.

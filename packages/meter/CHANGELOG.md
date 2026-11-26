@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+
+- **Print from the dark theme.** The value text and the label of a meter were printed as light as they are on the screen, which can hardly be read on white paper. Only the bar now asks the browser to keep its colours, so the text is printed like the text beside it.
+
 ## 2.0.0
 
 ### Breaking

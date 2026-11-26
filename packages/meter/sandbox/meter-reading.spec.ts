@@ -620,6 +620,11 @@ test('for print the meter asks the browser to keep its colours, in the form and 
 		expect(await adjust(painted), what).toBe('exact');
 	}
 
+	// The text does not ask: a browser which prints without backgrounds darkens light text for the paper, and would
+	// leave the text of the dark theme as light as it is on the screen.
+	expect(await adjust(meter(page, 'plain')), 'the root').toBe('economy');
+	expect(await adjust(text(page, 'plain')), 'the value text').toBe('economy');
+
 	await page.emulateMedia({ media: null });
 	await page.goto(`/admin/content/${COLLECTION}?bookmark=${bookmarks.looks}`);
 	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
@@ -637,6 +642,7 @@ test('for print the meter asks the browser to keep its colours, in the form and 
 	const plain = table(page, COLUMNS);
 	expect(await adjust(plain.bar('First', 'plain'))).toBe('exact');
 	expect(await adjust(plain.part('First', 'plain'))).toBe('exact');
+	expect(await adjust(page.locator('table tbody .meter-display')), 'the root of the display').toBe('economy');
 });
 
 test('in the dark theme the track, the fill and a faded piece are painted from the dark tokens', async ({ browser, page }) => {

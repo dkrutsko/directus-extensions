@@ -16,13 +16,28 @@
 
 export const VERSION = 1;
 
-// Limits. A table beyond one of the first three is rejected, and not cut, so
-// that nothing is ever left out without a word: the part left out could be
-// the totals. Text beyond the last is cut, and then ends in three dots.
+// Limits. A table beyond one of them is rejected, and not cut, so that nothing
+// is ever left out without a word: the part left out could be the totals. Only
+// text beyond MAX_TEXT_LENGTH is cut, and then ends in three dots.
 export const MAX_COLUMNS = 200;
 export const MAX_ROWS = 1000;
 export const MAX_PARTS = 10;
 export const MAX_TEXT_LENGTH = 200;
+
+// The legend explains a handful of cells. Without a limit a value of a few
+// hundred bytes, compressed, could ask for a million entries, each of which is
+// drawn.
+export const MAX_LEGEND = 200;
+
+// The parts of all cells together. The limits above allow 200,000 cells of 10
+// parts each, and every part is at least two elements in the page. A cell
+// which is not a list of parts does not count.
+export const MAX_TABLE_PARTS = 100_000;
+
+// How long a chain of shared cells may be, each building on the next with
+// `use`. Each step is a call inside a call, so a chain of thousands would run
+// out of stack; no table needs more than a few.
+export const MAX_SHARED_DEPTH = 32;
 
 // The most a compressed table may be, packed or unpacked. A few bytes of gzip
 // can unpack to gigabytes, so the unpacking stops here. For comparison, Directus
@@ -91,12 +106,13 @@ function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// Control characters would break the one-line layout, and the bidirectional
-// embedding, override and isolate characters can reorder the text around them
-// (a label could be made to read as something else). Letters of right-to-left
-// scripts are kept.
-const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/g;
-const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/g;
+// Control characters and the line and paragraph separators (U+2028, U+2029)
+// would break the one-line layout. The bidirectional embedding, override and
+// isolate characters, and the marks which have a direction but no glyph
+// (U+200E, U+200F, U+061C), can reorder the text around them: a label could be
+// made to read as something else. Letters of right-to-left scripts are kept.
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+const BIDI_CONTROLS = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function cleanText(text: string): string {
 	return text.replace(CONTROL_CHARACTERS, ' ').replace(BIDI_CONTROLS, '');
@@ -146,10 +162,16 @@ interface Shared {
 	// "constructor" is only ever a name.
 	entries: Map<string, unknown>;
 	layers: Map<string, Layer>;
+	// The length of the longest chain of `use` which starts at each name.
+	depths: Map<string, number>;
+	// The deepest shared cell which the entry being worked out has used so far.
+	deepest: number;
 	// One cell per name, so every use of a name is the same object.
 	cells: Map<string, Cell>;
 	// The names being worked out, to catch an entry which leads back to itself.
 	open: string[];
+	// The parts of the cells checked so far (MAX_TABLE_PARTS).
+	parts: number;
 }
 
 function readText(text: unknown, path: string, expected = 'a string or a number'): string | null {
@@ -297,7 +319,11 @@ function readPart(entry: unknown, path: string, shared: Shared): Layer {
 // The fields of the shared cell `name`. `path` is where the name was used.
 function sharedLayer(name: string, path: string, shared: Shared): Layer {
 	const known = shared.layers.get(name);
-	if (known) return known;
+
+	if (known) {
+		shared.deepest = Math.max(shared.deepest, shared.depths.get(name) ?? 1);
+		return known;
+	}
 
 	if (!shared.entries.has(name)) fail(`${path} is ${quote(name)}, which is not a name in shared`);
 
@@ -312,11 +338,28 @@ function sharedLayer(name: string, path: string, shared: Shared): Layer {
 	const entryPath = `shared[${quote(name)}]`;
 	if (!isObject(entry)) fail(`${entryPath} must be an object`);
 
+	// A chain is too long whichever end it is read from. Read from its start,
+	// the names pile up in `open` before any length is known; read from its
+	// end, each entry is one longer than the one it uses. Both stop at the same
+	// length, so the order of the names in `shared` does not matter.
+	const tooLong = (start: string) =>
+		fail(`shared[${quote(start)}] starts a chain of more than ${MAX_SHARED_DEPTH} shared cells, each using the next`);
+
+	if (shared.open.length >= MAX_SHARED_DEPTH) tooLong(shared.open[0] ?? name);
+
+	const outer = shared.deepest;
+	shared.deepest = 0;
+
 	shared.open.push(name);
 	const layer = readFields(entry, entryPath, shared, false);
 	shared.open.pop();
 
+	const depth = shared.deepest + 1;
+	if (depth > MAX_SHARED_DEPTH) tooLong(name);
+
 	shared.layers.set(name, layer);
+	shared.depths.set(name, depth);
+	shared.deepest = Math.max(outer, depth);
 
 	return layer;
 }
@@ -383,24 +426,43 @@ function toCell(layer: Layer): Cell {
  * which gives the same object back for every use of the name.
  */
 function parseCell(entry: unknown, path: string, shared: Shared): Cell {
+	let cell: Cell | undefined;
+
 	if (typeof entry === 'string') {
-		let cell = shared.cells.get(entry);
+		cell = shared.cells.get(entry);
 
 		if (!cell) {
 			cell = toCell(sharedLayer(entry, path, shared));
 			shared.cells.set(entry, cell);
 		}
+	} else {
+		if (!isObject(entry)) fail(`${path} must be an object or the name of a shared cell`);
 
-		return cell;
+		cell = toCell(readFields(entry, path, shared, false));
 	}
 
-	if (!isObject(entry)) fail(`${path} must be an object or the name of a shared cell`);
+	// Every use of a shared cell counts: each is drawn.
+	if (cell.lines) {
+		for (const line of cell.lines) shared.parts += line.length;
 
-	return toCell(readFields(entry, path, shared, false));
+		if (shared.parts > MAX_TABLE_PARTS) {
+			fail(`${path} brings the parts of all cells to more than ${MAX_TABLE_PARTS}, the most a table can have`);
+		}
+	}
+
+	return cell;
 }
 
 function parseShared(table: Record<string, unknown>): Shared {
-	const shared: Shared = { entries: new Map(), layers: new Map(), cells: new Map(), open: [] };
+	const shared: Shared = {
+		entries: new Map(),
+		layers: new Map(),
+		depths: new Map(),
+		deepest: 0,
+		cells: new Map(),
+		open: [],
+		parts: 0,
+	};
 	const entries = table['shared'];
 
 	if (entries === undefined || entries === null) return shared;
@@ -428,6 +490,7 @@ function parseCells(entries: unknown[], path: string, shared: Shared): Cell[] {
 function checkTable(table: Record<string, unknown>): ParseResult {
 	const columnEntries = requiredArray(table, 'columns');
 	const rowEntries = requiredArray(table, 'rows');
+	const legendEntries = table['legend'] === undefined || table['legend'] === null ? [] : requiredArray(table, 'legend');
 	const width = columnEntries.length;
 
 	// Counted before any cell is checked, so a table which is far too large
@@ -438,6 +501,10 @@ function checkTable(table: Record<string, unknown>): ParseResult {
 
 	if (rowEntries.length > MAX_ROWS) {
 		fail(`rows has ${rowEntries.length} rows, and a table can have at most ${MAX_ROWS}`);
+	}
+
+	if (legendEntries.length > MAX_LEGEND) {
+		fail(`legend has ${legendEntries.length} entries, and a table can have at most ${MAX_LEGEND}`);
 	}
 
 	const shared = parseShared(table);
@@ -455,10 +522,7 @@ function checkTable(table: Record<string, unknown>): ParseResult {
 		return parseCells(entry, path, shared);
 	});
 
-	const legend =
-		table['legend'] === undefined || table['legend'] === null
-			? []
-			: parseCells(requiredArray(table, 'legend'), 'legend', shared);
+	const legend = parseCells(legendEntries, 'legend', shared);
 
 	return { kind: 'valid', table: { columns, rows, legend } };
 }
@@ -550,6 +614,16 @@ async function unpack(data: string): Promise<Record<string, unknown>> {
 	let text = '';
 	let size = 0;
 
+	// The decoder throws on bytes which are not UTF-8, the reader on bytes
+	// which are not gzip. Each has a message of its own.
+	const decode = (chunk?: Uint8Array): string => {
+		try {
+			return chunk ? decoder.decode(chunk, { stream: true }) : decoder.decode();
+		} catch {
+			return fail('data does not unpack to UTF-8 text');
+		}
+	};
+
 	try {
 		for (;;) {
 			const { done, value } = await reader.read();
@@ -557,17 +631,19 @@ async function unpack(data: string): Promise<Record<string, unknown>> {
 
 			size += value.byteLength;
 
-			if (size > MAX_UNPACKED_BYTES) {
-				void reader.cancel().catch(() => undefined);
-				fail(`data unpacks to more than ${megabytes} MB`);
-			}
+			if (size > MAX_UNPACKED_BYTES) fail(`data unpacks to more than ${megabytes} MB`);
 
-			text += decoder.decode(value, { stream: true });
+			text += decode(value);
 		}
 
-		text += decoder.decode();
+		text += decode();
 	} catch (error) {
-		if (error instanceof ValidationError) throw error;
+		if (error instanceof ValidationError) {
+			// Stopped here on purpose, so the rest is not unpacked.
+			void reader.cancel().catch(() => undefined);
+			throw error;
+		}
+
 		fail('data is not valid gzip');
 	}
 

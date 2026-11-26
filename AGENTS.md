@@ -48,7 +48,7 @@ Add `-w packages/<name>` to a script to run it for one package, or run it in the
    - `.npmrc` pins the public npm registry. Every `resolved` URL in both lockfiles must start with `https://registry.npmjs.org/`; the only other entries are the links to the workspaces.
    - A lockfile must hold the optional dependencies of every platform, or `npm ci` fails on the runner. npm drops them when it updates a lockfile next to an existing `node_modules`. `npm run sync` checks both lockfiles for this; when it complains, delete that lockfile and the `node_modules` beside it and run `npm install` there (with Node 22 in `sandbox/`).
 6. **What is stored is public API.** The ids of interfaces, displays, hooks and other entries, the format of stored values and the keys of options live in the schemas and data of other people's projects. Never rename them; change formats only in ways which keep old values working.
-7. **Directus look.** Use only `--theme--*` tokens for colours, so light, dark and custom themes work, and Directus global components where one fits. Styles are scoped, or every rule sits under a root class of the package.
+7. **Directus look.** Use only `--theme--*` tokens for colours, so light, dark and custom themes work, and Directus global components where one fits. The one exception is a `@media (forced-colors: active)` block, which uses system colours, because the browser does not draw the theme's colours there. Styles are scoped, or every rule sits under a root class of the package.
 8. **App-only where possible.** The Marketplace installs app-only extensions under the default `MARKETPLACE_TRUST`; an API entry which is not sandboxed takes that away. Add one only when the extension needs it.
 
 ## Node versions
@@ -95,7 +95,7 @@ The sandbox has a folder "Demos" with a collection for each extension which has 
 - **An extension with options has a demo** in `packages/<name>/demo/demo.mjs` and a smoke test in `packages/<name>/sandbox/demo.spec.ts`. `packages/switch` is the model of an interface alone (a singleton), `packages/meter` of one with a display (items and a table), `packages/json-table` of a demo with a collection it needs (`supports`).
 - **A new or changed option gets a field in the demo, or is added to one.** The note under each field is written from its options. Keep the habits which `sandbox/README.md` lists, so the demos read as one. After a change run `npm run demo -- <name>` and the smoke test, and look at the form.
 - **The definition is the only source.** The sandbox builds the demo from it, and nothing done in the Data Studio is written back.
-- `list-m2a-viewable` has no demo: it has nothing to choose. A package made by `npm run new` has none yet either: add the two files, copied from the model which fits.
+- `list-m2a-viewable` has no demo: its one option of its own only matters on a read-only field with more items than a page. A package made by `npm run new` has none yet either: add the two files, copied from the model which fits.
 
 ## Known gaps
 

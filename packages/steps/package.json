@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-steps",
   "description": "Steps interface and display for Directus: a field with an ordered list of choices drawn as a clickable progress track, and a compact progress display for layouts",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",
@@ -61,7 +61,7 @@
     "validate": "directus-extension validate",
     "check": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "prepublishOnly": "npm run check && npm test && npm run build && npm run validate"
+    "prepublishOnly": "npm run check && npm run build && npm test && npm run validate"
   },
   "engines": {
     "node": ">= 22.0.0"

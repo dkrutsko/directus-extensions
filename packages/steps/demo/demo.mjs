@@ -199,6 +199,12 @@ const STATES = [
 		readonly: true,
 		options: { choices: STAGES },
 	}),
+	track('locked_compact', 'Read-only, compact', {
+		note: 'No step can be chosen, and the name of each still shows as a tooltip when the mouse rests on it.',
+		width: 'half',
+		readonly: true,
+		options: { choices: STAGES, showLabels: false },
+	}),
 	track('unset', 'No value', {
 		note: 'Every item holds `null` here, so no step is current. The track never writes `null`: **Clear Value** in the menu of the label of the field does.',
 		width: 'half',
@@ -258,7 +264,16 @@ const PLACES = [
 	['No value', null],
 ];
 
-/** The values of the steps a field draws: those with a value which no earlier step has, and on an integer field only whole numbers. */
+/**
+ * The values of the steps a field draws: those with a value which no earlier step has, and on an integer field only
+ * whole numbers.
+ *
+ * This is the demo's own reading of the choices, not `readSteps` of ../src/steps.ts, which is TypeScript and is not
+ * loaded here. It is looser in two ways: it does not trim a value, and on an integer field it takes whatever
+ * `Number()` makes a whole number of, so `'1e3'` and `'0x10'` would count here and be left out by the track. No
+ * field of the demo holds such a value. One which does needs this function brought into line first, or its items
+ * get a value for a step which is not drawn.
+ */
 function drawn({ type, meta }) {
 	const seen = new Set();
 	const values = [];
@@ -291,7 +306,9 @@ const LABELS_TEXT =
 
 const OTHERS_TEXT =
 	'Steps takes the options of the stock Dropdown, so a field can change between the two and keep its choices. ' +
-	'The other three hold options which only a schema written by hand can, and show what Steps makes of them.';
+	'The other three hold options the form of the options would mostly not write, and show what Steps makes of them: ' +
+	'text on an integer field, an entry without a value and an icon which does not exist need a schema written by hand, ' +
+	'while a value which an earlier step already has can be typed in.';
 
 export default collection('demo_steps', {
 	name: 'Steps',

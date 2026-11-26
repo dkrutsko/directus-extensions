@@ -100,7 +100,7 @@ The hook does not see writes made with `emitEvents: false`, direct SQL, content-
 
 ## Compatibility
 
-Built and tested against Directus 11.17.4. The `host` range starts at 11.15.0, the first release with the `nonEditable` state the field row uses to stay clickable when read-only, but only 11.17.4 has been tested. The editor has been tested in Chrome only, not yet in Safari or Firefox, and not inside a nested M2A item drawer.
+Built and tested against Directus 11.17.4. The `host` range is `^11.15.0`, the range every extension of the repository declares, and no other version was tried. The editor has been tested in Chrome only, not yet in Safari or Firefox, and not inside a nested M2A item drawer.
 
 The stock drawer has no width option, so the editor widens it, and fits its body under the drawer's own palette section below 54rem, with unscoped CSS rules keyed on the drawer's internal class names (`#dialog-outlet .v-drawer`, `.content > .main`). Re-check them when upgrading Directus. Directus 12 renames several theme variables; the CSS lists the new names as fallbacks, but has not been run against 12.
 

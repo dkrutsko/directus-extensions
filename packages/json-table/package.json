@@ -1,7 +1,7 @@
 {
   "name": "directus-extension-json-table",
   "description": "Read-only table interface for Directus JSON fields: draws the field's value as a table with colours, icons, links, sticky rows and columns, and a legend",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "license": "MIT",
   "author": {
     "name": "David Krutsko",
@@ -45,7 +45,7 @@
     "validate": "directus-extension validate",
     "check": "vue-tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "vitest run",
-    "prepublishOnly": "npm run check && npm test && npm run build && npm run validate"
+    "prepublishOnly": "npm run check && npm run build && npm test && npm run validate"
   },
   "engines": {
     "node": ">= 22.0.0"

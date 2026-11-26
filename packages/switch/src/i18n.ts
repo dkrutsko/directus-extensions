@@ -3,7 +3,8 @@ import { getCurrentInstance } from 'vue';
 export type Translate = (key: string, fallback: string) => string;
 
 /**
- * The app's own translations, for the one text the switch shares with it.
+ * The app's own translations, for the two texts the switch shares with it:
+ * "Enabled" and "No value".
  *
  * The app installs vue-i18n in composition mode, which injects `$t` globally
  * (app/src/lang/index.ts:8-18 in Directus 11.17.4), so `$t` is on the app's

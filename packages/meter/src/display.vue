@@ -217,9 +217,10 @@ const rootStyle = computed(() => {
 // and what is laid over the piece which fades in are `Highlight`, whatever the
 // options and the thresholds say; they become border boxes for it, so no size
 // changes. A bar of two pixels is all outline, and is told from a filled one
-// by the colour alone. The root asks the browser to print its backgrounds
-// (`print-color-adjust: exact`, which is inherited), so a printed table keeps
-// its bars.
+// by the colour alone. The track and the row of pieces ask the browser to print
+// their backgrounds (`print-color-adjust: exact`, which is inherited), so a
+// printed table keeps its bars. The root does not ask, so the value text is
+// printed like the text beside it.
 </script>
 
 <template>
@@ -276,6 +277,10 @@ const rootStyle = computed(() => {
 	overflow: hidden;
 	white-space: nowrap;
 	vertical-align: middle;
+}
+
+.md-track,
+.md-strip {
 	-webkit-print-color-adjust: exact;
 	print-color-adjust: exact;
 }

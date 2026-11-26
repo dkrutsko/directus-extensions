@@ -13,8 +13,8 @@ describe('a table full of hostile text', () => {
 	test('is valid: the text is data, not a reason to refuse', async () => {
 		const table = await valid(plain(hostile()));
 
-		expect(table.columns).toHaveLength(17);
-		expect(table.rows).toHaveLength(19);
+		expect(table.columns).toHaveLength(18);
+		expect(table.rows).toHaveLength(20);
 	});
 
 	test('markup and template syntax are kept as text', async () => {
@@ -30,7 +30,14 @@ describe('a table full of hostile text', () => {
 
 		expect(texts.length).toBeGreaterThan(300);
 		expect(texts.every((text) => text.length <= MAX_TEXT_LENGTH)).toBe(true);
-		expect(texts.some((text) => /[\u0000-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/.test(text))).toBe(false);
+		expect(texts.some((text) => /[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u2028-\u202E\u2066-\u2069]/.test(text))).toBe(false);
+	});
+
+	test('marks without a glyph are gone, and the separators are spaces', async () => {
+		const table = await valid(plain(hostile()));
+
+		expect(table.columns[HOSTILE.marks]!.text).toBe('leftrightarabicline paragraph end');
+		expect(table.columns[HOSTILE.marks]!.tip).toBe('leftrightarabicline paragraph end');
 	});
 
 	test('a line break in text cannot start a line', async () => {

@@ -164,7 +164,7 @@ A meter in a form is edited wherever its field can be: not in a read-only field,
 - **Themes.** Colours come from the theme's tokens, so light, dark and custom themes work.
 - **Reduced motion.** The only animations are short ones of pieces which grow, fade in or lie under the pointer. None plays for a user who asked for less motion.
 - **Forced colours.** Under a contrast theme of the system the bar is drawn in the system's colours: an outline for the track, the highlight colour for what is filled.
-- **Print.** A printed form or table keeps its bars.
+- **Print.** A printed form or table keeps its bars, and the value text is printed like the text beside it.
 
 ## Compatibility
 

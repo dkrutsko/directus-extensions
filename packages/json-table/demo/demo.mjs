@@ -116,8 +116,7 @@ const TIMETABLE = wrap({
 		room('Workshop', 12, [_, _, REPAIR, REPAIR, REPAIR, _, _, CHESS, CHESS, _]),
 		aside('A free hour can be booked at the desk.'),
 	],
-	// A cell with a background and no text draws no swatch in the legend, so each entry shows an example.
-	legend: [STORY, BOOKS, YOGA, 'shut'],
+	legend: ['kids', 'club', 'course', 'shut'],
 });
 
 const COMPARISON = wrap({
@@ -455,7 +454,9 @@ const PINS = [
 		value: LOANS,
 	}),
 	sheet('pins_many', 'More than fits', {
-		note: 'A height under 320 counts as 320, and the ten pins asked for at each edge are cut back until they cover at most two thirds of the table.',
+		note:
+			'A height under 320 counts as 320, and the ten pins asked for at each edge are cut back ' +
+			'until the columns cover at most two thirds of the width, and the rows two thirds of the height.',
 		options: { maxHeight: 100, stickyLeft: 10, stickyRight: 10, stickyTop: 10, stickyBottom: 10 },
 		value: LOANS,
 	}),

@@ -154,7 +154,7 @@ describe('validateDocument: the example ruleset, rule by rule', () => {
 
 	test('no self loops', () => {
 		const issues = validateDocument(example, withEdges([edge('loop', 'n.next', 'n.in', 'flow')]));
-		expect(find(issues, 'self_loop')).toEqual([expect.objectContaining({ edgeId: 'loop', message: '"Notify via Slack" is connected to itself.' })]);
+		expect(find(issues, 'self_loop')).toEqual([expect.objectContaining({ edgeId: 'loop', message: '"Notify via Chat" is connected to itself.' })]);
 	});
 
 	test('cycles are allowed by the example', () => {
@@ -179,7 +179,7 @@ describe('validateDocument: the example ruleset, rule by rule', () => {
 	test('unknown edge types', () => {
 		const issues = validateDocument(example, withEdges([edge('x', 'n.next', 'no.in', 'warp')]));
 		expect(find(issues, 'unknown_edge_type')).toEqual([
-			expect.objectContaining({ edgeId: 'x', message: '"Notify via Slack" → "End: Rejected": the connection type "warp" is not defined.' }),
+			expect.objectContaining({ edgeId: 'x', message: '"Notify via Chat" → "End: Rejected": the connection type "warp" is not defined.' }),
 		]);
 	});
 

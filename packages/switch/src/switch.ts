@@ -1,6 +1,6 @@
 // The part of the interface which needs no Vue, DOM or Directus: what a value
-// means, what a toggle writes, and what the options come to. The unit tests
-// run it in Node.
+// means, what a toggle writes, when the switch is inert or dimmed, what it is
+// called and what the options come to. The unit tests run it in Node.
 
 /** What the switch shows. `unset` is a field which holds no answer yet. */
 export type State = 'on' | 'off' | 'unset';
@@ -25,6 +25,13 @@ export interface Options {
 	iconOff: string | null;
 	colorOn: string;
 	colorOff: string;
+}
+
+/** What the form says about whether the field can change. A missing flag is `false`. */
+export interface Flags {
+	disabled?: boolean;
+	nonEditable?: boolean;
+	loading?: boolean;
 }
 
 /** The knob and the track of one state. */
@@ -58,12 +65,16 @@ const THEME_COLOR = /^var\(--theme--[a-z0-9]+(?:--?[a-z0-9]+)*\)$/;
 
 /**
  * Which state a stored value is. A boolean field holds `true`, `false` or
- * `null`; anything else, which only a field of another type could hold, counts
- * by whether it is truthy.
+ * `null`. Anything else is a value which was written outside the app: a
+ * column without the `cast-boolean` special (SQLite hands back `0` and `1`),
+ * a row of a Repeater, an import. Such a value is on where Directus itself
+ * would read it as true, which is `true`, `1`, `'1'` and `'true'`
+ * (`toBoolean`, packages/utils/shared/to-boolean.ts:4-6 in Directus 11.17.4),
+ * and off otherwise, so `'false'` and `'0'` are not on because they are text.
  */
 export function stateOf(value: unknown): State {
 	if (value === null || value === undefined) return 'unset';
-	return value ? 'on' : 'off';
+	return value === true || value === 1 || value === '1' || value === 'true' ? 'on' : 'off';
 }
 
 /** What a toggle writes: always a boolean, and `true` for a field without an answer. */
@@ -72,8 +83,30 @@ export function toggled(value: unknown): boolean {
 }
 
 /** Whether the switch stays as it is: the form may not, or cannot yet, take a new value. */
-export function isInert(flags: { disabled?: boolean; nonEditable?: boolean; loading?: boolean }): boolean {
+export function isInert(flags: Flags): boolean {
 	return flags.disabled === true || flags.nonEditable === true || flags.loading === true;
+}
+
+/**
+ * Whether the switch is drawn at half strength: a field which is read-only.
+ * `nonEditable` is what the form sets in the comparison of revisions and
+ * versions, where the value is there to be read, so it wins over `disabled`.
+ * A form which is loading is inert but not dimmed, or every box would blink.
+ */
+export function isDimmed(flags: Flags): boolean {
+	return flags.disabled === true && flags.nonEditable !== true;
+}
+
+/**
+ * The name of the field, to be said in front of the label: with it, two
+ * switches which both show "Enabled" are still told apart. `null` where the
+ * form gives no name, and where the name says what the label says already.
+ */
+export function fieldNameFor(name: unknown, label: string): string | null {
+	const text = typeof name === 'string' ? name.trim() : '';
+	if (text === '') return null;
+
+	return text.toLowerCase() === label.trim().toLowerCase() ? null : text;
 }
 
 /** The label, trimmed. The switch always has one, since it is also its accessible name. */
