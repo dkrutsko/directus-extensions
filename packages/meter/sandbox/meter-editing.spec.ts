@@ -25,6 +25,7 @@ import {
 	openEdit,
 	optionsDialog,
 	pointAt,
+	refuseLock,
 	removeAll,
 	save,
 	seedEdit,
@@ -49,6 +50,9 @@ test.afterAll(async ({ api }) => {
 test.describe('a meter which can be edited', () => {
 	test.beforeEach(async ({ api, page }) => {
 		await api.patch(`/items/${EDIT}/${ids['Edit']}`, EDIT_VALUES);
+
+		// Without the pointer lock, in every headless browser alike. The test of the lock opens a page of its own.
+		await refuseLock(page);
 		await openEdit(page);
 		await expect(text(page, 'whole')).toHaveText('40%');
 	});
@@ -345,7 +349,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(line(page, 'rel')).toHaveClass(/mt-by-relative/);
 	});
 
-	// The relative method, step by step, for two browsers. The browser of these tests refuses to lock the pointer,
+	// The relative method, step by step, for two browsers. The pages of these tests refuse to lock the pointer,
 	// so there the meter works with a drag it has captured; the full browser grants the lock.
 	const relativeSteps = async (page: Page, locks: boolean) => {
 		const locked = () => page.evaluate(() => document.pointerLockElement !== null);
@@ -461,15 +465,15 @@ test.describe('a meter which can be edited', () => {
 	};
 
 	test('relative input: the press changes nothing, a drag changes the value by its distance times the sensitivity, and Shift is finer', async ({ page }) => {
-		// In the browser of these tests, which refuses the lock: a captured drag.
+		// In the pages of these tests, which refuse the lock: a captured drag.
 		expect(await line(page, 'rel').evaluate((element) => typeof element.requestPointerLock)).toBe('function');
 		await relativeSteps(page, false);
 		await expect(line(page, 'rel')).toHaveCSS('cursor', 'ew-resize');
 	});
 
 	test('relative input under a real pointer lock, in the full browser', async ({ playwright }) => {
-		// The browser of these tests never grants the lock, so the full browser is started for this, signed in as
-		// the pages of these tests are. Where it cannot be started, this test is skipped and says why.
+		// The headless browser of these tests has no lock which works, so the full browser is started for this, signed
+		// in as the pages of these tests are. Where it cannot be started, this test is skipped and says why.
 		let reason = '';
 		const browser = await playwright.chromium.launch({ channel: 'chromium' }).catch((error: unknown) => {
 			reason = String(error).split('\n')[0] ?? '';

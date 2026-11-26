@@ -161,7 +161,7 @@ Things which are easy to trip over:
 - **The app keeps a list of the keys which are down.** A `keydown` sent to an element without a `keyup` stays in it, and Ctrl+S no longer saves. `keyOn` sends both.
 - **Home, End, the Page keys and the space bar scroll the page** when no meter has the focus, and the scrolling goes on for a moment. Measure two boxes in one `evaluate`, not one after the other.
 - **A click anywhere on the label of a field opens the menu of the field.** It stays open and takes the next clicks; a second click on the label closes it, Escape does not.
-- **The pointer lock cannot be had in the headless browser of the tests.** The test of it starts the full browser (`channel: 'chromium'`).
+- **The headless browser of the tests has no pointer lock which works.** On macOS it refuses the lock. On Linux, where the Build workflow runs, it grants it and then reports movements which no pointer made, with no button held, and a relative drag ends at once. `refuseLock` makes the pages of the tests of editing refuse the lock on every system, and the test of the lock starts the full browser (`channel: 'chromium'`).
 - **A ratio which is emulated is not a real one.** `deviceScaleFactor` enlarges a page laid out in whole CSS pixels. `--force-device-scale-factor=2` at launch, with `viewport: null`, gives real device pixels.
 - **A finger can be driven:** a context with `hasTouch`, `page.touchscreen.tap`, and `Input.dispatchTouchEvent` through a CDP session for a finger which moves.
 - **A transition makes a size a moving target.** Read sizes with reduced motion emulated, and test the transition apart.

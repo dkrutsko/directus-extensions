@@ -29,6 +29,7 @@ import {
 	pixels,
 	pointAt,
 	readPieces,
+	refuseLock,
 	removeAll,
 	rgb,
 	seedEdit,
@@ -50,6 +51,9 @@ test.afterAll(async ({ api }) => {
 test.describe('the pieces of a meter which can be edited', () => {
 	test.beforeEach(async ({ api, page }) => {
 		await api.patch(`/items/${EDIT}/${ids['Edit']}`, EDIT_VALUES);
+
+		// Without the pointer lock, in every headless browser alike. The test of the lock opens a page of its own.
+		await refuseLock(page);
 		await openEdit(page);
 		await expect(text(page, 'whole')).toHaveText('40%');
 	});

@@ -1226,6 +1226,17 @@ export async function openEdit(page: Page) {
 	await expect(page.locator('.hydrating')).toHaveCount(0);
 }
 
+/**
+ * Makes the pages of a test refuse the pointer lock, as a browser may. The headless browser of the tests refuses it
+ * on macOS and grants it on Linux, where it then reports movements which no pointer made, with no button held. So
+ * a test of the relative method without the lock refuses it itself, and the lock is tested in the full browser.
+ * Call it before the page is opened.
+ */
+export const refuseLock = (page: Page) =>
+	page.addInitScript(() => {
+		Element.prototype.requestPointerLock = () => Promise.reject(new DOMException('Refused for the test.', 'NotSupportedError'));
+	});
+
 /** The colours across the middle of an element of the page, from left to right, each as text. */
 export async function across(page: Page, locator: Locator) {
 	await locator.scrollIntoViewIfNeeded();
