@@ -100,4 +100,5 @@ The sandbox has a folder "Demos" with a collection for each extension which has 
 ## Known gaps
 
 - Only Directus 11.17.4 is tested. The host range starts at 11.15.0, and Directus 12 has not been tried.
+- In the sandbox, Settings, Extensions fails from the second start, because the bundles `meter`, `steps` and `node-graph` each have an entry named like their folder, which a lookup in Directus cannot tell apart. The extensions load; `sandbox/README.md` ("Things which are easy to trip over") has the details. Do not name an entry of a new bundle like its package folder.
 - Nothing checks `template/` on its own: it is only known to work when an extension has just been created from it.
