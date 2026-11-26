@@ -172,6 +172,7 @@ A meter in a form is edited wherever its field can be: not in a read-only field,
 - **Browsers.** The browser tests run in Chromium, the engine of Chrome and Edge. Editing was not tried in Firefox or Safari, on a touch device or with a screen reader. Forced colours and print were tried as Chromium emulates them. Faded and blended colours need `color-mix()`, and a gradient in a right-to-left page needs `:dir()`.
 - **A stock Repeater.** A Meter can be the interface of a field of a Repeater, and the display can draw its rows.
 - **Coming from the stock Slider or Input.** Directus keeps the options of a field when its interface changes. A field which was a Slider keeps that Slider's limits and step, and the Meter uses them where its own are not set. A field which was an Input brings its `min`, `max` and, where one was set there, its `step` along: they are the Meter's own keys.
+- **Coming from the stock Formatted Value display.** Directus keeps the options of a display as well when the display of a field changes. A field whose display was Formatted Value keeps the prefix and the suffix which were set there, under the Meter's own keys: the Meter's display shows them with the formats `value` and `fraction`, and its options form shows them under Prefix and Suffix, where they can be changed.
 
 ## Limitations
 

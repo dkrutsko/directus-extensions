@@ -232,10 +232,11 @@ The display draws a bar 72px long and 8px high, and then the text, on one line. 
 
 ## Options of other interfaces
 
-Directus keeps the options of a field when its interface changes, so the Meter understands what two stock interfaces leave behind.
+Directus keeps the options of a field when its interface or its display changes, so the Meter understands what two stock interfaces and one stock display leave behind.
 
 - **The stock Slider:** `minValue` and `maxValue` are read as the limits wherever `min` and `max` are not set, by the interface and by the display. `stepInterval` is the step while `step` is empty.
 - **The stock Input:** `min`, `max` and `step` are the Meter's own keys, so they carry over as they are. The other options of the Input are not read.
+- **The stock Formatted Value display:** the app keeps the options of a display too when the display of a field changes. `prefix` and `suffix` are the Meter's own keys, so the Meter's display has what was set there, and draws it with `value` and `fraction`. Its other options are not read; its `format` is a boolean, which is why the Meter's key is `indicatorFormat`.
 - **A field which holds both pairs of limits** is drawn by `min` and `max`.
 
 ## The options forms

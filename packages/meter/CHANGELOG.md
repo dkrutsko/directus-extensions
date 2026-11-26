@@ -15,7 +15,7 @@
 - **Touch.** A tap or a sideways drag sets the value; a vertical one scrolls the page.
 - **A taller target.** A press a little above or below the track counts as a press on it.
 - **What is written** is a plain number on the steps, within the range, whole on an Integer or Big Integer field, and only where it differs from what the field holds.
-- **Prefix** and **Suffix** (`prefix`, `suffix`): text before and after the value text, joined on as typed. "$" gives "$4,200", " GB" gives "42 GB". A percentage has neither.
+- **Prefix** and **Suffix** (`prefix`, `suffix`): text before and after the value text, joined on as typed. "$" gives "$4,200", " GB" gives "42 GB". A percentage has neither. A field whose display was the stock Formatted Value keeps the prefix and the suffix it had there.
 - **Visualization** (`visualization`): "Contiguous" (one bar, the default), "Pills", "Segments", "Bars" or "Dots". All but the first cut the track into pieces which are each filled or not; the value text stays exact.
 - **Subdivisions** (`subdivisions`): how many pieces are wanted. Left empty, one for every unit of a whole range, or as many as fit. Where the number does not fit the width, fewer are drawn.
 - **Dots Layout** (`dotsLayout`): "Packed" from the start, or "Spread" from edge to edge.
