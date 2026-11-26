@@ -31,7 +31,7 @@ export default defineInterface({
 	recommendedDisplays: ['meter'],
 	options: ({ field }) => {
 		const stored: Record<string, unknown> = field?.meta?.options ?? {};
-		return optionFields({ minValue: stored['minValue'], maxValue: stored['maxValue'], stepInterval: stored['stepInterval'] }, false, field?.type);
+		return optionFields({ minValue: stored['minValue'], maxValue: stored['maxValue'], stepInterval: stored['stepInterval'] }, false, field?.type, field?.meta != null, stored);
 	},
 	preview,
 });

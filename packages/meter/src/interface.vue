@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
 import { useRatio } from './ratio';
-import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, largeScale, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, segmentValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
+import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, largeScale, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, pieceValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
 import type { Paint, Piece, PieceDrawing } from './meter';
 
 /**
@@ -14,11 +14,12 @@ import type { Paint, Piece, PieceDrawing } from './meter';
  *
  * In a field which can be edited the track is a slider: the pointer and the
  * keys set the value. In a field which cannot (`disabled`, which is what
- * read-only comes to, `nonEditable` or `loading`) it is the reading it was
- * before there was any editing: the same elements with the role `meter`, no
- * tab stop, no listener, no cursor, and nothing is ever emitted. It is not
- * dimmed either: a field which a flow keeps up to date is normally read-only,
- * and dimming it would dim nearly every meter.
+ * read-only comes to, `nonEditable` or `loading`), and where the input method
+ * is `none`, it is the reading it was before there was any editing: the same
+ * elements with the role `meter`, no tab stop, no listener, no cursor, and
+ * nothing is ever emitted. It is not dimmed either: a field which a flow
+ * keeps up to date is normally read-only, and dimming it would dim nearly
+ * every meter.
  *
  * The form passes `value`, `disabled`, `nonEditable`, `loading` and the
  * `type` of the field to every interface, the field's options as further
@@ -55,6 +56,8 @@ const props = defineProps<{
 	label?: unknown;
 	indicator?: unknown;
 	indicatorFormat?: unknown;
+	prefix?: unknown;
+	suffix?: unknown;
 	color?: unknown;
 	thresholds?: unknown;
 	visualization?: unknown;
@@ -138,7 +141,7 @@ const reach = computed(() =>
 );
 
 // Where the pointer is along the track while it drags the value, as a fraction of the range: by its place for the
-// `contiguous` method, and by the value before it goes to the grid for the `relative` one. Pieces which grow or fade
+// `position` method, and by the value before it goes to the grid for the `relative` one. Pieces which grow or fade
 // in are drawn from it, so they follow the pointer and not the steps the value takes, which for coarse steps are
 // one or two sizes on the way to a piece. The fill, the text and what is written stay those of the value. `null`
 // outside such a drag, and where nothing grows or fades in.
@@ -226,10 +229,12 @@ const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') :
 // Editing. Everything from here to the styles' notes is for a field which can
 // be edited, and none of it is reached in one which cannot: the template
 // binds the listeners, the tab stop and the role of a slider only while
-// `editable` holds, and `write` checks it once more.
-const editable = computed(() => canEdit(props));
-const editing = computed(() => readEditing(props, props.type));
+// `editable` holds, and `write` checks it once more. A meter whose input
+// method is `none` is one which cannot, by `canEdit`, and so needs no check of
+// its own anywhere below.
+const editing = computed(() => readEditing(props, props.type, options.value));
 const method = computed(() => inputMethod(editing.value, count.value, options.value));
+const editable = computed(() => canEdit(props, method.value));
 
 // How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it. Those are
 // drawn larger than regular (`largeScale`), by a transform like the one of pieces which grow: no box changes.
@@ -284,7 +289,7 @@ const positionOf = (x: number, at: ReturnType<typeof frame>) => (at.rtl ? at.box
 
 // Says where the pointer is to the pieces which grow or fade in (`exact`): a fraction of the range, or `null`.
 function follow(place: number | null) {
-	exact.value = place !== null && (look.value.grow > 0 || look.value.fade) && method.value !== 'segment' ? Math.min(1, Math.max(0, place)) : null;
+	exact.value = place !== null && (look.value.grow > 0 || look.value.fade) && method.value !== 'piece' ? Math.min(1, Math.max(0, place)) : null;
 }
 
 // The value under a point of the page, given by how far it is across the page, by the method of the meter.
@@ -292,7 +297,7 @@ function valueUnder(x: number, at: ReturnType<typeof frame>) {
 	const position = positionOf(x, at);
 
 	// By the piece: the value which leaves the pieces up to the pointer filled.
-	if (method.value === 'segment' && at.pieces.length) return segmentValue(filledAt(position, at.pieces), at.pieces.length, options.value, editing.value);
+	if (method.value === 'piece' && at.pieces.length) return pieceValue(filledAt(position, at.pieces), at.pieces.length, options.value, editing.value);
 
 	return snapValue(valueAtShare(shareAt(position, at.length), options.value), options.value, editing.value);
 }
@@ -325,7 +330,7 @@ interface Drag {
 function rest(x: number, y: number, touch: boolean, held = false) {
 	const element = line.value;
 
-	if (!editable.value || !element || touch || method.value !== 'segment') {
+	if (!editable.value || !element || touch || method.value !== 'piece') {
 		hover.value = 0;
 		return;
 	}
@@ -782,6 +787,25 @@ onBeforeUnmount(() => {
 //   gives. A transition which is under way when the next change comes is
 //   taken up by the browser from where it is. Nothing else has one. The form hands over `null` until the item
 //   has loaded, so any other transition would play on every page load.
+// - Everything above is painted with backgrounds, which a contrast theme of
+//   the system takes away (`forced-colors: active`): every background colour
+//   becomes that of the page and a gradient is dropped, so that nothing of a
+//   meter was left but its text. There the track and every piece which is not
+//   filled are an outline in the colour of text (`CanvasText`) around the
+//   colour of the page (`Canvas`), and the fill, a filled piece and what is
+//   laid over the piece which fades in are the system's `Highlight`: filled is
+//   told from not filled by the colour and, where a piece is wide enough for
+//   it, by solid against hollow. No value keeps its dashes, in `GrayText`.
+//   The handle is the page's colour with an outline of text, a pixel higher
+//   since the track has a border there, and the focus ring is `Highlight`.
+//   The colours of the options and of the thresholds give way to these: that
+//   is what the mode is for, and why the rules are `!important`, which an
+//   inline colour would otherwise win against. A system colour is left as it
+//   is by the mode. Sizes, `grow` and `fade` are untouched: the track and the
+//   pieces are border boxes, so an outline changes no size.
+// - A browser prints no backgrounds unless it is asked to, so the root asks
+//   (`print-color-adjust: exact`, which is inherited, with the older name
+//   beside it): a printed form keeps its bars.
 //
 // The package's AGENTS.md, "How it works", has the rest.
 </script>
@@ -847,6 +871,8 @@ onBeforeUnmount(() => {
 	justify-content: center;
 	min-block-size: var(--theme--form--field--input--height);
 	color: var(--theme--foreground);
+	-webkit-print-color-adjust: exact;
+	print-color-adjust: exact;
 }
 
 .mt-track {
@@ -1102,5 +1128,40 @@ onBeforeUnmount(() => {
 
 .mt-text::before {
 	content: '\200B';
+}
+
+@media (forced-colors: active) {
+	.mt-track,
+	.mt-part {
+		background-color: Canvas !important;
+		background-image: none !important;
+		border: 1px solid CanvasText;
+	}
+
+	.mt-fill,
+	.mt-on,
+	.mt-over {
+		background-color: Highlight !important;
+		background-image: none !important;
+	}
+
+	.mt-on {
+		border-color: Highlight;
+	}
+
+	.mt-empty .mt-track,
+	.mt-empty .mt-part {
+		border: 1px dashed GrayText;
+	}
+
+	.mt-handle {
+		inset-block-start: 0.0625rem;
+		background-color: Canvas;
+		border-color: CanvasText;
+	}
+
+	.meter .mt-live:focus-visible {
+		outline-color: Highlight;
+	}
 }
 </style>

@@ -39,6 +39,13 @@ const REPEATER_ROWS = [
 	{ name: 'Second', level: 1, share: 0.2, big: 100 },
 ];
 
+// A collection whose value texts have a prefix, a suffix or both, in the form and in a table.
+const UNITS = 'sandbox_meter_units';
+const UNIT_COLUMNS = ['title', 'cost', 'disk', 'budget', 'ratio', 'blank', 'own', 'speed', 'wordy', 'roomy'];
+
+// A suffix of forty characters, the space it starts with among them.
+const LONG_SUFFIX = ' litres per hundred kilometres travelled';
+
 /** A field on the Meter interface which can be edited: `field` without the read-only mark. */
 const live = (name: string, options: object | null = null, meta: object = {}, type = 'integer', schema: object = {}) =>
 	field(name, options, { readonly: false, ...meta }, type, schema);
@@ -115,7 +122,7 @@ const SCALE = {
 
 test.beforeAll(async ({ api }) => {
 	// The collection which points at the other has to go first.
-	await api.drop(OWNERS, WIDE, EDIT, REPEATER, COLLECTION);
+	await api.drop(OWNERS, WIDE, EDIT, REPEATER, UNITS, COLLECTION);
 
 	await api.post('/collections', {
 		collection: COLLECTION,
@@ -445,7 +452,7 @@ test.beforeAll(async ({ api }) => {
 			live('five', { visualization: 'pills', max: 5, indicatorFormat: 'fraction' }),
 			live('dots', { visualization: 'dots', max: 5, indicatorFormat: 'fraction' }),
 			live('hundred', { visualization: 'pills' }),
-			live('forced', { visualization: 'pills', input: 'segment' }),
+			live('forced', { visualization: 'pills', input: 'piece' }),
 			// By how far the pointer moves, at a sensitivity of 1 and of 2.
 			live('rel', { input: 'relative' }),
 			live('rel_fast', { input: 'relative', sensitivity: 2 }),
@@ -464,7 +471,7 @@ test.beforeAll(async ({ api }) => {
 			// Whole numbers in a range whose limits are not whole: 1 to 5 can be written of 0.5 to 5.5, and 0 to 10
 			// of 0 to 10.5. Five pills by the method chosen for them, and five filled by the piece all the same.
 			live('between', { min: 0.5, max: 5.5, visualization: 'pills', indicatorFormat: 'value' }),
-			live('between_seg', { min: 0.5, max: 5.5, visualization: 'pills', input: 'segment', indicatorFormat: 'value' }),
+			live('between_piece', { min: 0.5, max: 5.5, visualization: 'pills', input: 'piece', indicatorFormat: 'value' }),
 			live('beyond', { max: 10.5, indicatorFormat: 'value' }),
 			// Coloured by the place on the scale, and edited: one bar in steps and one which blends along the
 			// track, ten pills in steps and bars which blend.
@@ -491,7 +498,7 @@ test.beforeAll(async ({ api }) => {
 			// Five pieces for a range of five in tenths, so that a value can stand between two pieces: dots which
 			// grow, segments which grow and fade in and are filled by the piece, and pills which only fade in.
 			live('grow_dots', { visualization: 'dots', max: 5, step: 0.1, grow: 1, indicatorFormat: 'value' }, {}, 'float'),
-			live('grow_segments', { visualization: 'segments', max: 5, step: 0.1, grow: 1, fade: true, input: 'segment', color: GREEN, indicatorFormat: 'value' }, {}, 'float'),
+			live('grow_segments', { visualization: 'segments', max: 5, step: 0.1, grow: 1, fade: true, input: 'piece', color: GREEN, indicatorFormat: 'value' }, {}, 'float'),
 			live('fade_pills', { visualization: 'pills', max: 5, step: 0.1, fade: true, color: GREEN, indicatorFormat: 'value' }, {}, 'float'),
 			// Thin bars for a hundred whole numbers, fifty of them in half of the form, which grow and fade in.
 			live('grow_bars', { visualization: 'bars', subdivisions: 50, grow: 1, fade: true, color: GREEN }),
@@ -499,19 +506,29 @@ test.beforeAll(async ({ api }) => {
 			// and by how far it moves. A tenth of the track is one step, 34px in half of the form.
 			live('grow_coarse', { visualization: 'segments', subdivisions: 5, step: 10, grow: 1, fade: true, color: GREEN }),
 			live('grow_rel', { visualization: 'segments', subdivisions: 5, step: 10, grow: 1, input: 'relative' }),
-			// Grow as a number: eight dots of which up to three can be growing at once, and five whose option is
-			// still the switch it once was.
+			// Grow as a number: eight dots of which up to three can be growing at once.
 			live('grow_three', { visualization: 'dots', max: 8, step: 0.1, grow: 3, indicatorFormat: 'value' }, {}, 'float'),
-			live('grow_true', { visualization: 'dots', max: 5, step: 0.1, grow: true, indicatorFormat: 'value' }, {}, 'float'),
+			// A type which holds fractions, a range of 1 and no step: it is set in hundredths.
+			live('unit', { max: 1, indicatorFormat: 'value' }, {}, 'float'),
 			// A long ramp on thin bars: fifty bars for a hundred, up to four growing by the pieces and more by the pixels.
 			live('grow_four', { visualization: 'bars', subdivisions: 50, grow: 4 }),
 			// Forty bars for forty which grow and are filled by the piece: what is not filled is small, and the
 			// pieces up to the pointer are large.
 			live('near_bars', { visualization: 'bars', max: 40, grow: 2 }),
 			// Packed dots for a hundred, as many as fit, filled by the piece.
-			live('near_dots', { visualization: 'dots', input: 'segment' }),
+			live('near_dots', { visualization: 'dots', input: 'piece' }),
 			// The same spread from edge to edge: as many dots as packed, in other places.
-			live('near_spread', { visualization: 'dots', dotsLayout: 'spread', input: 'segment' }),
+			live('near_spread', { visualization: 'dots', dotsLayout: 'spread', input: 'piece' }),
+			// The input method "None": a reading in a field which can be edited. One bar and five pills, each
+			// beside the same meter in a read-only field.
+			live('off', { label: 'A caption', color: GREEN, input: 'none' }, { note: 'A note under a meter.' }),
+			field('off_locked', { label: 'A caption', color: GREEN, input: 'none' }, { note: 'A note under a meter.' }),
+			live('off_pills', { visualization: 'pills', max: 5, input: 'none' }),
+			field('off_pills_locked', { visualization: 'pills', max: 5, input: 'none' }),
+			// Five pills for 0 to 5 on a type which holds fractions: without a step a pill is a hundred steps, and
+			// with a step of 1 it is one.
+			live('stars', { visualization: 'pills', max: 5, indicatorFormat: 'value' }, {}, 'float'),
+			live('stars_whole', { visualization: 'pills', max: 5, step: 1, indicatorFormat: 'value' }, {}, 'float'),
 		],
 	});
 
@@ -538,7 +555,7 @@ test.beforeAll(async ({ api }) => {
 			offset: 1,
 			closing: 30,
 			between: 3,
-			between_seg: 3,
+			between_piece: 3,
 			beyond: 15,
 			flow_steps: 45,
 			flow_gradient: 45,
@@ -561,11 +578,17 @@ test.beforeAll(async ({ api }) => {
 			grow_coarse: 40,
 			grow_rel: 40,
 			grow_three: 3,
-			grow_true: 3.3,
+			unit: 0.5,
 			grow_four: 40,
 			near_bars: 24,
 			near_dots: 40,
 			near_spread: 40,
+			off: 40,
+			off_locked: 40,
+			off_pills: 3,
+			off_pills_locked: 3,
+			stars: 3,
+			stars_whole: 3,
 		})
 	).id;
 
@@ -583,6 +606,43 @@ test.beforeAll(async ({ api }) => {
 	});
 
 	ids['Repeater'] = (await api.post(`/items/${REPEATER}`, { rows: REPEATER_ROWS })).id;
+
+	await api.post('/collections', {
+		collection: UNITS,
+		meta: { icon: 'speed' },
+		schema: {},
+		fields: [
+			{ field: 'id', type: 'integer', schema: { is_primary_key: true, has_auto_increment: true }, meta: { hidden: true } },
+			{ field: 'title', type: 'string', schema: {}, meta: { interface: 'input', width: 'half' } },
+			// The value with a prefix, the fraction with a suffix, and the fraction with a prefix and a caption.
+			field('cost', { max: 10000, indicatorFormat: 'value', prefix: '$' }),
+			field('disk', { max: 100, indicatorFormat: 'fraction', suffix: ' GB' }),
+			field('budget', { max: 10000, indicatorFormat: 'fraction', prefix: '$', label: 'Spent' }),
+			// The percentage has neither, and so has a field without a value.
+			field('ratio', { prefix: '$', suffix: ' GB' }),
+			field('blank', { indicatorFormat: 'value', prefix: '$', suffix: ' GB' }),
+			// A suffix of the display's own: the prefix and the format are still the interface's.
+			field('own', { indicatorFormat: 'value', prefix: '$', suffix: ' GB' }, { display_options: { suffix: ' MB' } }),
+			// A stock Slider with our display, which has the format and the suffix itself.
+			{ field: 'speed', type: 'integer', schema: {}, meta: { interface: 'slider', display: 'meter', width: 'half', display_options: { indicatorFormat: 'value', suffix: ' km/h' } } },
+			// A long suffix: alone on its line in half of the form and in a narrow column, and beside a caption
+			// and in a wide column.
+			field('wordy', { indicatorFormat: 'value', suffix: LONG_SUFFIX }),
+			field('roomy', { indicatorFormat: 'value', suffix: LONG_SUFFIX, label: 'Fuel' }),
+			// One which can be edited, to hear what a slider says.
+			live('paid', { max: 10000, step: 100, indicatorFormat: 'value', prefix: '$' }),
+		],
+	});
+
+	await api.post('/presets', {
+		collection: UNITS,
+		layout: 'tabular',
+		layout_query: { tabular: { fields: UNIT_COLUMNS, sort: ['id'] } },
+		// Room for each text beside its bar, but for the long one in `wordy`.
+		layout_options: { tabular: { widths: { cost: 200, disk: 220, budget: 260, ratio: 160, blank: 120, own: 200, speed: 200, wordy: 150, roomy: 460 } } },
+	});
+
+	ids['Units'] = (await api.post(`/items/${UNITS}`, { title: 'Only', cost: 4200, disk: 42, budget: 4200, ratio: 42, blank: null, own: 42, speed: 42, wordy: 42, roomy: 42, paid: 4200 })).id;
 });
 
 const fieldOf = (page: Page, name: string) => page.locator(`main .v-form .field[data-field="${name}"]`);
@@ -2790,7 +2850,7 @@ const EDIT_VALUES = {
 	offset: 1,
 	closing: 30,
 	between: 3,
-	between_seg: 3,
+	between_piece: 3,
 	beyond: 15,
 	flow_steps: 45,
 	flow_gradient: 45,
@@ -2813,11 +2873,17 @@ const EDIT_VALUES = {
 	grow_coarse: 40,
 	grow_rel: 40,
 	grow_three: 3,
-	grow_true: 3.3,
+	unit: 0.5,
 	grow_four: 40,
 	near_bars: 24,
 	near_dots: 40,
 	near_spread: 40,
+	off: 40,
+	off_locked: 40,
+	off_pills: 3,
+	off_pills_locked: 3,
+	stars: 3,
+	stars_whole: 3,
 };
 
 /**
@@ -2829,6 +2895,287 @@ async function openEdit(page: Page) {
 	await expect(text(page, 'whole')).toBeVisible();
 	await expect(page.locator('.hydrating')).toHaveCount(0);
 }
+
+test('a prefix and a suffix are part of the value text in the form: before each number of a fraction, after the text, and never with a percentage', async ({ page }) => {
+	expect(LONG_SUFFIX.length).toBe(40);
+
+	await openItem(page, UNITS, ids['Units']!);
+	await expect(text(page, 'cost')).toHaveText('$4,200');
+
+	// The value has both around it, the fraction the prefix before each of its numbers and the suffix once. They
+	// are joined on as they were typed: the space of " GB" is the option's.
+	await expect(text(page, 'disk')).toHaveText('42 / 100 GB');
+	await expect(text(page, 'budget')).toHaveText('$4,200 / $10,000');
+	await expect(text(page, 'own')).toHaveText('$42 GB');
+
+	// A percentage has neither, and no value is a dash and nothing else.
+	await expect(text(page, 'ratio')).toHaveText('42%');
+	await expect(text(page, 'blank')).toHaveText('—');
+
+	// What assistive technology is told is the same text, for a meter and for a slider.
+	await expect(line(page, 'cost')).toHaveAttribute('aria-valuetext', '$4,200');
+	await expect(line(page, 'disk')).toHaveAttribute('aria-valuetext', '42 / 100 GB');
+	await expect(line(page, 'budget')).toHaveAttribute('aria-valuetext', '$4,200 / $10,000');
+	await expect(line(page, 'ratio')).toHaveAttribute('aria-valuetext', '42%');
+	await expect(line(page, 'blank')).toHaveAttribute('aria-valuetext', 'No value');
+	await expect(fieldOf(page, 'paid').getByRole('slider')).toHaveAttribute('aria-valuetext', '$4,200');
+	await expect(fieldOf(page, 'paid').getByRole('slider')).toHaveAttribute('aria-valuenow', '4200');
+
+	// It is text: one text node in the element of the number, which runs from the left.
+	expect(await text(page, 'cost').locator('> span').evaluate((element) => [element.childNodes.length, element.children.length, element.getAttribute('dir')])).toEqual([1, 0, 'ltr']);
+
+	// Editing changes the number, and what is around it stays.
+	await expect(page.locator('.hydrating')).toHaveCount(0);
+	await clickAt(page, 'paid', 0.5);
+	await expect(text(page, 'paid')).toHaveText('$5,000');
+
+	// A suffix of forty characters, in half of the form. The text is on one line, whole, inside its field, the
+	// track is across the field and the area is as high as that of any other meter: nothing breaks.
+	const number = text(page, 'wordy').locator('> span');
+	await expect(number).toHaveText(`42${LONG_SUFFIX}`);
+	expect(await shown(number)).toBe('whole');
+
+	const measure = (name: string) =>
+		fieldOf(page, name).evaluate((element) => {
+			const box = (selector: string) => element.querySelector(selector)!.getBoundingClientRect();
+			const [field, area, bar, words, digits] = [element.getBoundingClientRect(), box('.meter'), box('.meter > :first-child'), box('.mt-text'), box('.mt-text > span')];
+
+			return { field: field.width, area: area.height, bar: bar.width, words: words.height, lines: digits.height, inside: digits.left >= field.left - 0.5 && digits.right <= field.right + 0.5 && area.right <= field.right + 0.5 };
+		});
+
+	const plain = await measure('cost');
+	const long = await measure('wordy');
+	expect(long).toEqual({ ...plain, inside: true });
+	expect(long.area).toBe(54);
+	expect(long.words).toBe(20);
+	expect(long.bar).toBe(long.field);
+
+	// Beside a caption it keeps its line too: the caption is at the start, the text whole at the end.
+	expect(await shown(text(page, 'roomy').locator('> span'))).toBe('whole');
+	expect((await measure('roomy')).inside).toBe(true);
+	expect((await measure('roomy')).area).toBe(54);
+
+	// A field too narrow for it leaves the whole text out, and never shows a part of it; the track is still
+	// across the field and the area as high. What a screen reader is told still has it.
+	const needed = Math.ceil((await edges(number)).width);
+	expect(needed).toBeGreaterThan(200);
+	await squeeze(page, 'wordy', needed + 1);
+	expect(await shown(number)).toBe('whole');
+
+	for (const width of [needed - 2, needed - 40, 200, 120]) {
+		await squeeze(page, 'wordy', width);
+		expect(await shown(number), `${width}px`).toBe('none');
+
+		const narrow = await measure('wordy');
+		expect(narrow.area, `${width}px`).toBe(54);
+		expect(narrow.bar, `${width}px`).toBe(width);
+	}
+
+	await expect(line(page, 'wordy')).toHaveAttribute('aria-valuetext', `42${LONG_SUFFIX}`);
+	await squeeze(page, 'wordy', null);
+	expect(await shown(number)).toBe('whole');
+});
+
+test('a prefix and a suffix in the table: by the options of the interface, by the display\'s own, in the tooltip, and a long one left out whole where it does not fit', async ({ page }) => {
+	await page.goto(`/admin/content/${UNITS}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(1);
+
+	const units = table(page, UNIT_COLUMNS);
+	const said = (name: string) => units.cell('Only', name).getByRole('meter');
+
+	// Taken from the interface, like every other option: the value, the fraction, and neither for a percentage.
+	await expect(units.number('Only', 'cost')).toHaveText('$4,200');
+	await expect(units.number('Only', 'disk')).toHaveText('42 / 100 GB');
+	await expect(units.number('Only', 'budget')).toHaveText('$4,200 / $10,000');
+	await expect(units.number('Only', 'ratio')).toHaveText('42%');
+
+	// The display's own suffix with the interface's prefix and format; and a display on a stock Slider.
+	await expect(units.number('Only', 'own')).toHaveText('$42 MB');
+	await expect(units.number('Only', 'speed')).toHaveText('42 km/h');
+
+	// A field without a value has the dash of the app, and no meter.
+	await expect(units.display('Only', 'blank')).toHaveCount(0);
+	await expect(units.cell('Only', 'blank').locator('.null')).toHaveCount(1);
+
+	// The texts show whole, and what assistive technology and the tooltip have is the same text.
+	for (const name of ['cost', 'disk', 'budget', 'own', 'speed']) expect(await shown(units.number('Only', name)), name).toBe('whole');
+	await expect(said('cost')).toHaveAttribute('aria-valuetext', '$4,200');
+	await expect(said('disk')).toHaveAttribute('aria-valuetext', '42 / 100 GB');
+	await expect(said('own')).toHaveAttribute('aria-valuetext', '$42 MB');
+	await expectTooltip(page, units.display('Only', 'budget'), 'Spent: $4,200 / $10,000');
+	await expectTooltip(page, units.display('Only', 'disk'), '42 / 100 GB');
+
+	// A suffix of forty characters in a column of 150px: nothing of the text shows, the bar keeps its length,
+	// nothing is outside the cell and the row is as high as it would be. In a column with room for it, it is whole.
+	await expect(units.number('Only', 'wordy')).toHaveText(`42${LONG_SUFFIX}`);
+	expect(await shown(units.number('Only', 'wordy'))).toBe('none');
+	expect((await edges(units.bar('Only', 'wordy'))).width).toBe(72);
+
+	const cell = await edges(units.cell('Only', 'wordy'));
+	const whole = await edges(units.display('Only', 'wordy'));
+	expect(whole.left).toBeGreaterThanOrEqual(cell.left);
+	expect(whole.right).toBeLessThanOrEqual(cell.right);
+	expect(cell.bottom - cell.top).toBe((await edges(units.cell('Only', 'cost'))).bottom - (await edges(units.cell('Only', 'cost'))).top);
+	expect(whole.bottom - whole.top).toBe((await edges(units.display('Only', 'cost'))).bottom - (await edges(units.display('Only', 'cost'))).top);
+
+	await expect(said('wordy')).toHaveAttribute('aria-valuetext', `42${LONG_SUFFIX}`);
+	await expectTooltip(page, units.display('Only', 'wordy'), `42${LONG_SUFFIX}`);
+
+	expect(await shown(units.number('Only', 'roomy'))).toBe('whole');
+	expect((await edges(units.bar('Only', 'roomy'))).width).toBe(72);
+
+	// Squeezed, each text is whole or missing at every width, never a part of it.
+	const states = await squeezed(page, 'table tbody td.cell', page.locator('table tbody .md-text > span'), steps(80, 480, 20));
+	expect(states.map((state) => state.part)).toEqual(states.map(() => 0));
+	expect(states.at(-1)!.whole).toBeGreaterThan(states[0]!.whole);
+});
+
+/** The colours across the middle of an element of the page, from left to right, each as text. */
+async function across(page: Page, locator: Locator) {
+	await locator.scrollIntoViewIfNeeded();
+	const area = (await locator.boundingBox())!;
+	return (await pixels(page, area.x, area.y + area.height / 2, area.width)).map((color) => color.join(','));
+}
+
+/**
+ * Checks that what is filled and what is not can both be seen, and told apart: `filled` is nowhere the colour of
+ * the page inside its edges, `rest` has something which is not the colour of the page, an outline at the least,
+ * and the middle of the one is not the colour of the middle of the other.
+ */
+async function expectTold(page: Page, filled: Locator, rest: Locator, ground: string, what: string) {
+	const [full, hollow] = [await across(page, filled), await across(page, rest)];
+
+	expect(full.slice(1, -1).filter((color) => color === ground), `${what}: nothing of what is filled has the colour of the page`).toEqual([]);
+	expect(hollow.some((color) => color !== ground), `${what}: what is not filled shows on the page`).toBe(true);
+	expect(full[Math.floor(full.length / 2)], `${what}: filled is not the colour of not filled`).not.toBe(hollow[Math.floor(hollow.length / 2)]);
+}
+
+test('under forced colours, as of a contrast theme, the meter can still be seen: what is filled, what is not, and no value, in the form and in the table', async ({ page }) => {
+	await page.emulateMedia({ forcedColors: 'active' });
+	await openItem(page, COLLECTION, ids['First']!);
+	await expect(text(page, 'plain')).toHaveText('50%');
+	await expect(page.locator('.hydrating')).toHaveCount(0);
+
+	// The colour of the page, from beside the field's own text.
+	const ground = (await pixel(page, (await edges(meter(page, 'plain'))).left + 2, (await edges(meter(page, 'plain'))).top + 2)).join(',');
+
+	// One bar at 50%: the fill, and the half of the track which is not filled, which is the part of the track
+	// after the fill. Its outline shows along its upper edge as well.
+	const bar = await edges(track(page, 'plain'));
+	const filled = await across(page, fill(page, 'plain'));
+	expect(filled.slice(2, -2).filter((color) => color === ground)).toEqual([]);
+
+	const rest = (await pixels(page, bar.left + bar.width * 0.6, bar.middle, bar.width * 0.4)).map((color) => color.join(','));
+	expect(rest.some((color) => color !== ground), 'the end of the track shows').toBe(true);
+	expect(rest[0], 'the track is not the colour of the fill').not.toBe(filled[Math.floor(filled.length / 2)]);
+	expect((await pixel(page, bar.left + bar.width * 0.75, Math.ceil(bar.top))).join(','), 'the outline of the track').not.toBe(ground);
+	await expect(track(page, 'plain')).toHaveCSS('border-top-style', 'solid');
+
+	// The colours of the options give way: a fill which is green by its option is the system's colour here.
+	await expect(fill(page, 'share')).toHaveCSS('background-color', await fill(page, 'plain').evaluate((element) => getComputedStyle(element).backgroundColor));
+
+	// Five pills of which three are filled.
+	await expectFilledPieces(strip(page, 'pill_auto'), 5, 3);
+	await expectTold(page, strip(page, 'pill_auto').locator('> *').nth(1), strip(page, 'pill_auto').locator('> *').nth(4), ground, 'pills in the form');
+
+	// Thin bars, a gradient and what is not filled faded: still two looks, and no gradient.
+	const thin = strip(page, 'bar_hundred').locator('> *');
+	await expectTold(page, thin.first(), thin.last(), ground, 'thin bars in the form');
+	await expectTold(page, strip(page, 'paint_blend').locator('> *').first(), strip(page, 'paint_blend').locator('> *').last(), ground, 'pills which blend');
+	await expect(strip(page, 'paint_blend').locator('> *').first()).toHaveCSS('background-image', 'none');
+	await expect(fill(page, 'paint_bar')).toHaveCSS('background-image', 'none');
+
+	// No value keeps its dashes, which show, and has no fill; at the minimum the outline is solid.
+	await expect(track(page, 'empty')).toHaveCSS('border-top-style', 'dashed');
+	expect((await across(page, track(page, 'empty'))).some((color) => color !== ground), 'the dashes of no value').toBe(true);
+	await expect(track(page, 'zero')).toHaveCSS('border-top-style', 'solid');
+
+	// No size has changed for it: the track is 12px high across its field, and the pills are where they were.
+	expect(bar.bottom - bar.top).toBe(12);
+	expect(bar.width).toBe((await edges(meter(page, 'plain'))).width);
+	expect((await pieces(strip(page, 'pill_auto'))).map((piece) => piece.height)).toEqual([12, 12, 12, 12, 12]);
+
+	// The table: one bar, and a row of pills, of bars and of dots.
+	await page.goto(`/admin/content/${COLLECTION}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+
+	const plain = table(page, COLUMNS);
+	await expect(plain.number('First', 'plain')).toHaveText('50%');
+	const cellGround = (await pixel(page, (await edges(plain.cell('First', 'plain'))).left + 2, (await edges(plain.cell('First', 'plain'))).top + 3)).join(',');
+
+	const short = await edges(plain.bar('First', 'plain'));
+	const part = await across(page, plain.part('First', 'plain'));
+	expect(part.slice(2, -2).filter((color) => color === cellGround)).toEqual([]);
+
+	const after = (await pixels(page, short.left + short.width * 0.6, short.middle, short.width * 0.4)).map((color) => color.join(','));
+	expect(after.some((color) => color !== cellGround), 'the end of the bar shows').toBe(true);
+	expect(after[0], 'the bar is not the colour of its fill').not.toBe(part[Math.floor(part.length / 2)]);
+	expect((await pixel(page, short.left + short.width * 0.75, Math.ceil(short.top))).join(','), 'the outline of the bar').not.toBe(cellGround);
+	expect(short.width).toBe(72);
+	expect(short.bottom - short.top).toBe(8);
+
+	await page.goto(`/admin/content/${COLLECTION}?bookmark=${looks}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+
+	const rows = table(page, LOOKS);
+
+	for (const name of ['pill_auto', 'bar_hundred', 'dot_auto']) {
+		const parts = rows.display('First', name).locator('.md-strip > *');
+		await expect(parts.first()).toHaveClass(/md-on/);
+		await expect(parts.last()).not.toHaveClass(/md-on/);
+		await expectTold(page, parts.first(), parts.last(), cellGround, `${name} in the table`);
+	}
+
+	// The row of pills is as long and as high as it was.
+	const row = await edges(rows.display('First', 'pill_auto').locator('.md-strip'));
+	expect(row.width).toBe(72);
+	expect(row.bottom - row.top).toBe(8);
+});
+
+test('for print the meter asks the browser to keep its colours, in the form and in the table', async ({ page }) => {
+	const adjust = (locator: Locator) =>
+		locator.first().evaluate((element) => {
+			const style = getComputedStyle(element) as CSSStyleDeclaration & { printColorAdjust?: string; webkitPrintColorAdjust?: string };
+			return style.printColorAdjust || style.webkitPrintColorAdjust;
+		});
+
+	await openItem(page, COLLECTION, ids['First']!);
+	await expect(text(page, 'plain')).toHaveText('50%');
+
+	// A stock element of the form does not ask, which is why a printed page loses what is painted with backgrounds.
+	expect(await adjust(fieldOf(page, 'title').locator('input'))).toBe('economy');
+
+	await page.emulateMedia({ media: 'print' });
+
+	for (const [what, painted] of [
+		['the track', track(page, 'plain')],
+		['the fill', fill(page, 'plain')],
+		['a filled piece', strip(page, 'pill_auto').locator('.mt-on')],
+		['a piece which is not filled', strip(page, 'pill_auto').locator(':not(.mt-on)')],
+		['a piece with a gradient', strip(page, 'paint_blend').locator('.mt-paint')],
+		['a track without a value', track(page, 'empty')],
+	] as const) {
+		expect(await adjust(painted), what).toBe('exact');
+	}
+
+	await page.emulateMedia({ media: null });
+	await page.goto(`/admin/content/${COLLECTION}?bookmark=${looks}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+	await page.emulateMedia({ media: 'print' });
+
+	const rows = table(page, LOOKS);
+	expect(await adjust(rows.display('First', 'pill_auto').locator('.md-on'))).toBe('exact');
+	expect(await adjust(rows.display('First', 'pill_auto').locator('.md-part:not(.md-on)'))).toBe('exact');
+
+	await page.emulateMedia({ media: null });
+	await page.goto(`/admin/content/${COLLECTION}`);
+	await expect(page.locator('table tbody tr.table-row')).toHaveCount(3);
+	await page.emulateMedia({ media: 'print' });
+
+	const plain = table(page, COLUMNS);
+	expect(await adjust(plain.bar('First', 'plain'))).toBe('exact');
+	expect(await adjust(plain.part('First', 'plain'))).toBe('exact');
+});
 
 test.describe('a meter which can be edited', () => {
 	test.beforeEach(async ({ api, page }) => {
@@ -2951,7 +3298,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(line(page, 'whole')).toHaveCSS('user-select', 'none');
 	});
 
-	test('segment input: a click on the nth piece fills n, and a drag to before the start gives the minimum', async ({ page }) => {
+	test('by piece: a click on the nth piece fills n, and a drag to before the start gives the minimum', async ({ page }) => {
 		const pill = (name: string, index: number) => line(page, name).locator('> *').nth(index);
 		const middle = async (name: string, index: number) => {
 			const area = (await pill(name, index).boundingBox())!;
@@ -3003,7 +3350,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(text(page, 'dots')).toHaveText('4 / 5');
 
 		// Ten pills for a hundred, filled by the piece because the option says so: the seventh is 70.
-		await expect(line(page, 'forced')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'forced')).toHaveClass(/mt-by-piece/);
 		const seventh = await middle('forced', 6);
 		await page.mouse.click(seventh.x, seventh.y);
 		await expect(text(page, 'forced')).toHaveText('70%');
@@ -3164,7 +3511,7 @@ test.describe('a meter which can be edited', () => {
 		] as const) {
 			await line(page, name).scrollIntoViewIfNeeded();
 			await page.mouse.move(5, 5);
-			await expect(line(page, name)).toHaveClass(/mt-by-segment/);
+			await expect(line(page, name)).toHaveClass(/mt-by-piece/);
 
 			const before = await drawnRow(page, name);
 			expect(before.pieces, name).toHaveLength(count);
@@ -3249,7 +3596,7 @@ test.describe('a meter which can be edited', () => {
 		// Forty bars for forty with a grow of 2, at 24: the bars which are not filled are a third as high, but
 		// for the ramp in front of the fill.
 		await line(page, 'near_bars').scrollIntoViewIfNeeded();
-		await expect(line(page, 'near_bars')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'near_bars')).toHaveClass(/mt-by-piece/);
 		await expect(line(page, 'near_bars')).toHaveAttribute('aria-valuenow', '24');
 		const before = await drawnRow(page, 'near_bars');
 		expect(before.pieces).toHaveLength(40);
@@ -3352,12 +3699,12 @@ test.describe('a meter which can be edited', () => {
 
 	test('automatic fills by the piece where each piece is one step, and takes the value under the pointer otherwise', async ({ page }) => {
 		// Five pieces for five steps, as pills and as dots: by the piece.
-		await expect(line(page, 'five')).toHaveClass(/mt-by-segment/);
-		await expect(line(page, 'dots')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'five')).toHaveClass(/mt-by-piece/);
+		await expect(line(page, 'dots')).toHaveClass(/mt-by-piece/);
 
 		// One bar, and ten pills for a hundred steps: the value under the pointer.
-		await expect(line(page, 'whole')).toHaveClass(/mt-by-contiguous/);
-		await expect(line(page, 'hundred')).toHaveClass(/mt-by-contiguous/);
+		await expect(line(page, 'whole')).toHaveClass(/mt-by-position/);
+		await expect(line(page, 'hundred')).toHaveClass(/mt-by-position/);
 		await expectFilledPieces(line(page, 'hundred'), 10, 4);
 
 		// 37% of the way along ten pills is 37, which a click on a piece could not give, and fills four of them.
@@ -4393,7 +4740,7 @@ test.describe('a meter which can be edited', () => {
 		await page.emulateMedia({ reducedMotion: 'reduce' });
 		await line(page, 'grow_coarse').scrollIntoViewIfNeeded();
 		await expect(text(page, 'grow_coarse')).toHaveText('40%');
-		await expect(line(page, 'grow_coarse')).toHaveClass(/mt-by-contiguous/);
+		await expect(line(page, 'grow_coarse')).toHaveClass(/mt-by-position/);
 
 		// The third of five segments, the one after the two which 40 fills: how high it is drawn, how much of
 		// the look of a filled one lies over it, and whether its size is a transform and nothing else.
@@ -4545,7 +4892,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(text(page, 'grow_dots')).toHaveText('3.5');
 	});
 
-	test('grow is a number of pieces which can be growing at once: a ramp of two at a whole value with 3, none with 1, and a stored switch is 1', async ({ page }) => {
+	test('grow is a number of pieces which can be growing at once: a ramp of two at a whole value with 3, and none with 1', async ({ page }) => {
 		await page.emulateMedia({ reducedMotion: 'reduce' });
 		const sizes = async (name: string) => (await pieces(line(page, name))).map((piece) => Number(piece.width.toFixed(1)));
 		const key = async (name: string, press: string, times: number, expected: string) => {
@@ -4580,13 +4927,6 @@ test.describe('a meter which can be edited', () => {
 		expect(await sizes('grow_dots')).toEqual([12, 12, 12, 6, 6]);
 		await key('grow_dots', 'ArrowRight', 3, '3.3');
 		expect(await sizes('grow_dots')).toEqual([12, 12, 12, 9.6, 6]);
-
-		// The option of a field which stored it as the switch it once was, on: as 1.
-		await line(page, 'grow_true').scrollIntoViewIfNeeded();
-		await expect(text(page, 'grow_true')).toHaveText('3.3');
-		expect(await sizes('grow_true')).toEqual([12, 12, 12, 9.6, 6]);
-		await key('grow_true', 'ArrowLeft', 3, '3');
-		expect(await sizes('grow_true')).toEqual([12, 12, 12, 6, 6]);
 
 		// A meter without it has no size on any piece.
 		expect(await sizes('dots')).toEqual([12, 12, 12, 12, 12]);
@@ -5093,34 +5433,34 @@ test.describe('a meter which can be edited', () => {
 		// Five pills over 0.5 to 5.5, of which a whole type can hold 1 to 5: four steps, so a pill is not a step,
 		// and the method chosen for it is the value under the pointer.
 		await expectFilledPieces(line(page, 'between'), 5, 3);
-		await expect(line(page, 'between')).toHaveClass(/mt-by-contiguous/);
+		await expect(line(page, 'between')).toHaveClass(/mt-by-position/);
 
 		// The slider says the range which can be set, not the one which is drawn.
-		for (const name of ['between', 'between_seg']) {
+		for (const name of ['between', 'between_piece']) {
 			await expect(line(page, name)).toHaveAttribute('aria-valuemin', '1');
 			await expect(line(page, name)).toHaveAttribute('aria-valuemax', '5');
 			await expect(line(page, name)).toHaveAttribute('aria-valuenow', '3');
 		}
 
 		// Filled by the piece because the option says so: a press on the nth pill leaves n filled, and the value is n.
-		await expect(line(page, 'between_seg')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'between_piece')).toHaveClass(/mt-by-piece/);
 
 		for (const filled of [5, 1, 4, 2, 3]) {
-			const point = await pill('between_seg', filled - 1);
+			const point = await pill('between_piece', filled - 1);
 			await page.mouse.click(point.x, point.y);
-			await expect(text(page, 'between_seg')).toHaveText(String(filled));
-			await expectFilledPieces(line(page, 'between_seg'), 5, filled);
+			await expect(text(page, 'between_piece')).toHaveText(String(filled));
+			await expectFilledPieces(line(page, 'between_piece'), 5, filled);
 		}
 
 		// Before the first pill: the least which can be written, which is 1 and fills one.
-		const first = await pill('between_seg', 0);
-		const third = await pill('between_seg', 2);
+		const first = await pill('between_piece', 0);
+		const third = await pill('between_piece', 2);
 		await page.mouse.move(third.x, third.y);
 		await page.mouse.down();
 		await page.mouse.move(first.left - 40, first.y, { steps: 3 });
-		await expect(text(page, 'between_seg')).toHaveText('1');
+		await expect(text(page, 'between_piece')).toHaveText('1');
 		await page.mouse.up();
-		await expectFilledPieces(line(page, 'between_seg'), 5, 1);
+		await expectFilledPieces(line(page, 'between_piece'), 5, 1);
 
 		// The keys keep to what can be written: Home and End are 1 and 5.
 		await line(page, 'between').focus();
@@ -5149,7 +5489,7 @@ test.describe('a meter which can be edited', () => {
 		await expect(line(page, 'twin_locked')).toHaveAttribute('aria-valuemax', '100');
 
 		const sent = await save(page, EDIT);
-		expect(sent.values).toEqual({ between_seg: 1, between: 1, beyond: 10 });
+		expect(sent.values).toEqual({ between_piece: 1, between: 1, beyond: 10 });
 	});
 
 	test('while the value is dragged a place on the scale keeps its colour, and the place where a colour ends does not move', async ({ page }) => {
@@ -5221,7 +5561,7 @@ test.describe('a meter which can be edited', () => {
 
 	test('packed dots for a hundred: a press on the last dot gives the maximum, and so does one in what is left of the track', async ({ page }) => {
 		await line(page, 'near_dots').scrollIntoViewIfNeeded();
-		await expect(line(page, 'near_dots')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'near_dots')).toHaveClass(/mt-by-piece/);
 		await expect(text(page, 'near_dots')).toHaveText('40%');
 
 		// 21 dots in the 342px of the track, which is all that fit: 332px, and 10px left at the end.
@@ -5259,7 +5599,7 @@ test.describe('a meter which can be edited', () => {
 	test('spread dots for a hundred are as many as packed ones, 21 and not the twenty which divide a hundred, from edge to edge, and a press on the last gives the maximum', async ({ page }) => {
 		await line(page, 'near_spread').scrollIntoViewIfNeeded();
 		await expect(line(page, 'near_spread')).toHaveClass(/mt-spread/);
-		await expect(line(page, 'near_spread')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'near_spread')).toHaveClass(/mt-by-piece/);
 		await expect(text(page, 'near_spread')).toHaveText('40%');
 
 		// The same number as the packed dots of the field before it, in the same width.
@@ -5321,7 +5661,7 @@ test.describe('a meter which can be edited', () => {
 
 		// Filled by the piece: forty bars for forty, each 6px wide and 2px from the next, 318px of the 342px.
 		await line(page, 'ring_bars').scrollIntoViewIfNeeded();
-		await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-segment/);
+		await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-piece/);
 		await expect(line(page, 'ring_bars')).toHaveAttribute('aria-valuenow', '20');
 		const forty = await barsOf('ring_bars');
 		expect(forty.bars).toHaveLength(40);
@@ -5362,7 +5702,7 @@ test.describe('a meter which can be edited', () => {
 		// stands for the whole range. Its left end and the empty 44px beyond it are the maximum, its middle 50,
 		// a quarter of it from the right 25, and the right edge the minimum.
 		await line(page, 'grow_four').scrollIntoViewIfNeeded();
-		await expect(line(page, 'grow_four')).toHaveClass(/mt-by-contiguous/);
+		await expect(line(page, 'grow_four')).toHaveClass(/mt-by-position/);
 		const fifty = await barsOf('grow_four');
 		expect(fifty.bars).toHaveLength(50);
 		const length = fifty.right - fifty.bars.at(-1)!.left;
@@ -5459,6 +5799,272 @@ test.describe('a meter which can be edited', () => {
 		expect(sent.values).toEqual({ outside: 99, none: 1 });
 	});
 
+	test('the input method None: a reading in a field which can be edited, drawn as the same meter in a read-only field, and nothing of it is ever written', async ({ page }) => {
+		// What a meter is made of, with what differs between any two fields taken out: the ids of the caption and
+		// the name of the field.
+		const made = (name: string) =>
+			meter(page, name).evaluate((element) => {
+				const copy = element.cloneNode(true) as HTMLElement;
+
+				for (const part of [copy, ...Array.from(copy.querySelectorAll('*'))]) {
+					for (const attribute of ['id', 'aria-labelledby', 'aria-label']) if (part.hasAttribute(attribute)) part.setAttribute(attribute, '');
+				}
+
+				return copy.outerHTML;
+			});
+
+		const boxes = (name: string) =>
+			fieldOf(page, name).evaluate((element) => {
+				const origin = element.getBoundingClientRect();
+
+				return Array.from(element.querySelectorAll('.meter, .meter *, .type-note')).map((part) => {
+					const area = part.getBoundingClientRect();
+					const style = getComputedStyle(part);
+					return [area.left - origin.left, area.top - origin.top, area.width, area.height, style.backgroundColor, style.opacity, style.cursor, style.touchAction].join(' ');
+				});
+			});
+
+		for (const [name, twin, bar] of [
+			['off', 'off_locked', 'mt-track'],
+			['off_pills', 'off_pills_locked', 'mt-strip mt-pills'],
+		] as const) {
+			await line(page, name).scrollIntoViewIfNeeded();
+			await expect(text(page, name)).toHaveText(name === 'off' ? '40%' : '60%');
+
+			// The field can be edited: the form does not mark it read-only, as it does the one beside it.
+			await expect(fieldOf(page, name).locator('.interface')).not.toHaveClass(/disabled/);
+
+			// A meter, and not a slider: no tab stop, no handle, nothing beside the track which takes a press,
+			// no cursor, and the classes of a meter which cannot be edited.
+			await expect(fieldOf(page, name).getByRole('meter')).toHaveCount(1);
+			await expect(fieldOf(page, name).getByRole('slider')).toHaveCount(0);
+			expect(await line(page, name).getAttribute('class')).toBe(bar);
+			expect(await meter(page, name).getAttribute('class')).toBe('meter');
+			expect(await meter(page, name).evaluate((element) => element.querySelectorAll('[tabindex], .mt-handle, .mt-reach, .mt-swell, [class*="mt-by-"], [style*="transform"]').length)).toBe(0);
+			await expect(line(page, name)).toHaveCSS('cursor', 'auto');
+			await expect(line(page, name)).toHaveCSS('touch-action', 'auto');
+			await expect(line(page, name)).toHaveAttribute('aria-valuemin', '0');
+			await expect(line(page, name)).toHaveAttribute('aria-valuemax', name === 'off' ? '100' : '5');
+
+			// It listens to nothing, neither its track nor its area.
+			expect(await listened(page, line(page, name))).toEqual([]);
+			expect(await listened(page, meter(page, name))).toEqual([]);
+
+			// It is the meter of the read-only field beside it: the same elements, classes and styles, every box
+			// in the same place in its field, the same colours, not dimmed.
+			expect(await made(name)).toBe(await made(twin));
+			expect(await boxes(name)).toEqual(await boxes(twin));
+			await expect(meter(page, name)).toHaveCSS('opacity', '1');
+
+			// Under the pointer nothing shows: no handle, no larger piece, no other cursor.
+			const point = await pointAt(page, name, 0.9);
+			await page.mouse.move(point.x, point.y);
+			expect(await cursorOf(page, point.x, point.y)).toBe('auto');
+			expect(await made(name)).toBe(await made(twin));
+			expect(await boxes(name)).toEqual(await boxes(twin));
+
+			// A press, a drag, a double click, the keys and events sent straight to it change nothing.
+			await page.mouse.click(point.x, point.y);
+			await page.mouse.dblclick(point.x, point.y);
+			await page.mouse.down();
+			await page.mouse.move(point.x - point.width * 0.5, point.y, { steps: 4 });
+			await page.mouse.up();
+			await page.mouse.click(point.x, point.y - 8);
+			await page.keyboard.press('ArrowRight');
+			await line(page, name).dispatchEvent('pointerdown', { button: 0, isPrimary: true, clientX: point.x, clientY: point.y, pointerId: 1 });
+			for (const key of ['ArrowRight', 'ArrowLeft', 'End', 'Home', 'PageUp', 'Escape']) await keyOn(line(page, name), key);
+			await expect(text(page, name)).toHaveText(name === 'off' ? '40%' : '60%');
+			await expect(edited(page)).toHaveCount(0);
+
+			// The Tab key passes it by.
+			await fieldOf(page, name).locator('button.field-name').focus();
+			await page.keyboard.press('Tab');
+			expect(await meter(page, name).evaluate((element) => element.contains(document.activeElement))).toBe(false);
+		}
+
+		// The same options without the word are a slider, so it is the word which does it.
+		await expect(fieldOf(page, 'twin_live').getByRole('slider')).toHaveCount(1);
+		expect(await listened(page, line(page, 'twin_live'))).toEqual(LISTENERS);
+
+		// Saving the item, after an edit of another field, writes nothing for these.
+		await clickAt(page, 'whole', 0.25);
+		await expect(text(page, 'whole')).toHaveText('25%');
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ whole: 25 });
+		expect(sent.text).not.toContain('off');
+	});
+
+	test('a float field from 0 to 1 which sets no step is set in hundredths, with the pointer and the keys, and the item saves the number as it reads', async ({ page, api }) => {
+		await line(page, 'unit').scrollIntoViewIfNeeded();
+		await expect(text(page, 'unit')).toHaveText('0.5');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuemax', '1');
+
+		// The pointer: 37.2% of the way along is 0.37, where a step of 1 had only the two ends.
+		await clickAt(page, 'unit', 0.372);
+		await expect(text(page, 'unit')).toHaveText('0.37');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.37');
+
+		// The keys: a hundredth for an arrow, ten of them for a Page key.
+		await line(page, 'unit').focus();
+		await page.keyboard.press('ArrowRight');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.38');
+		await page.keyboard.press('ArrowLeft');
+		await page.keyboard.press('ArrowLeft');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.36');
+		await page.keyboard.press('PageUp');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.46');
+		await page.keyboard.press('PageDown');
+		await page.keyboard.press('ArrowRight');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.37');
+
+		// A drag across the track: every value on the way is a number of hundredths, written as one.
+		const seen = await line(page, 'unit').evaluate((element) => {
+			const values: string[] = [];
+			new MutationObserver(() => values.push(element.getAttribute('aria-valuenow') ?? '')).observe(element, { attributes: true, attributeFilter: ['aria-valuenow'] });
+			return ((window as unknown as { seen: string[] }).seen = values);
+		});
+		expect(seen).toEqual([]);
+
+		const from = await pointAt(page, 'unit', 0.1);
+		await page.mouse.move(from.x, from.y);
+		await page.mouse.down();
+		await page.mouse.move(from.x + from.width * 0.83, from.y, { steps: 40 });
+		await page.mouse.move(from.x + from.width * 0.272, from.y, { steps: 20 });
+		await page.mouse.up();
+
+		const values = await page.evaluate(() => (window as unknown as { seen: string[] }).seen);
+		expect(values.length).toBeGreaterThan(30);
+		for (const value of values) expect(value, value).toMatch(/^(0(\.\d{1,2})?|1)$/);
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.37');
+		await expect(text(page, 'unit')).toHaveText('0.37');
+
+		// Five pills for 0 to 5 on such a field: a pill is a hundred steps, so the pointer sets the value under
+		// it. With a step of 1 the pills are filled by the piece, as they are on a whole type.
+		await expect(line(page, 'stars')).toHaveClass(/mt-by-position/);
+		await clickAt(page, 'stars', 0.33);
+		await expect(line(page, 'stars')).toHaveAttribute('aria-valuenow', '1.65');
+		await expect(line(page, 'stars_whole')).toHaveClass(/mt-by-piece/);
+		await clickAt(page, 'stars_whole', 0.33);
+		await expect(line(page, 'stars_whole')).toHaveAttribute('aria-valuenow', '2');
+
+		// What is saved is the number as it reads, without dust.
+		const sent = await save(page, EDIT);
+		expect(sent.values).toEqual({ unit: 0.37, stars: 1.65, stars_whole: 2 });
+		expect(sent.text).toContain('"unit":0.37,');
+		expect(sent.text).toContain('"stars":1.65,');
+
+		expect(await api.get(`/items/${EDIT}/${ids['Edit']}`)).toMatchObject({ unit: 0.37, stars: 1.65, stars_whole: 2 });
+
+		await page.reload();
+		await expect(text(page, 'whole')).toHaveText('40%');
+		await expect(text(page, 'unit')).toHaveText('0.37');
+		await expect(line(page, 'unit')).toHaveAttribute('aria-valuenow', '0.37');
+	});
+
+	test('the options form: None hides the step and the sensitivity, the prefix and the suffix show for a value and a fraction, and the step shows what it comes to for the limits', async ({ page, api }) => {
+		await page.goto(`/admin/settings/data-model/${EDIT}/unit`);
+
+		const dialogs = page.locator('#dialog-outlet');
+		const option = (name: string) => dialogs.locator(`.field[data-field="${name}"]`);
+		const choose = async (name: string, choice: string) => {
+			await option(name).locator('.v-input').first().click();
+			await page.locator('.v-menu-popper:visible .v-list-item').filter({ has: page.getByText(choice, { exact: true }) }).last().click();
+		};
+
+		try {
+			await dialogs.getByText('Interface', { exact: true }).first().click();
+
+			// A float field from 0 to 1 without a step: the step says that it comes to a hundredth, and follows
+			// the maximum as it is typed. A range of a hundred and more has 1.
+			await expect(option('step').locator('input')).toHaveValue('');
+			await expect(option('step').locator('input')).toHaveAttribute('placeholder', '0.01');
+			await option('max').locator('input').fill('10');
+			await expect(option('step').locator('input')).toHaveAttribute('placeholder', '0.1');
+			await option('max').locator('input').fill('250');
+			await expect(option('step').locator('input')).toHaveAttribute('placeholder', '1');
+			await option('max').locator('input').fill('1');
+			await expect(option('step').locator('input')).toHaveAttribute('placeholder', '0.01');
+
+			// The format is the value, so the prefix and the suffix are there: two inputs side by side, right
+			// after the format, each with a note which says that it is joined on as typed.
+			await expect(option('indicatorFormat').locator('input')).toHaveValue('Value');
+			await expect(option('prefix')).toHaveCount(1);
+			await expect(option('suffix')).toHaveCount(1);
+
+			const order = await dialogs.locator('.extension-options .field[data-field], .interface-options .field[data-field], .field[data-field]').evaluateAll((fields) => fields.map((field) => field.getAttribute('data-field')));
+			expect(order.slice(order.indexOf('indicatorFormat'), order.indexOf('indicatorFormat') + 3)).toEqual(['indicatorFormat', 'prefix', 'suffix']);
+
+			const [before, after] = [await edges(option('prefix')), await edges(option('suffix'))];
+			expect(before.top).toBe(after.top);
+			expect(Math.abs(before.width - after.width)).toBeLessThan(1);
+			expect(after.left).toBeGreaterThan(before.right);
+			await expect(option('prefix').locator('.type-note')).toContainText('type a space where one is wanted');
+			await expect(option('suffix').locator('.type-note')).toContainText('type a space where one is wanted');
+
+			// The percentage has neither; the fraction and the value have both.
+			await choose('indicatorFormat', 'Percent');
+			await expect(option('prefix')).toHaveCount(0);
+			await expect(option('suffix')).toHaveCount(0);
+			await choose('indicatorFormat', 'Value / Maximum');
+			await expect(option('prefix')).toHaveCount(1);
+			await expect(option('suffix')).toHaveCount(1);
+			await choose('indicatorFormat', 'Value');
+			await expect(option('suffix')).toHaveCount(1);
+
+			await option('prefix').locator('input').fill('$');
+			await option('suffix').locator('input').fill(' GB');
+
+			// The input methods: the step shows for all but None, the sensitivity for the relative one alone.
+			await expect(option('input').locator('input')).toHaveValue('Automatic');
+			await expect(option('input').locator('.type-note')).toContainText('None: the meter is not edited');
+			await expect(option('step')).toHaveCount(1);
+			await expect(option('sensitivity')).toHaveCount(0);
+
+			await choose('input', 'None');
+			await expect(option('step')).toHaveCount(0);
+			await expect(option('sensitivity')).toHaveCount(0);
+
+			await choose('input', 'Relative');
+			await expect(option('step')).toHaveCount(1);
+			await expect(option('sensitivity')).toHaveCount(1);
+
+			await choose('input', 'By piece');
+			await expect(option('step')).toHaveCount(1);
+			await expect(option('sensitivity')).toHaveCount(0);
+
+			await choose('input', 'None');
+
+			// The form of the display takes the prefix and the suffix over, and shows them as its placeholders.
+			await dialogs.getByText('Display', { exact: true }).first().click();
+			await expect(dialogs.locator('.v-notice', { hasText: 'taken from the interface of the field' })).toBeVisible();
+			await expect(option('prefix').locator('input')).toHaveAttribute('placeholder', '$');
+			await expect(option('suffix').locator('input')).toHaveAttribute('placeholder', ' GB');
+			await expect(option('suffix').locator('input')).toHaveValue('');
+			await choose('indicatorFormat', 'Percent');
+			await expect(option('prefix')).toHaveCount(0);
+			await expect(option('suffix')).toHaveCount(0);
+			await choose('indicatorFormat', 'Value');
+			await option('suffix').locator('input').fill(' MB');
+
+			// Save the field: the words are stored, the texts as they were typed, with their spaces.
+			await dialogs.locator('.v-drawer').last().locator('header button').last().click();
+			await expect.poll(async () => (await api.get(`/fields/${EDIT}/unit`)).meta.options).toEqual({ max: 1, indicatorFormat: 'value', prefix: '$', suffix: ' GB', input: 'none' });
+			// The format of the display went back to the one it shows as taken over, which the form does not store.
+			expect((await api.get(`/fields/${EDIT}/unit`)).meta.display_options).toEqual({ suffix: ' MB' });
+
+			// The item is drawn by them: the text with both, and a reading where it was a slider.
+			await openEdit(page);
+			await line(page, 'unit').scrollIntoViewIfNeeded();
+			await expect(text(page, 'unit')).toHaveText('$0.5 GB');
+			await expect(fieldOf(page, 'unit').getByRole('meter')).toHaveAttribute('aria-valuetext', '$0.5 GB');
+			await expect(fieldOf(page, 'unit').getByRole('slider')).toHaveCount(0);
+			expect(await listened(page, line(page, 'unit'))).toEqual([]);
+		} finally {
+			// Put the field back, for the tests which set it.
+			await api.patch(`/fields/${EDIT}/unit`, { meta: { options: { max: 1, indicatorFormat: 'value' }, display_options: null } });
+		}
+	});
+
 	test('the options form of editing: the method, the step, and the sensitivity only for the relative method', async ({ page, api }) => {
 		await page.goto(`/admin/settings/data-model/${EDIT}/fives`);
 
@@ -5475,7 +6081,10 @@ test.describe('a meter which can be edited', () => {
 		await expect(option('sensitivity')).toHaveCount(0);
 
 		await option('input').locator('.v-input').click();
-		await expect(page.locator('.v-list-item', { hasText: 'Segment' }).last()).toBeVisible();
+		// The five methods, in plain words, and none of them by a word of the visualizations.
+		const methods = page.locator('.v-menu-popper:visible .v-list-item');
+		await expect(methods.filter({ hasText: 'By piece' }).last()).toBeVisible();
+		expect((await methods.allInnerTexts()).map((item) => item.trim())).toEqual(['Automatic', 'By position', 'By piece', 'Relative', 'None']);
 		await page.locator('.v-list-item', { hasText: 'Relative' }).last().click();
 		await expect(option('sensitivity').locator('input')).toHaveAttribute('placeholder', '1');
 		await option('sensitivity').locator('input').fill('2');
@@ -5684,7 +6293,7 @@ test.describe('bars are all drawn alike', () => {
 				// The pointer goes by the bars as they are drawn. By the piece, forty bars for forty: a press on
 				// the last bar is the maximum, and so is one in the empty rest of the track after it.
 				await line(page, 'ring_bars').scrollIntoViewIfNeeded();
-				await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-segment/);
+				await expect(line(page, 'ring_bars')).toHaveClass(/mt-by-piece/);
 				const forty = (await line(page, 'ring_bars').boundingBox())!;
 				const boxes = await laidBars(line(page, 'ring_bars'), 1);
 				const last = boxes.at(-1)!;
@@ -5709,7 +6318,7 @@ test.describe('bars are all drawn alike', () => {
 				// By the place, fifty bars for a hundred: the row of bars stands for the whole range. Its end and
 				// the empty rest after it are the maximum, its middle is 50, and its start the minimum.
 				await line(page, 'grow_four').scrollIntoViewIfNeeded();
-				await expect(line(page, 'grow_four')).toHaveClass(/mt-by-contiguous/);
+				await expect(line(page, 'grow_four')).toHaveClass(/mt-by-position/);
 				const fifty = (await line(page, 'grow_four').boundingBox())!;
 				const bars = await laidBars(line(page, 'grow_four'), 1);
 				const length = bars.at(-1)!.start + bars.at(-1)!.width;
@@ -5804,10 +6413,19 @@ test.describe('a meter in a stock Repeater', () => {
 		await expect(option('input').locator('input')).toHaveValue('Automatic');
 		await expect(option('sensitivity')).toHaveCount(0);
 
-		for (const method of ['Contiguous', 'Segment']) {
+		for (const method of ['By position', 'By piece']) {
 			await choose('input', method);
 			await expect(option('sensitivity'), method).toHaveCount(0);
+			await expect(option('step'), method).toHaveCount(1);
 		}
+
+		// The dialog does not say the type or the limits of the field, so the step cannot say what it comes to.
+		await expect(option('step').locator('input')).toHaveAttribute('placeholder', 'Automatic');
+
+		// None: the meter is not edited, and neither the step nor the sensitivity means anything.
+		await choose('input', 'None');
+		await expect(option('step')).toHaveCount(0);
+		await expect(option('sensitivity')).toHaveCount(0);
 
 		await choose('input', 'Relative');
 		await expect(option('sensitivity')).toHaveCount(1);
@@ -5960,7 +6578,7 @@ test.describe('a meter in a stock Repeater', () => {
 		};
 
 		await expect(lineOf('level')).toHaveClass(/mt-pills/);
-		await expect(lineOf('level')).toHaveClass(/mt-by-segment/);
+		await expect(lineOf('level')).toHaveClass(/mt-by-piece/);
 		await expect(lineOf('level')).toHaveAttribute('role', 'slider');
 		await expectFilledPieces(lineOf('level'), 5, 3);
 		await expect(textOf('level')).toHaveText('3 / 5');

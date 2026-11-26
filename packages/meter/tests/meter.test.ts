@@ -2,6 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
 	DEFAULT_COLOR,
 	DISPLAY_WIDTH,
+	LEAST_STEP,
+	STEPS_WANTED,
+	defaultStep,
 	FADE,
 	FREE_DIGITS,
 	MAX_PIECES,
@@ -53,7 +56,7 @@ import {
 	readingOf,
 	relativeMove,
 	scaleStops,
-	segmentValue,
+	pieceValue,
 	shareAt,
 	sideways,
 	snapValue,
@@ -235,7 +238,7 @@ describe('the thresholds of a field', () => {
 
 describe('the options', () => {
 	test('without any, the range is 0 to 100, the colour the default, and there is no caption', () => {
-		const defaults = { min: 0, max: 100, label: null, indicator: true, indicatorFormat: 'percent', color: DEFAULT_COLOR, thresholds: [] };
+		const defaults = { min: 0, max: 100, label: null, indicator: true, indicatorFormat: 'percent', prefix: '', suffix: '', color: DEFAULT_COLOR, thresholds: [] };
 
 		expect(readOptions()).toEqual(defaults);
 		expect(readOptions({})).toEqual(defaults);
@@ -308,7 +311,7 @@ describe('the options', () => {
 
 describe('the display falls back to the options of the interface, key by key', () => {
 	test('without options of its own it has those of the interface', () => {
-		const inherited = { min: 0, max: 10, label: 'Tasks', indicator: false, indicatorFormat: 'fraction', color: GREEN, thresholds: [{ value: 5, color: AMBER }] };
+		const inherited = { min: 0, max: 10, label: 'Tasks', indicator: false, indicatorFormat: 'fraction', prefix: '#', suffix: ' done', color: GREEN, thresholds: [{ value: 5, color: AMBER }] };
 
 		expect(readOptions({}, inherited)).toEqual({ ...inherited, thresholds: [{ value: 5, color: AMBER }] });
 		expect(readOptions(undefined, inherited)).toEqual(readOptions(inherited));
@@ -636,6 +639,100 @@ describe('the text beside the bar', () => {
 		// Swapped limits: the larger one is the maximum. One number as both: the value over that number.
 		expect(valueText(30, readOptions({ min: 100, max: 0, indicatorFormat: 'fraction' }), EN)).toBe('30 / 100');
 		expect(valueText(6, readOptions({ min: 5, max: 5, indicatorFormat: 'fraction' }), EN)).toBe('6 / 5');
+	});
+});
+
+describe('a prefix and a suffix of the value text', () => {
+	const text = (value: number, own: object) => valueText(value, readOptions({ max: 10000, ...own }), EN);
+
+	test('the value: the prefix, the number, the suffix, joined as they are', () => {
+		expect(text(4200, { indicatorFormat: 'value', prefix: '$' })).toBe('$4,200');
+		expect(text(42, { indicatorFormat: 'value', suffix: ' GB' })).toBe('42 GB');
+		expect(text(42, { indicatorFormat: 'value', suffix: 'GB' })).toBe('42GB');
+		expect(text(42, { indicatorFormat: 'value', prefix: '~ ', suffix: ' km/h' })).toBe('~ 42 km/h');
+		expect(text(-5, { indicatorFormat: 'value', prefix: '$' })).toBe('$-5');
+		expect(text(1250.5, { indicatorFormat: 'value', suffix: ' €' })).toBe('1,250.5 €');
+		expect(valueText(1250.5, readOptions({ max: 2000, indicatorFormat: 'value', suffix: ' €' }), 'de-DE')).toBe('1.250,5 €');
+	});
+
+	test('the fraction: the prefix before each of the two numbers, the suffix once at the end', () => {
+		expect(text(4200, { indicatorFormat: 'fraction', prefix: '$' })).toBe('$4,200 / $10,000');
+		expect(text(42, { max: 100, indicatorFormat: 'fraction', suffix: ' GB' })).toBe('42 / 100 GB');
+		expect(text(7, { max: 12, indicatorFormat: 'fraction', prefix: '#', suffix: ' tasks' })).toBe('#7 / #12 tasks');
+	});
+
+	test('the percentage has neither', () => {
+		expect(text(4200, { indicatorFormat: 'percent', prefix: '$', suffix: ' GB' })).toBe('42%');
+		expect(text(4200, { prefix: '$', suffix: ' GB' })).toBe('42%');
+		expect(text(4200, { indicatorFormat: 'junk', prefix: '$', suffix: ' GB' })).toBe('42%');
+	});
+
+	test('they are read like the caption, but kept as they were typed', () => {
+		expect(readOptions({ prefix: '$', suffix: ' GB' })).toMatchObject({ prefix: '$', suffix: ' GB' });
+		expect(readOptions({ prefix: ' ≈ ', suffix: '  per day ' })).toMatchObject({ prefix: ' ≈ ', suffix: '  per day ' });
+
+		// Nothing, blank text and anything which is no text is none.
+		for (const junk of [undefined, null, '', ' ', '   ', 5, 0, true, false, {}, ['$'], { text: '$' }]) {
+			expect(readOptions({ prefix: junk, suffix: junk }), String(junk)).toMatchObject({ prefix: '', suffix: '' });
+		}
+
+		// Text only: what looks like markup is the text it is.
+		expect(text(5, { indicatorFormat: 'value', suffix: '<b>x</b>' })).toBe('5<b>x</b>');
+	});
+
+	test('without options the text is what it was', () => {
+		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'fraction' }, EN)).toBe('7 / 12');
+		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'value' }, EN)).toBe('7');
+		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'value', prefix: '', suffix: '' }, EN)).toBe('7');
+	});
+
+	test('the display takes them from the interface where its own are not set, each on its own', () => {
+		const inherited = { prefix: '$', suffix: ' GB' };
+
+		expect(readOptions({}, inherited)).toMatchObject({ prefix: '$', suffix: ' GB' });
+		expect(readOptions({ prefix: '€' }, inherited)).toMatchObject({ prefix: '€', suffix: ' GB' });
+		expect(readOptions({ suffix: ' MB' }, inherited)).toMatchObject({ prefix: '$', suffix: ' MB' });
+
+		// Emptied, blank and broken ones are taken over again, as the caption is.
+		for (const unset of [null, undefined, '', '  ', 5]) {
+			expect(readOptions({ prefix: unset, suffix: unset }, inherited), String(unset)).toMatchObject({ prefix: '$', suffix: ' GB' });
+		}
+
+		expect(readOptions({ prefix: '€' }, {})).toMatchObject({ prefix: '€', suffix: '' });
+	});
+
+	test('they are part of the text wherever it goes: what is drawn, the tooltip and the plain text', () => {
+		const options = readOptions({ max: 100, indicatorFormat: 'value', prefix: '$', suffix: ' GB', label: 'Storage' });
+
+		expect(readingOf(42, options, EN).text).toBe('$42 GB');
+		expect(readingOf('42', options, EN).text).toBe('$42 GB');
+		expect(tooltipOf(readingOf(42, options, EN).text, options.label)).toBe('Storage: $42 GB');
+
+		expect(textHandler(42, { indicatorFormat: 'value', suffix: ' GB' }, {}, EN)).toBe('42 GB');
+		expect(textHandler(4200, { indicatorFormat: 'fraction' }, { interfaceOptions: { max: 10000, prefix: '$' } }, EN)).toBe('$4,200 / $10,000');
+		expect(textHandler(42, {}, { interfaceOptions: { indicatorFormat: 'value', prefix: '$', suffix: ' GB' } }, EN)).toBe('$42 GB');
+		expect(textHandler(42, { suffix: ' MB' }, { interfaceOptions: { indicatorFormat: 'value', prefix: '$', suffix: ' GB' } }, EN)).toBe('$42 MB');
+		expect(textHandler(42, { indicatorFormat: 'percent' }, { interfaceOptions: { indicatorFormat: 'value', prefix: '$', suffix: ' GB' } }, EN)).toBe('42%');
+	});
+
+	test('no value and a value which is no number have neither', () => {
+		const options = readOptions({ indicatorFormat: 'value', prefix: '$', suffix: ' GB' });
+
+		expect(readingOf(null, options, EN).text).toBe(NO_VALUE);
+		expect(readingOf('abc', options, EN).text).toBe(NO_VALUE);
+		expect(readingOf('', options, EN).text).toBe(NO_VALUE);
+
+		expect(textHandler(null, { indicatorFormat: 'value', prefix: '$', suffix: ' GB' }, {}, EN)).toBeNull();
+		expect(textHandler('abc', { indicatorFormat: 'value', prefix: '$', suffix: ' GB' }, {}, EN)).toBe('abc');
+		expect(textHandler({ a: 1 }, {}, { interfaceOptions: { indicatorFormat: 'value', prefix: '$' } }, EN)).toBe('{"a":1}');
+	});
+
+	test('they change nothing about what is drawn or how a meter is edited', () => {
+		const own = { prefix: '$', suffix: ' GB' };
+
+		expect(readLook(own)).toEqual(readLook());
+		expect(readEditing(own, 'float')).toEqual(readEditing({}, 'float'));
+		expect({ ...readOptions(own), prefix: '', suffix: '' }).toEqual(readOptions());
 	});
 });
 
@@ -1523,12 +1620,45 @@ describe('how a meter is edited', () => {
 		expect(readEditing(null, 'float')).toEqual({ input: 'automatic', step: 1, sensitivity: 1, whole: false });
 	});
 
-	test('the method is one of four words, and anything else is automatic', () => {
-		for (const input of ['automatic', 'contiguous', 'segment', 'relative']) expect(readEditing({ input }).input).toBe(input);
+	test('nothing set on a type which holds fractions: a step which suits the range', () => {
+		expect(readEditing({ max: 1 }, 'float').step).toBe(0.01);
+		expect(readEditing({ min: 0, max: 5 }, 'decimal').step).toBe(0.01);
+		expect(readEditing({ max: 10 }, 'float').step).toBe(0.1);
+		expect(readEditing({ minValue: 0, maxValue: 1 }, 'float').step).toBe(0.01);
+		expect(readEditing({}, 'float').step).toBe(1);
 
-		for (const input of [null, undefined, '', 'Relative', 'segments', 'drag', 1, true, ['relative']]) {
+		// The range which is handed over counts, where one is: the display's limits are not the interface's.
+		expect(readEditing({ max: 1 }, 'float', range(0, 100)).step).toBe(1);
+		expect(readEditing({}, 'float', range(0, 1)).step).toBe(0.01);
+
+		// A whole type has 1, whatever the range.
+		expect(readEditing({ max: 1 }, 'integer').step).toBe(1);
+		expect(readEditing({ max: 5 }, 'bigInteger').step).toBe(1);
+
+		// A step which is set, its own or a Slider's, is that step, and one which is no step is 1 as before.
+		expect(readEditing({ max: 1, step: 0.25 }, 'float').step).toBe(0.25);
+		expect(readEditing({ max: 1, stepInterval: 0.5 }, 'float').step).toBe(0.5);
+		expect(readEditing({ max: 1, step: 'abc' }, 'float').step).toBe(1);
+		expect(readEditing({ max: 1, step: 0 }, 'float').step).toBe(1);
+		expect(readEditing({ max: 1, step: null }, 'float').step).toBe(0.01);
+		expect(readEditing({ max: 1, step: '' }, 'float').step).toBe(0.01);
+	});
+
+	test('the method is one of five words, and anything else is automatic', () => {
+		for (const input of ['automatic', 'position', 'piece', 'relative', 'none']) expect(readEditing({ input }).input).toBe(input);
+
+		for (const input of [null, undefined, '', 'Relative', 'None', 'pieces', 'drag', 1, true, false, ['relative']]) {
 			expect(readEditing({ input }).input, String(input)).toBe('automatic');
 		}
+	});
+
+	test('the two words of builds which were never published are junk like any other', () => {
+		expect(readEditing({ input: 'contiguous' }).input).toBe('automatic');
+		expect(readEditing({ input: 'segment' }).input).toBe('automatic');
+
+		// So five pills for five steps are filled by the piece, whatever such a field stored.
+		expect(inputMethod(readEditing({ input: 'contiguous' }, 'integer', range(0, 5)), 5, range(0, 5))).toBe('piece');
+		expect(inputMethod(readEditing({ input: 'segment' }, 'integer'), 10, range(0, 100))).toBe('position');
 	});
 
 	test('the step is a number above zero, or the text of one', () => {
@@ -1592,6 +1722,161 @@ describe('how a meter is edited', () => {
 
 		expect(readOptions(own)).toEqual(readOptions());
 		expect(readLook(own)).toEqual(readLook());
+	});
+});
+
+describe('the step of a field which sets none', () => {
+	const float = (min: number, max: number) => defaultStep(range(min, max), false);
+
+	test('a whole type: 1, whatever the range', () => {
+		for (const [min, max] of [[0, 1], [0, 5], [0, 100], [0, 1e9], [0.5, 5.5], [0, 0], [-1, 1], [0, 1e-9]] as const) {
+			expect(defaultStep(range(min, max), true), `${min} to ${max}`).toBe(1);
+		}
+	});
+
+	test('any other type: the largest power of ten which gives at least a hundred steps, and never more than 1', () => {
+		expect(STEPS_WANTED).toBe(100);
+
+		for (const [span, step] of [
+			[1, 0.01],
+			[2, 0.01],
+			[5, 0.01],
+			[9.99, 0.01],
+			[10, 0.1],
+			[12.5, 0.1],
+			[50, 0.1],
+			[99.9, 0.1],
+			[100, 1],
+			[101, 1],
+			[1000, 1],
+			[1e9, 1],
+			[1e300, 1],
+			[0.5, 0.001],
+			[0.1, 0.001],
+			[0.099, 0.0001],
+			[0.01, 0.0001],
+			[2.5, 0.01],
+			[1e-9, 1e-11],
+			[3e-9, 1e-11],
+		] as const) {
+			expect(float(0, span), `a range of ${span}`).toBe(step);
+
+			// It is the range which counts, not where it lies.
+			expect(float(-span, 0), `a range of ${span} below zero`).toBe(step);
+			expect(float(-span / 2, span / 2), `a range of ${span} around zero`).toBe(step);
+		}
+
+		expect(float(1, 2)).toBe(0.01);
+		expect(float(100, 105)).toBe(0.01);
+		expect(float(-50, 50)).toBe(1);
+		expect(float(0.5, 5.5)).toBe(0.01);
+	});
+
+	test('it gives at least a hundred steps and the next power of ten would give fewer, for every range down to the least step', () => {
+		for (let exponent = -12; exponent <= 6; exponent++) {
+			for (const digit of [1, 1.5, 2, 3, 4.2, 5, 7, 9, 9.999]) {
+				const span = digit * 10 ** exponent;
+				const step = float(0, span);
+
+				expect(step, String(span)).toBeLessThanOrEqual(1);
+				if (step < 1) expect(span / step, String(span)).toBeGreaterThanOrEqual(100 * (1 - 1e-9));
+				if (step < 1) expect(span / (step * 10), String(span)).toBeLessThan(100);
+				if (step === 1) expect(span, String(span)).toBeGreaterThanOrEqual(100 * (1 - 1e-9));
+			}
+		}
+	});
+
+	test('limits which are a hair less than a power of ten apart still have their hundred steps', () => {
+		// 0.7 - 0.6 is 0.09999999999999998.
+		expect(0.7 - 0.6).toBeLessThan(0.1);
+		expect(float(0.6, 0.7)).toBe(0.001);
+		expect(float(0.1, 0.2)).toBe(0.001);
+		expect(float(1.1, 2.1)).toBe(0.01);
+	});
+
+	test('the step is the very number its decimal stands for, not one worked out', () => {
+		for (let exponent = -15; exponent <= 0; exponent++) {
+			const step = float(0, Number(`1e${exponent + 2}`));
+
+			expect(step, `1e${exponent}`).toBe(Number(`1e${exponent}`));
+			expect(String(step), `1e${exponent}`).toBe(String(Number(`1e${exponent}`)));
+		}
+
+		expect(String(float(0, 1))).toBe('0.01');
+		expect(String(float(0, 10))).toBe('0.1');
+		expect(String(float(0, 0.01))).toBe('0.0001');
+
+		// Arithmetic need not give that number.
+		expect(0.1 * 0.1).not.toBe(0.01);
+	});
+
+	test('a range of one number, and limits which are not finite or too far apart: 1', () => {
+		expect(float(5, 5)).toBe(1);
+		expect(float(0, 0)).toBe(1);
+		expect(float(5, 4)).toBe(1);
+		expect(float(0, Number.POSITIVE_INFINITY)).toBe(1);
+		expect(float(Number.NEGATIVE_INFINITY, 0)).toBe(1);
+		expect(float(Number.NaN, 1)).toBe(1);
+		expect(float(0, Number.NaN)).toBe(1);
+		expect(float(-1e308, 1e308)).toBe(1);
+	});
+
+	test('the least step: fifteen decimals, for a range too small for a hundred of them', () => {
+		expect(LEAST_STEP).toBe(1e-15);
+		expect(float(0, 1e-13)).toBe(1e-15);
+		expect(float(0, 1e-14)).toBe(1e-15);
+		expect(float(0, 1e-15)).toBe(1e-15);
+		expect(float(0, 1e-20)).toBe(1e-15);
+		expect(float(0, 1e-300)).toBe(1e-15);
+		expect(float(0, Number.MIN_VALUE)).toBe(1e-15);
+
+		// A range smaller than that step has its two ends, as with any step larger than its range.
+		expect(snapValue(4e-21, range(0, 1e-20), { step: float(0, 1e-20), whole: false })).toBe(0);
+		expect(snapValue(6e-21, range(0, 1e-20), { step: float(0, 1e-20), whole: false })).toBe(1e-20);
+	});
+
+	test('what is written on such a grid is the decimal it looks like, at every point, down to a range of 1e-13', () => {
+		// Every point of the grid of a range, written through `snapValue` as a press writes it, is the number its
+		// decimal text stands for: 0.37 and not 0.37000000000000005.
+		for (const [min, max] of [[0, 1], [0, 5], [0, 10], [0, 50], [-1, 1], [0.5, 5.5], [100, 101], [0, 0.1], [0, 1e-9], [0, 1e-13], [2, 2.5]] as const) {
+			const limits = range(min, max);
+			const editing = readEditing({}, 'float', limits);
+			const decimals = Math.round(-Math.log10(editing.step));
+			const points = Math.round((max - min) / editing.step);
+
+			expect(points, `${min} to ${max}`).toBeGreaterThanOrEqual(100);
+			expect(points, `${min} to ${max}`).toBeLessThan(1000);
+
+			for (let index = 0; index <= points; index++) {
+				// Asked for a little off the point, as a pointer is.
+				const written = snapValue(min + (index + 0.3) * editing.step, limits, editing)!;
+				const text = written.toFixed(decimals);
+
+				expect(Number(text), `${min} to ${max}, point ${index}`).toBe(written);
+				expect(Math.abs(written - (min + index * editing.step)), `${min} to ${max}, point ${index}`).toBeLessThan(editing.step / 2);
+
+				// As JSON, which is how it is sent, it has no more digits than the step has decimals.
+				if (decimals <= 6) expect((JSON.stringify(written).split('.')[1] ?? '').length, `${min} to ${max}, point ${index}: ${written}`).toBeLessThanOrEqual(decimals);
+			}
+		}
+
+		const hundredths = readEditing({ max: 1 }, 'float');
+		expect(snapValue(0.37000000000000005, range(0, 1), hundredths)).toBe(0.37);
+		expect(JSON.stringify(snapValue(0.3699, range(0, 1), hundredths))).toBe('0.37');
+		expect(JSON.stringify(snapValue(0.1 + 0.2, range(0, 1), hundredths))).toBe('0.3');
+
+		// The keys count on the same grid.
+		expect(keyValue('ArrowRight', 0.36, range(0, 1), hundredths)).toBe(0.37);
+		expect(keyValue('ArrowRight', 0.29, range(0, 1), hundredths)).toBe(0.3);
+		expect(keyValue('PageUp', 0.27, range(0, 1), hundredths)).toBe(0.37);
+		expect(keyValue('ArrowLeft', 0.38, range(0, 1), hundredths)).toBe(0.37);
+
+		// A range of 1e-9: hundredths of it, written as they are.
+		const tiny = readEditing({}, 'float', range(0, 1e-9));
+		expect(tiny.step).toBe(1e-11);
+		expect(snapValue(3.7e-10, range(0, 1e-9), tiny)).toBe(3.7e-10);
+		expect(snapValue(3.70000004e-10, range(0, 1e-9), tiny)).toBe(3.7e-10);
+		expect(String(snapValue(3.70000004e-10, range(0, 1e-9), tiny))).toBe('3.7e-10');
 	});
 });
 
@@ -1774,7 +2059,7 @@ describe('where the pointer is', () => {
 		expect(Number.isFinite(valueAtShare(0.5, range(-1e308, 1e308)))).toBe(true);
 	});
 
-	test('contiguous: the value under the pointer, on the grid', () => {
+	test('by position: the value under the pointer, on the grid', () => {
 		const under = (position: number, length: number, limits = range(0, 100), step = 1) => snapValue(valueAtShare(shareAt(position, length), limits), limits, { step, whole: false });
 
 		expect(under(100, 400)).toBe(25);
@@ -1858,34 +2143,66 @@ describe('the pieces the pointer fills', () => {
 });
 
 describe('the method the pointer works by', () => {
-	const method = (own: object, count: number, limits = range(0, 100), type?: string) => inputMethod(readEditing(own, type), count, limits);
+	// On a whole type unless said: a type which holds fractions has a finer step where none is set.
+	const method = (own: object, count: number, limits = range(0, 100), type = 'integer') => inputMethod(readEditing(own, type, limits), count, limits);
 
 	test('automatic, on one bar: the value under the pointer', () => {
-		expect(method({}, 0)).toBe('contiguous');
-		expect(method({}, 1)).toBe('contiguous');
-		expect(method({ input: 'automatic' }, 0, range(0, 5))).toBe('contiguous');
+		expect(method({}, 0)).toBe('position');
+		expect(method({}, 1)).toBe('position');
+		expect(method({ input: 'automatic' }, 0, range(0, 5))).toBe('position');
 	});
 
 	test('automatic, in pieces: by the piece where each piece is exactly one step', () => {
-		expect(method({}, 5, range(0, 5))).toBe('segment');
-		expect(method({}, 10, range(0, 10))).toBe('segment');
-		expect(method({ step: 10 }, 10, range(0, 100))).toBe('segment');
-		expect(method({ step: 25 }, 4, range(0, 100))).toBe('segment');
-		expect(method({ step: 0.1 }, 10, range(0, 1))).toBe('segment');
-		expect(method({ step: 0.1 }, 3, range(0, 0.3))).toBe('segment');
-		expect(method({ stepInterval: 20 }, 5, range(0, 100))).toBe('segment');
-		expect(method({}, 6, range(-3, 3))).toBe('segment');
+		expect(method({}, 5, range(0, 5))).toBe('piece');
+		expect(method({}, 10, range(0, 10))).toBe('piece');
+		expect(method({ step: 10 }, 10, range(0, 100))).toBe('piece');
+		expect(method({ step: 25 }, 4, range(0, 100))).toBe('piece');
+		expect(method({ step: 0.1 }, 10, range(0, 1), 'float')).toBe('piece');
+		expect(method({ step: 0.1 }, 3, range(0, 0.3), 'decimal')).toBe('piece');
+		expect(method({ stepInterval: 20 }, 5, range(0, 100))).toBe('piece');
+		expect(method({}, 6, range(-3, 3))).toBe('piece');
 	});
 
 	test('automatic, in pieces which are more or less than a step: the value under the pointer', () => {
-		expect(method({}, 10, range(0, 100))).toBe('contiguous');
-		expect(method({}, 25, range(0, 100))).toBe('contiguous');
-		expect(method({ step: 5 }, 10, range(0, 100))).toBe('contiguous');
-		expect(method({ step: 2 }, 5, range(0, 5))).toBe('contiguous');
-		expect(method({}, 14, range(0, 2.5))).toBe('contiguous');
-		expect(method({ step: 0.5 }, 5, range(0, 5))).toBe('contiguous');
+		expect(method({}, 10, range(0, 100))).toBe('position');
+		expect(method({}, 25, range(0, 100))).toBe('position');
+		expect(method({ step: 5 }, 10, range(0, 100))).toBe('position');
+		expect(method({ step: 2 }, 5, range(0, 5))).toBe('position');
+		expect(method({}, 14, range(0, 2.5))).toBe('position');
+		expect(method({ step: 0.5 }, 5, range(0, 5), 'float')).toBe('position');
 		// A whole type has a whole step, whatever is set.
-		expect(method({ step: 0.5 }, 5, range(0, 5), 'integer')).toBe('segment');
+		expect(method({ step: 0.5 }, 5, range(0, 5), 'integer')).toBe('piece');
+	});
+
+	test('automatic, on a type which holds fractions and sets no step: a piece is no longer one step', () => {
+		// Five pieces for 0 to 5 in hundredths: the value under the pointer.
+		for (const type of ['float', 'decimal']) {
+			expect(method({}, 5, range(0, 5), type), type).toBe('position');
+			expect(method({}, 10, range(0, 10), type), type).toBe('position');
+		}
+
+		// A hundred pieces for 0 to 1 are a hundredth each, which is the step.
+		expect(method({}, 100, range(0, 1), 'float')).toBe('piece');
+
+		// Whole pieces are back with a step of 1, or by saying so.
+		expect(method({ step: 1 }, 5, range(0, 5), 'float')).toBe('piece');
+		expect(method({ input: 'piece' }, 5, range(0, 5), 'float')).toBe('piece');
+		expect(method({}, 5, range(0, 5), 'integer')).toBe('piece');
+	});
+
+	test('none is none, whatever is drawn, and such a meter cannot be edited', () => {
+		for (const count of [0, 1, 2, 5, 50]) {
+			expect(method({ input: 'none' }, count)).toBe('none');
+			expect(method({ input: 'none', step: 5 }, count, range(0, 5), 'float')).toBe('none');
+		}
+
+		// No other option comes to it.
+		for (const input of ['automatic', 'position', 'piece', 'relative', 'None', 'contiguous', 'segment', null, false]) {
+			for (const count of [0, 5]) expect(method({ input }, count), String(input)).not.toBe('none');
+		}
+
+		expect(canEdit({}, method({ input: 'none' }, 5))).toBe(false);
+		expect(canEdit({ disabled: false, nonEditable: false, loading: false }, 'none')).toBe(false);
 	});
 
 	test('automatic is never relative', () => {
@@ -1897,10 +2214,10 @@ describe('the method the pointer works by', () => {
 	test('a method which is set is used, but one bar has no pieces to fill', () => {
 		expect(method({ input: 'relative' }, 0)).toBe('relative');
 		expect(method({ input: 'relative' }, 5, range(0, 5))).toBe('relative');
-		expect(method({ input: 'contiguous' }, 5, range(0, 5))).toBe('contiguous');
-		expect(method({ input: 'segment' }, 10)).toBe('segment');
-		expect(method({ input: 'segment' }, 0)).toBe('contiguous');
-		expect(method({ input: 'segment' }, 1)).toBe('contiguous');
+		expect(method({ input: 'position' }, 5, range(0, 5))).toBe('position');
+		expect(method({ input: 'piece' }, 10)).toBe('piece');
+		expect(method({ input: 'piece' }, 0)).toBe('position');
+		expect(method({ input: 'piece' }, 1)).toBe('position');
 	});
 });
 
@@ -2058,14 +2375,14 @@ describe('pieces which grow', () => {
 		const options = readOptions({ max: 100 });
 		const sizes = (value: unknown, look: object, count = 5) => drawingOf(readLook(look), options, readingOf(value, options, EN), count, value).pieces!.map((piece) => piece.size);
 
-		expect(sizes(65, { visualization: 'dots', grow: true })).toEqual([null, null, null, { along: 0.75, across: 0.75 }, { along: 0.5, across: 0.5 }]);
-		expect(sizes(60, { visualization: 'dots', grow: true })).toEqual([null, null, null, { along: 0.5, across: 0.5 }, { along: 0.5, across: 0.5 }]);
-		expect(sizes(65, { visualization: 'segments', grow: true })).toEqual([null, null, null, { along: 1, across: 0.6667 }, { along: 1, across: 0.3333 }]);
-		expect(sizes(100, { visualization: 'bars', grow: true })).toEqual([null, null, null, null, null]);
-		expect(sizes(0, { visualization: 'pills', grow: true })).toEqual(Array.from({ length: 5 }, () => ({ along: 0.6, across: 0.6 })));
+		expect(sizes(65, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, { along: 0.75, across: 0.75 }, { along: 0.5, across: 0.5 }]);
+		expect(sizes(60, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, { along: 0.5, across: 0.5 }, { along: 0.5, across: 0.5 }]);
+		expect(sizes(65, { visualization: 'segments', grow: 1 })).toEqual([null, null, null, { along: 1, across: 0.6667 }, { along: 1, across: 0.3333 }]);
+		expect(sizes(100, { visualization: 'bars', grow: 1 })).toEqual([null, null, null, null, null]);
+		expect(sizes(0, { visualization: 'pills', grow: 1 })).toEqual(Array.from({ length: 5 }, () => ({ along: 0.6, across: 0.6 })));
 
 		// Without a value nothing changes: no piece has a size.
-		expect(sizes(null, { visualization: 'dots', grow: true })).toEqual([null, null, null, null, null]);
+		expect(sizes(null, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, null, null]);
 	});
 
 	test('off, a meter is drawn exactly as before there was such an option', () => {
@@ -2085,7 +2402,7 @@ describe('pieces which grow', () => {
 					expect(drawingOf({ activeColoring: readLook(look).activeColoring, inactiveColoring: readLook(look).inactiveColoring }, options, reading, 5, value)).toEqual(plain);
 
 					// On, the paint of every piece and what is filled are still the same: only the sizes are new.
-					const grown = drawingOf(readLook({ ...look, grow: true }), options, reading, 5, value);
+					const grown = drawingOf(readLook({ ...look, grow: 1 }), options, reading, 5, value);
 					expect(grown.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint }))).toEqual(plain.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint })));
 					expect({ ...grown, pieces: null }).toEqual({ ...plain, pieces: null });
 				}
@@ -2097,18 +2414,17 @@ describe('pieces which grow', () => {
 		const options = readOptions({ max: 100 });
 		const reading = readingOf(65, options, EN);
 
-		expect(drawingOf(readLook({ grow: true }), options, reading, 0, 65)).toEqual(drawingOf(readLook({}), options, reading, 0, 65));
-		expect(drawingOf(readLook({ visualization: 'contiguous', grow: true }), options, reading, 5, 65).pieces!.every((piece) => piece.size === null)).toBe(true);
+		expect(drawingOf(readLook({ grow: 1 }), options, reading, 0, 65)).toEqual(drawingOf(readLook({}), options, reading, 0, 65));
+		expect(drawingOf(readLook({ visualization: 'contiguous', grow: 1 }), options, reading, 5, 65).pieces!.every((piece) => piece.size === null)).toBe(true);
 
 		expect(readLook({ grow: 2 }).grow).toBe(2);
 		expect(readLook({}, { grow: 2 }).grow).toBe(0);
 		expect(readLook({ grow: null }, { grow: 2 }).grow).toBe(0);
-		expect(readLook({ grow: null }, { grow: true }).grow).toBe(0);
 	});
 });
 
 describe('grow as a number: how many pieces can be growing at once', () => {
-	test('what the option comes to: a number from 0 to 20, a switch which was stored, and junk', () => {
+	test('what the option comes to: a number from 0 to 20, and 0 for anything else', () => {
 		expect(MAX_GROW).toBe(20);
 
 		for (const [stored, grow] of [
@@ -2121,8 +2437,8 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 			[20, 20],
 			['2', 2],
 			['1.5', 1.5],
-			// It was a switch before it was a number.
-			[true, 1],
+			// A switch is no number.
+			[true, 0],
 			[false, 0],
 			// Junk, and less than nothing.
 			['true', 0],
@@ -2167,8 +2483,8 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 			expect(reachOf(shape, 'display', 5, 72)).toBe(0.5);
 		}
 
-		// What the stored switch comes to.
-		expect(reachOf('dots', 'form', 5, 342, growOf(true))).toBe(0.5);
+		// What is no number reaches nowhere.
+		expect(reachOf('dots', 'form', 5, 342, growOf(true))).toBe(0);
 		expect(reachOf('dots', 'form', 5, 342, growOf(false))).toBe(0);
 		expect(reachOf('dots', 'form', 5, 342, growOf('junk'))).toBe(0);
 		expect(reachOf('dots', 'form', 5, 342, growOf(25))).toBe(19.5);
@@ -2255,7 +2571,7 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 		}
 	});
 
-	test('what is drawn for dots with 3, 1 and a stored switch', () => {
+	test('what is drawn for dots with 3, with 1 and with what is no number', () => {
 		const options = readOptions({ max: 8 });
 		const sizes = (grow: unknown, value: number) => {
 			const look = readLook({ visualization: 'dots', grow });
@@ -2265,14 +2581,13 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 		// At exactly 3 of 8: with 3 the next two dots are larger than the ones after them, the nearer the larger.
 		expect(sizes(3, 3)).toEqual([1, 1, 1, 0.9, 0.7, 0.5, 0.5, 0.5]);
 
-		// With 1 every dot which is not filled is small, and a stored switch is 1.
+		// With 1 every dot which is not filled is small, and the next one grows over its last half.
 		expect(sizes(1, 3)).toEqual([1, 1, 1, 0.5, 0.5, 0.5, 0.5, 0.5]);
-		expect(sizes(true, 3)).toEqual(sizes(1, 3));
-		expect(sizes(true, 3.3)).toEqual(sizes(1, 3.3));
-		expect(sizes(true, 3.3)).toEqual([1, 1, 1, 0.8, 0.5, 0.5, 0.5, 0.5]);
+		expect(sizes(1, 3.3)).toEqual([1, 1, 1, 0.8, 0.5, 0.5, 0.5, 0.5]);
+		expect(sizes('1', 3.3)).toEqual(sizes(1, 3.3));
 
-		// With 0, with the switch off and with junk, no piece has a size at all.
-		for (const grow of [0, false, 'junk', -2]) {
+		// With 0, with a switch, on or off, and with junk, no piece has a size at all.
+		for (const grow of [0, true, false, 'junk', -2]) {
 			const look = readLook({ visualization: 'dots', grow });
 			expect(drawingOf(look, options, readingOf(3.3, options, EN), 8, 3.3).pieces!.every((piece) => piece.size === null), String(grow)).toBe(true);
 		}
@@ -2440,11 +2755,11 @@ describe('how far ahead of the fill a piece grows', () => {
 
 		// Fifty bars which grow, at 40, with a reach of two and a half: the heights of the two bars in front of the
 		// fill, between a third and all.
-		const grown = pieces({ grow: true }, 50, reachOf('bars', 'form', 50, 342));
+		const grown = pieces({ grow: 1 }, 50, reachOf('bars', 'form', 50, 342));
 		expect(grown.slice(19, 23).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.8667 }, { along: 1, across: 0.6 }, { along: 1, across: 0.3333 }]);
 
 		// Without a reach, as before: nothing in front of the fill has started.
-		expect(pieces({ grow: true }, 50, undefined).slice(19, 22).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+		expect(pieces({ grow: 1 }, 50, undefined).slice(19, 22).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
 
 		// Twenty bars of a display which fade in, at 40, with a reach of three: eight filled, and over the next three
 		// the green, less and less.
@@ -2457,7 +2772,7 @@ describe('how far ahead of the fill a piece grows', () => {
 describe('growing and fading by where the pointer is', () => {
 	// Five segments for a hundred, which grow and fade in. The value is 40: two filled.
 	const options = readOptions({ max: 100, color: GREEN });
-	const look = readLook({ visualization: 'segments', grow: true, fade: true });
+	const look = readLook({ visualization: 'segments', grow: 1, fade: true });
 	const reading = readingOf(40, options, EN);
 	const draw = (at?: number | null) => drawingOf(look, options, reading, 5, 40, { at });
 
@@ -3097,12 +3412,12 @@ describe('the piece which fades in', () => {
 	});
 
 	test('with both, the piece grows and fades in together, by the same share', () => {
-		const piece = draw(65, { visualization: 'dots', grow: true, fade: true }).pieces![3]!;
+		const piece = draw(65, { visualization: 'dots', grow: 1, fade: true }).pieces![3]!;
 
 		expect(piece.size).toEqual({ along: 0.75, across: 0.75 });
 		expect(piece.over).toEqual({ paint: { color: AMBER, scale: null }, opacity: 0.5 });
 
-		const after = draw(65, { visualization: 'dots', grow: true, fade: true }).pieces![4]!;
+		const after = draw(65, { visualization: 'dots', grow: 1, fade: true }).pieces![4]!;
 		expect(after.size).toEqual({ along: 0.5, across: 0.5 });
 		expect(after.over).toBeNull();
 	});
@@ -3247,6 +3562,19 @@ describe('whether a field can be edited, and whether a value changes it', () => 
 		expect(canEdit({ disabled: undefined, nonEditable: undefined, loading: undefined })).toBe(true);
 	});
 
+	test('every method by which the pointer sets a value leaves that as it is, and none stops it', () => {
+		for (const method of ['position', 'piece', 'relative'] as const) {
+			expect(canEdit({}, method), method).toBe(true);
+			expect(canEdit({ disabled: true }, method), method).toBe(false);
+			expect(canEdit({ nonEditable: true }, method), method).toBe(false);
+			expect(canEdit({ loading: true }, method), method).toBe(false);
+		}
+
+		expect(canEdit({}, 'none')).toBe(false);
+		expect(canEdit({ disabled: true }, 'none')).toBe(false);
+		expect(canEdit({}, undefined)).toBe(true);
+	});
+
 	test('each of the three alone is enough to stop it, and so is any pair and all three', () => {
 		expect(canEdit({ disabled: true })).toBe(false);
 		expect(canEdit({ nonEditable: true })).toBe(false);
@@ -3309,27 +3637,27 @@ describe('the range which can be written', () => {
 	});
 
 	test('automatic fills by the piece only where the limits themselves can be written', () => {
-		const method = (own: object, count: number, limits: { min: number; max: number }, type: string) => inputMethod(readEditing(own, type), count, limits);
+		const method = (own: object, count: number, limits: { min: number; max: number }, type: string) => inputMethod(readEditing(own, type, limits), count, limits);
 
 		// Five pieces over 0.5 to 5.5 on a whole type: 1 to 5 can be written, which is four steps and not five.
-		expect(method({}, 5, range(0.5, 5.5), 'integer')).toBe('contiguous');
-		expect(method({}, 5, range(0.5, 5.5), 'bigInteger')).toBe('contiguous');
-		expect(method({}, 10, range(0, 10.5), 'integer')).toBe('contiguous');
-		expect(method({}, 4, range(0.5, 5.5), 'integer')).toBe('contiguous');
+		expect(method({}, 5, range(0.5, 5.5), 'integer')).toBe('position');
+		expect(method({}, 5, range(0.5, 5.5), 'bigInteger')).toBe('position');
+		expect(method({}, 10, range(0, 10.5), 'integer')).toBe('position');
+		expect(method({}, 4, range(0.5, 5.5), 'integer')).toBe('position');
 
-		// The same limits on a type which can hold them.
-		expect(method({}, 5, range(0.5, 5.5), 'float')).toBe('segment');
-		expect(method({}, 5, range(0.5, 5.5), 'decimal')).toBe('segment');
+		// The same limits on a type which can hold them, in steps of 1.
+		expect(method({ step: 1 }, 5, range(0.5, 5.5), 'float')).toBe('piece');
+		expect(method({ step: 1 }, 5, range(0.5, 5.5), 'decimal')).toBe('piece');
 
 		// Whole limits on a whole type, as before.
-		expect(method({}, 5, range(0, 5), 'integer')).toBe('segment');
-		expect(method({}, 5, range(-2, 3), 'integer')).toBe('segment');
+		expect(method({}, 5, range(0, 5), 'integer')).toBe('piece');
+		expect(method({}, 5, range(-2, 3), 'integer')).toBe('piece');
 
 		// Nothing which can be written: no piece is a step.
-		expect(method({}, 5, range(0.2, 0.8), 'integer')).toBe('contiguous');
+		expect(method({}, 5, range(0.2, 0.8), 'integer')).toBe('position');
 
 		// The method which is set is used as it is.
-		expect(method({ input: 'segment' }, 5, range(0.5, 5.5), 'integer')).toBe('segment');
+		expect(method({ input: 'piece' }, 5, range(0.5, 5.5), 'integer')).toBe('piece');
 	});
 });
 
@@ -3338,34 +3666,34 @@ describe('the value a press on a piece writes', () => {
 	const filledBy = (value: number | null, count: number, limits: { min: number; max: number }) => (value === null ? null : filledCount(fractionOf(value, limits), count));
 
 	test('where a piece is a step: that many steps', () => {
-		for (const filled of [0, 1, 2, 3, 4, 5]) expect(segmentValue(filled, 5, range(0, 5), one)).toBe(filled);
-		for (const filled of [0, 3, 7, 10]) expect(segmentValue(filled, 10, range(0, 100), one)).toBe(filled * 10);
+		for (const filled of [0, 1, 2, 3, 4, 5]) expect(pieceValue(filled, 5, range(0, 5), one)).toBe(filled);
+		for (const filled of [0, 3, 7, 10]) expect(pieceValue(filled, 10, range(0, 100), one)).toBe(filled * 10);
 
-		expect(segmentValue(3, 4, range(10, 18), { step: 2, whole: true })).toBe(16);
-		expect(segmentValue(2, 5, range(0, 1), { step: 0.2, whole: false })).toBe(0.4);
+		expect(pieceValue(3, 4, range(10, 18), { step: 2, whole: true })).toBe(16);
+		expect(pieceValue(2, 5, range(0, 1), { step: 0.2, whole: false })).toBe(0.4);
 	});
 
 	test('a whole type with limits between whole numbers: the piece which was pressed is the last one filled', () => {
 		// Five pieces over 0.5 to 5.5, of which 1 to 5 can be written.
 		const limits = range(0.5, 5.5);
 
-		expect([1, 2, 3, 4, 5].map((filled) => segmentValue(filled, 5, limits, one))).toEqual([1, 2, 3, 4, 5]);
-		for (const filled of [1, 2, 3, 4, 5]) expect(filledBy(segmentValue(filled, 5, limits, one), 5, limits)).toBe(filled);
+		expect([1, 2, 3, 4, 5].map((filled) => pieceValue(filled, 5, limits, one))).toEqual([1, 2, 3, 4, 5]);
+		for (const filled of [1, 2, 3, 4, 5]) expect(filledBy(pieceValue(filled, 5, limits, one), 5, limits)).toBe(filled);
 
 		// Before the first piece no value draws none: the least which can be written.
-		expect(segmentValue(0, 5, limits, one)).toBe(1);
+		expect(pieceValue(0, 5, limits, one)).toBe(1);
 	});
 
 	test('of the values which draw the piece, the one nearest to its share', () => {
 		// Four pieces for 0 to 100 in steps of 1: the second piece is 50, though 38 to 62 would all draw two.
-		expect(segmentValue(2, 4, range(0, 100), one)).toBe(50);
+		expect(pieceValue(2, 4, range(0, 100), one)).toBe(50);
 
 		// Steps of 20: the share of the second of four pieces, 50, is between 40 and 60, which both draw two; the upper one of a tie.
-		expect(segmentValue(2, 4, range(0, 100), { step: 20, whole: true })).toBe(60);
+		expect(pieceValue(2, 4, range(0, 100), { step: 20, whole: true })).toBe(60);
 
 		// Steps of 30 up to 100 are 0, 30, 60, 90 and 100. The third of four pieces, 75: 60 draws two and 90 four,
 		// so no value draws three, and the nearest value is written.
-		expect(segmentValue(3, 4, range(0, 100), { step: 30, whole: true })).toBe(90);
+		expect(pieceValue(3, 4, range(0, 100), { step: 30, whole: true })).toBe(90);
 		expect(filledBy(60, 4, range(0, 100))).toBe(2);
 		expect(filledBy(90, 4, range(0, 100))).toBe(4);
 	});
@@ -3382,7 +3710,7 @@ describe('the value a press on a piece writes', () => {
 
 		for (const [limits, editing, count] of cases) {
 			for (let filled = 0; filled <= count; filled++) {
-				const written = segmentValue(filled, count, limits, editing);
+				const written = pieceValue(filled, count, limits, editing);
 				expect(written).not.toBeNull();
 
 				// Every value which can be written, and whether one of them draws this many pieces.
@@ -3399,8 +3727,8 @@ describe('the value a press on a piece writes', () => {
 	});
 
 	test('nothing where nothing can be written, or there are no pieces', () => {
-		expect(segmentValue(1, 5, range(0.2, 0.8), one)).toBeNull();
-		expect(segmentValue(1, 0, range(0, 5), one)).toBeNull();
+		expect(pieceValue(1, 5, range(0.2, 0.8), one)).toBeNull();
+		expect(pieceValue(1, 0, range(0, 5), one)).toBeNull();
 	});
 });
 

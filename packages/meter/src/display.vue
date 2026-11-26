@@ -39,6 +39,8 @@ const props = defineProps<{
 	label?: unknown;
 	indicator?: unknown;
 	indicatorFormat?: unknown;
+	prefix?: unknown;
+	suffix?: unknown;
 	color?: unknown;
 	thresholds?: unknown;
 	visualization?: unknown;
@@ -193,6 +195,17 @@ const fillStyle = computed(() => {
 // laid out as "20%-". The gap between track and text is a margin of the track,
 // whose direction is that of the page. A value which is not a number is plain
 // text and is cut like any other text, with an ellipsis.
+//
+// Under a contrast theme of the system (`forced-colors: active`) backgrounds
+// are the colour of the page and gradients are dropped, which left nothing of
+// the bar. As in the interface, the track and a piece which is not filled are
+// then an outline of `CanvasText` around `Canvas`, and the fill, a filled piece
+// and what is laid over the piece which fades in are `Highlight`, whatever the
+// options and the thresholds say; they become border boxes for it, so no size
+// changes. A bar of two pixels is all outline, and is told from a filled one
+// by the colour alone. The root asks the browser to print its backgrounds
+// (`print-color-adjust: exact`, which is inherited), so a printed table keeps
+// its bars.
 </script>
 
 <template>
@@ -254,6 +267,8 @@ const fillStyle = computed(() => {
 	overflow: hidden;
 	white-space: nowrap;
 	vertical-align: middle;
+	-webkit-print-color-adjust: exact;
+	print-color-adjust: exact;
 }
 
 .md-plain {
@@ -396,5 +411,26 @@ const fillStyle = computed(() => {
 
 .md-text::before {
 	content: '\200B';
+}
+
+@media (forced-colors: active) {
+	.md-track,
+	.md-part {
+		box-sizing: border-box;
+		background-color: Canvas !important;
+		background-image: none !important;
+		border: 1px solid CanvasText;
+	}
+
+	.md-fill,
+	.md-on,
+	.md-over {
+		background-color: Highlight !important;
+		background-image: none !important;
+	}
+
+	.md-on {
+		border-color: Highlight;
+	}
 }
 </style>

@@ -29,18 +29,22 @@ export type InactiveColoring = 'plain' | 'automatic' | Coloring;
 export type Place = 'form' | 'display';
 
 /**
- * How the pointer sets the value. `contiguous`: the value is where the
- * pointer is along the track. `segment`: the pieces up to the one under the
- * pointer are filled. `relative`: the value moves by as much as the pointer
- * moves, from wherever it is pressed. `automatic` is one of the first two,
- * whichever suits what is drawn (`inputMethod`).
+ * How the pointer sets the value. `position`: the value is where the pointer
+ * is along the track. `piece`: the pieces up to the one under the pointer are
+ * filled. `relative`: the value moves by as much as the pointer moves, from
+ * wherever it is pressed. `automatic` is one of the first two, whichever
+ * suits what is drawn (`inputMethod`). `none`: nothing sets it, and the meter
+ * is the reading it is in a field which cannot be edited.
  */
-export type InputMethod = 'automatic' | 'contiguous' | 'segment' | 'relative';
+export type InputMethod = 'automatic' | 'position' | 'piece' | 'relative' | 'none';
 
 /** How a meter is edited, after `readEditing`. */
 export interface Editing {
 	input: InputMethod;
-	/** The distance between two values which can be written, counted from the minimum. Above 0, and whole for a whole type. */
+	/**
+	 * The distance between two values which can be written, counted from the minimum. Above 0, and whole for a
+	 * whole type. Where no step is set it is one which suits the range (`defaultStep`).
+	 */
 	step: number;
 	/** How much of the range one track width of movement covers with the `relative` method. Above 0. */
 	sensitivity: number;
@@ -154,6 +158,10 @@ export interface Options {
 	/** Whether the text beside the bar is drawn. */
 	indicator: boolean;
 	indicatorFormat: IndicatorFormat;
+	/** Text before a number of the value text, as it was typed, or nothing. Not part of a percentage. */
+	prefix: string;
+	/** Text after the value text, as it was typed, or nothing. Not part of a percentage. */
+	suffix: string;
 	/** The colour of the fill below every threshold. */
 	color: string;
 	/** In rising order of their values. */
@@ -261,6 +269,16 @@ export const DEFAULT_INPUT: InputMethod = 'automatic';
 export const DEFAULT_STEP = 1;
 export const DEFAULT_SENSITIVITY = 1;
 
+/** How many steps the step of a field which sets none gives its range at the least, where the type allows it (`defaultStep`). */
+export const STEPS_WANTED = 100;
+
+/**
+ * The least such a step can be, as a power of ten: fifteen decimals, which is
+ * as many as a written value is cleaned to (`gridOf`).
+ */
+const LEAST_EXPONENT = -15;
+export const LEAST_STEP = Number(`1e${LEAST_EXPONENT}`);
+
 /**
  * The most steps a range can hold and still have a grid, and the digits a
  * value is written with where it has none. A grid holds as long as its points
@@ -273,7 +291,7 @@ export const FREE_DIGITS = 12;
 export const PAGE_STEPS = 10;
 export const FINE = 0.1;
 
-const INPUTS: readonly unknown[] = ['automatic', 'contiguous', 'segment', 'relative'];
+const INPUTS: readonly unknown[] = ['automatic', 'position', 'piece', 'relative', 'none'];
 const WHOLE_TYPES: readonly unknown[] = ['integer', 'bigInteger'];
 
 const FORMATS: readonly unknown[] = ['percent', 'value', 'fraction'];
@@ -374,6 +392,8 @@ export function readThresholds(list: unknown): Threshold[] {
 
 type Source = Record<string, unknown>;
 
+type Range = Pick<Options, 'min' | 'max'>;
+
 const sourceOf = (options: unknown): Source => (typeof options === 'object' && options !== null ? (options as Source) : {});
 
 /** What the first source which has something usable has, or `null`. */
@@ -392,11 +412,18 @@ function first<T>(sources: Source[], pick: (source: Source) => T | null): T | nu
  * display falls back to for what its own options do not set, so a field is
  * configured once. Both are untrusted.
  *
- * For the limits, the caption, `indicator` and the format, anything unusable
- * counts as not set and falls through: a limit which is no number, a blank
- * caption, a format which is none of the three, and so an option which was
- * emptied (`null`) as well. The options form of the display shows what is
- * taken over as the placeholder of such an input, emptied or not.
+ * For the limits, the caption, `prefix` and `suffix`, `indicator` and the
+ * format, anything unusable counts as not set and falls through: a limit
+ * which is no number, a blank caption, a format which is none of the three,
+ * and so an option which was emptied (`null`) as well. The options form of
+ * the display shows what is taken over as the placeholder of such an input,
+ * emptied or not.
+ *
+ * `prefix` and `suffix` are read like the caption, but for one thing: they
+ * are kept as they were typed, with the spaces around them. They are joined
+ * to the number without anything between, as the stock Formatted Value
+ * display joins its own (app/src/displays/formatted-value/formatted-value.vue:137-140
+ * in Directus 11.17.4), so the space of " GB" is the user's to type.
  *
  * The colour and the thresholds fall back only while the key is missing. One
  * which is there counts, whatever it holds: an emptied colour (`null`) is the
@@ -428,6 +455,9 @@ export function readOptions(own?: unknown, inherited?: unknown): Options {
 	// The source of a key which falls back only while it is missing.
 	const holder = (key: string) => (mine[key] !== undefined ? mine : theirs);
 
+	// Text which is joined to the value text: the first which is not blank, as it was typed.
+	const affix = (key: string) => first(sources, (source) => (typeof source[key] === 'string' && source[key].trim() !== '' ? source[key] : null)) ?? '';
+
 	return {
 		min: Math.min(min, max),
 		max: Math.max(min, max),
@@ -439,6 +469,8 @@ export function readOptions(own?: unknown, inherited?: unknown): Options {
 		indicatorFormat:
 			first(sources, (source) => (FORMATS.includes(source['indicatorFormat']) ? (source['indicatorFormat'] as IndicatorFormat) : null)) ??
 			DEFAULT_FORMAT,
+		prefix: affix('prefix'),
+		suffix: affix('suffix'),
 		color: colorOf(holder('color')['color']) ?? DEFAULT_COLOR,
 		thresholds: readThresholds(holder('thresholds')['thresholds']),
 	};
@@ -491,6 +523,37 @@ export function readLook(own?: unknown, inherited?: unknown): Look {
 }
 
 /**
+ * The step of a field which sets none: 1 for a field of a whole type. For any
+ * other type the largest power of ten which still gives at least a hundred
+ * steps across the range, and never more than 1: a hundredth for a range of 1
+ * or of 5, a tenth for one of 10 or of 50, and 1 from a range of 100 on. With
+ * a step of 1 a float field from 0 to 1 could only be set to its two ends.
+ *
+ * The power is made from its decimal text, so it is the very number which
+ * that decimal stands for (`Number('1e-2')` is 0.01, where `0.1 ** 2` is
+ * 0.010000000000000002), and the values on its grid are written without dust
+ * (`snapValue`). That holds down to `LEAST_STEP`, which is as many decimals as
+ * a written value is cleaned to; a range too small for a hundred of those gets
+ * that step, and fewer of them. A range of one number, and limits which are
+ * not finite or too far apart to subtract, get 1.
+ */
+export function defaultStep(range: Range, whole: boolean): number {
+	const span = range.max - range.min;
+	if (whole || !Number.isFinite(span) || !(span > 0)) return DEFAULT_STEP;
+
+	// A hair of slack: limits of 0.6 and 0.7 are a hair less than a tenth apart, and still have their hundred steps.
+	const fits = (exponent: number) => span / Number(`1e${exponent}`) >= STEPS_WANTED * (1 - 1e-9);
+
+	let exponent = Math.min(0, Math.floor(Math.log10(span / STEPS_WANTED)));
+
+	// The logarithm may be off by one at a power of ten: the step is the largest which fits.
+	while (exponent < 0 && fits(exponent + 1)) exponent++;
+	while (exponent > LEAST_EXPONENT && !fits(exponent)) exponent--;
+
+	return Number(`1e${Math.max(LEAST_EXPONENT, exponent)}`);
+}
+
+/**
  * Works out how a meter is edited, from the options `input`, `step` and
  * `sensitivity` of the interface and the type of its field. All untrusted.
  *
@@ -498,10 +561,12 @@ export function readLook(own?: unknown, inherited?: unknown): Look {
  * is `stepInterval`, the key of the stock Slider
  * (app/src/interfaces/slider/index.ts in Directus 11.17.4), which a field
  * keeps when its interface changes, as it keeps the Slider's limits. A step
- * which is set and is not a number above zero is 1, and so is everything
- * without either. A field of a whole type has a whole step of at least 1.
+ * which is set and is not a number above zero is 1. A field with neither has
+ * the step which suits its type and its `range` (`defaultStep`); the range is
+ * that of the same options where none is handed over. A field of a whole type
+ * has a whole step of at least 1.
  */
-export function readEditing(own?: unknown, type?: unknown): Editing {
+export function readEditing(own?: unknown, type?: unknown, range: Range = readOptions(own)): Editing {
 	const source = sourceOf(own);
 	const whole = WHOLE_TYPES.includes(type);
 	const positive = (value: unknown) => {
@@ -510,7 +575,7 @@ export function readEditing(own?: unknown, type?: unknown): Editing {
 	};
 
 	const stepOf = (key: string) => (isEmpty(source[key]) ? null : (positive(source[key]) ?? DEFAULT_STEP));
-	const step = stepOf('step') ?? stepOf('stepInterval') ?? DEFAULT_STEP;
+	const step = stepOf('step') ?? stepOf('stepInterval') ?? defaultStep(range, whole);
 
 	return {
 		input: INPUTS.includes(source['input']) ? (source['input'] as InputMethod) : DEFAULT_INPUT,
@@ -526,9 +591,14 @@ export function readEditing(own?: unknown, type?: unknown): Editing {
  * field, by a condition, by the permissions of the user or in a batch edit;
  * not where it is shown and not edited, as in the comparison of revisions;
  * and not while it is loading. Each of the three alone is enough.
+ *
+ * And not where the `method` by which the pointer would set it is `none`
+ * (`inputMethod`): such a meter is a reading in a field which the form would
+ * let it edit. That is settled here and nowhere else, so everything which a
+ * field that cannot be edited is spared, a meter set to `none` is spared too.
  */
-export function canEdit(state: { disabled?: unknown; nonEditable?: unknown; loading?: unknown }): boolean {
-	return !state.disabled && !state.nonEditable && !state.loading;
+export function canEdit(state: { disabled?: unknown; nonEditable?: unknown; loading?: unknown }, method?: Exclude<InputMethod, 'automatic'>): boolean {
+	return !state.disabled && !state.nonEditable && !state.loading && method !== 'none';
 }
 
 /**
@@ -539,8 +609,6 @@ export function canEdit(state: { disabled?: unknown; nonEditable?: unknown; load
 export function changes(held: unknown, next: number): boolean {
 	return numberOf(held) !== next;
 }
-
-type Range = Pick<Options, 'min' | 'max'>;
 
 /**
  * Where a value stands in a range of two different numbers: 0 at the minimum,
@@ -650,10 +718,19 @@ export function formatPercent(percent: number, locale?: string): string {
 	return format(percent / 100, 'percent', locale);
 }
 
-/** The text beside the bar for a number: "58%", "7" or "7 / 12". */
-export function valueText(value: number, options: Pick<Options, 'min' | 'max' | 'indicatorFormat'>, locale?: string): string {
-	if (options.indicatorFormat === 'value') return formatNumber(value, locale);
-	if (options.indicatorFormat === 'fraction') return `${formatNumber(value, locale)} / ${formatNumber(options.max, locale)}`;
+/**
+ * The text beside the bar for a number: "58%", "7" or "7 / 12". The value has
+ * the `prefix` before it and the `suffix` after it, "$4,200" and "42 GB". The
+ * fraction has the prefix before each of its two numbers and the suffix once,
+ * at the end: "$4,200 / $10,000", "42 / 100 GB". A percentage has neither. Both
+ * are joined on as they are, without a space.
+ */
+export function valueText(value: number, options: Pick<Options, 'min' | 'max' | 'indicatorFormat'> & Partial<Pick<Options, 'prefix' | 'suffix'>>, locale?: string): string {
+	const prefix = options.prefix ?? '';
+	const suffix = options.suffix ?? '';
+
+	if (options.indicatorFormat === 'value') return `${prefix}${formatNumber(value, locale)}${suffix}`;
+	if (options.indicatorFormat === 'fraction') return `${prefix}${formatNumber(value, locale)} / ${prefix}${formatNumber(options.max, locale)}${suffix}`;
 	return formatPercent(percentOf(value, options), locale);
 }
 
@@ -1012,7 +1089,7 @@ export function shareAt(position: number, length: number): number {
 }
 
 /**
- * How many pieces a point fills with the `segment` method: all up to and
+ * How many pieces a point fills with the `piece` method: all up to and
  * including the piece it is on. A point in a gap counts for the piece before
  * it. A point before the start of the first piece fills none, and one beyond
  * the last piece all of them, wherever the track itself ends: packed dots end
@@ -1031,40 +1108,42 @@ export function filledAt(position: number, pieces: Piece[]): number {
 
 /**
  * The method by which the pointer sets the value of a meter which is drawn
- * with `count` pieces (below 2: one bar). `relative` is only ever chosen by
- * the option. One bar has no pieces to fill, so `segment` is `contiguous`
- * there. `automatic` fills pieces where each piece stands for exactly one
- * step, which is where a click on the third piece can mean nothing but three
- * steps; where a piece stands for more or less than a step, as for a range of
- * a hundred drawn in ten pieces, it takes the value under the pointer, so
- * that every value of the grid can be reached. A piece is a step only where
- * the limits themselves can be written: a whole type from 0.5 to 5.5 draws
- * five pieces over a range of which only 1 to 5 can be written, and takes
- * the value under the pointer.
+ * with `count` pieces (below 2: one bar). `none` and `relative` are only ever
+ * chosen by the option: with `none` nothing sets the value, and the meter is
+ * not one which can be edited (`canEdit`). One bar has no pieces to fill, so
+ * `piece` is `position` there. `automatic` fills pieces where each piece
+ * stands for exactly one step, which is where a click on the third piece can
+ * mean nothing but three steps; where a piece stands for more or less than a
+ * step, as for a range of a hundred drawn in ten pieces, it takes the value
+ * under the pointer, so that every value of the grid can be reached. A piece
+ * is a step only where the limits themselves can be written: a whole type
+ * from 0.5 to 5.5 draws five pieces over a range of which only 1 to 5 can be
+ * written, and takes the value under the pointer.
  */
 export function inputMethod(editing: Pick<Editing, 'input' | 'step' | 'whole'>, count: number, range: Range): Exclude<InputMethod, 'automatic'> {
+	if (editing.input === 'none') return 'none';
 	if (editing.input === 'relative') return 'relative';
-	if (!(count >= MIN_SUBDIVISIONS) || editing.input === 'contiguous') return 'contiguous';
-	if (editing.input === 'segment') return 'segment';
+	if (!(count >= MIN_SUBDIVISIONS) || editing.input === 'position') return 'position';
+	if (editing.input === 'piece') return 'piece';
 
 	// A piece is a step only where the pieces are drawn over the very range which can be written.
 	const writable = writableRange(range, editing);
-	if (writable === null || writable.min !== range.min || writable.max !== range.max) return 'contiguous';
+	if (writable === null || writable.min !== range.min || writable.max !== range.max) return 'position';
 
 	const span = range.max - range.min;
-	return Math.abs(count * editing.step - span) <= 1e-9 * Math.max(1, Math.abs(span)) ? 'segment' : 'contiguous';
+	return Math.abs(count * editing.step - span) <= 1e-9 * Math.max(1, Math.abs(span)) ? 'piece' : 'position';
 }
 
 /**
  * The value which is written when the pointer fills `filled` of `count`
- * pieces with the `segment` method. The press is on a piece, so that piece is
+ * pieces with the `piece` method. The press is on a piece, so that piece is
  * what has to be filled afterwards: of the values which can be written and
  * which draw exactly that many pieces, the one nearest to that share of the
  * range. Where a piece is one step that is the share itself. Where no value
  * draws that many, as with more pieces than there are steps, it is the value
  * nearest to the share. `null` where nothing can be written.
  */
-export function segmentValue(filled: number, count: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>): number | null {
+export function pieceValue(filled: number, count: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>): number | null {
 	if (!(count >= 1)) return null;
 
 	const target = valueAtShare(Math.min(count, Math.max(0, filled)) / count, range);
@@ -1173,13 +1252,10 @@ export function keyValue(key: string, current: number | null, range: Range, edit
 
 /**
  * What the option `grow` comes to: a number from 0 to `MAX_GROW`, or the
- * text of one. It was a switch once: a stored `true` is 1 and `false` is 0.
- * Anything else, and a negative number, is 0, which is off.
+ * text of one. Anything else, and a negative number, is 0, which is off.
  */
 export function growOf(value: unknown): number {
-	if (value === true) return 1;
-
-	const number = typeof value === 'boolean' ? null : numberOf(value);
+	const number = numberOf(value);
 	return number !== null && number > 0 ? Math.min(MAX_GROW, number) : 0;
 }
 

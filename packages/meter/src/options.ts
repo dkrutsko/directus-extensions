@@ -42,10 +42,14 @@ const ACTIVE_COLORINGS: Choice[] = [
 
 const INPUTS: Choice[] = [
 	{ text: 'Automatic', value: 'automatic' },
-	{ text: 'Contiguous', value: 'contiguous' },
-	{ text: 'Segment', value: 'segment' },
+	{ text: 'By position', value: 'position' },
+	{ text: 'By piece', value: 'piece' },
 	{ text: 'Relative', value: 'relative' },
+	{ text: 'None', value: 'none' },
 ];
+
+/** The formats of the value text which have a prefix and a suffix. A percentage has neither. */
+const AFFIXED = ['value', 'fraction'];
 
 const INACTIVE_COLORINGS: Choice[] = [
 	{ text: 'Plain', value: 'plain' },
@@ -73,12 +77,13 @@ const INACTIVE_COLORINGS: Choice[] = [
  * empty. What is drawn follows that: emptied limits and an emptied caption
  * are taken over again, an emptied colour or list of thresholds means none.
  *
- * Five options apply only sometimes: the number of subdivisions, `grow` and
+ * Some options apply only sometimes: the number of subdivisions, `grow` and
  * `fade` while the track is cut into pieces, the layout of the dots while
- * those pieces are dots, the sensitivity for the relative method. `grow` is
- * an option of the interface alone: the pieces of a display never grow. They are always in the
- * list, hidden, with conditions on the values of the form itself which show
- * them. The form evaluates those wherever it is drawn. The list cannot be
+ * those pieces are dots, `prefix` and `suffix` while the format is not the
+ * percentage, the sensitivity for the relative method, and the step for every
+ * input method but `none`. `grow` is an option of the interface alone: the
+ * pieces of a display never grow. They are always in the list, with conditions
+ * on the values of the form itself which show or hide them. The form evaluates those wherever it is drawn. The list cannot be
  * made to depend on the options as they are being edited: the ordinary field
  * settings hand the function the field with its options, but the dialog in
  * which a stock Repeater's fields are set up hands it a stand-in without any
@@ -100,12 +105,23 @@ const INACTIVE_COLORINGS: Choice[] = [
  * the interface again. In the form of the display they can be emptied, and
  * then show what they come to as their placeholder.
  *
+ * `prefix` and `suffix` are the inputs of the stock Formatted Value display,
+ * under its keys and its names (app/src/displays/formatted-value/index.ts:99-124
+ * in Directus 11.17.4), and like its own they are joined to the number as
+ * they are typed.
+ *
+ * `own` are the options of the interface as they are stored, where the form
+ * was handed its field: the Step input shows as its placeholder what the step
+ * comes to while it is empty, which depends on the limits (`defaultStep`).
+ * Where the form was not told its field (`known` is false) the limits and the
+ * type are not to be had, and the placeholder says "Automatic".
+ *
  * The limits are `float` so that the number input hands over numbers; a
  * `decimal` one would store their text (app/src/constants.ts:171-173 in
  * Directus 11.17.4). The names are the app's own strings where one says
  * exactly the same.
  */
-export function optionFields(fallback: unknown, display: boolean, type?: unknown, known = true): Fields {
+export function optionFields(fallback: unknown, display: boolean, type?: unknown, known = true, own?: unknown): Fields {
 	const base = readOptions(undefined, fallback);
 
 	// How the meter is drawn when nothing is set here.
@@ -128,6 +144,29 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 			note,
 		},
 		...(blind ? {} : { schema: { default_value: preset } }),
+	});
+
+	// The text before and after the value text. In the form of the display the placeholder is what is taken over,
+	// as for the caption. Hidden while the format is the percentage, which has neither; a form which does not
+	// know the format of the interface shows them until its own format rules them out.
+	const affix = (field: 'prefix' | 'suffix', name: string, note: string): Fields[number] => ({
+		field,
+		name,
+		type: 'string',
+		meta: {
+			width: 'half',
+			interface: 'system-input-translated-string',
+			options: {
+				...(blind ? { placeholder: FROM_INTERFACE } : base[field] !== '' ? { placeholder: base[field] } : {}),
+				trim: false,
+			},
+			note,
+			hidden: !blind && !AFFIXED.includes(base.indicatorFormat),
+			conditions: [
+				{ name: 'Percentage', rule: { indicatorFormat: { _eq: 'percent' } }, hidden: true },
+				{ name: 'Value or fraction', rule: { indicatorFormat: { _in: AFFIXED } }, hidden: false },
+			],
+		},
 	});
 
 	const fields: Fields = [
@@ -201,6 +240,8 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 			},
 			...(blind ? {} : { schema: { default_value: base.indicatorFormat } }),
 		},
+		affix('prefix', '$t:displays.formatted-value.prefix', 'Text before the number, joined on as typed: type a space where one is wanted. A fraction has it before both numbers.'),
+		affix('suffix', '$t:displays.formatted-value.suffix', 'Text after the value, joined on as typed: type a space where one is wanted, as in " GB". A fraction has it once, at the end.'),
 		dropdown('visualization', 'Visualization', VISUALIZATIONS, baseLook.visualization, 'One bar, or a row of pieces which are each filled or not.'),
 		{
 			field: 'subdivisions',
@@ -338,8 +379,9 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 
 	if (!display) {
 		// How the meter is edited, which only the interface is. The step shows what it comes to while it is empty:
-		// the step a stock Slider left behind, or 1. The sensitivity is shown by the method which has one.
-		const base = readEditing({ stepInterval: (fallback as Record<string, unknown> | null)?.['stepInterval'] }, type);
+		// the step a stock Slider left behind, or the one which suits the type and the limits of the field, where
+		// the form knows them. The sensitivity is shown by the method which has one, and neither by `none`.
+		const base = readEditing({ stepInterval: (fallback as Record<string, unknown> | null)?.['stepInterval'] }, type, readOptions(own, fallback));
 
 		return [
 			...fields,
@@ -351,7 +393,7 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 					width: 'half',
 					interface: 'select-dropdown',
 					options: { choices: INPUTS },
-					note: 'How the pointer sets the value. Automatic: by the pieces where each is one step, else by where the pointer is. Relative: by how far it moves. A read-only field is never edited.',
+					note: 'How the pointer sets the value. Automatic: by piece where each piece is one step, else by position. By position: the value under the pointer. By piece: the pieces up to the pointer are filled. Relative: by how far the pointer moves. None: the meter is not edited, as in a read-only field.',
 				},
 				schema: {
 					default_value: 'automatic',
@@ -365,10 +407,11 @@ export function optionFields(fallback: unknown, display: boolean, type?: unknown
 					width: 'half',
 					interface: 'input',
 					options: {
-						placeholder: String(base.step),
+						placeholder: known ? String(base.step) : '$t:automatic',
 						min: 0,
 					},
-					note: 'The distance between two values which can be set, counted from the minimum.',
+					note: 'The distance between two values which can be set, counted from the minimum. Left empty: 1 for a whole type, else a power of ten which gives the range at least a hundred steps.',
+					conditions: [{ name: 'None', rule: { input: { _eq: 'none' } }, hidden: true }],
 				},
 			},
 			{
