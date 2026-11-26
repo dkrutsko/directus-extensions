@@ -1,7 +1,22 @@
 import { describe, expect, test } from 'vitest';
+import { COLORINGS, DEFAULT_INPUT, DOTS_LAYOUTS, FORMATS, INACTIVE_COLORINGS, INPUTS, MAX_GROW, VISUALIZATIONS } from '../src/meter';
 import { optionFields } from '../src/options';
 
 const GREEN = '#2ECDA7';
+
+/**
+ * The most characters the note of a half-width option may have. A half-width field of the field settings is 250px
+ * wide and its note is set in 12px, so two lines hold some eighty characters: the longest note which was seen on two
+ * lines has 81, and one of 83 took a third. The browser test of the options forms measures the lines themselves.
+ */
+const HALF_NOTE = 81;
+
+// The options of the display's form after its notice, in the order of the form, and those of the interface's, which
+// has `grow` among them, which the display has not, and after them the three of editing.
+const SHARED_KEYS = ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'prefix', 'suffix', 'visualization', 'subdivisions', 'dotsLayout', 'fade'];
+const COLOR_KEYS = ['color', 'thresholds', 'activeColoring', 'inactiveColoring'];
+const DISPLAY_KEYS = ['inherited', ...SHARED_KEYS, ...COLOR_KEYS];
+const INTERFACE_KEYS = [...SHARED_KEYS.slice(0, -1), 'grow', 'fade', ...COLOR_KEYS, 'input', 'step', 'sensitivity'];
 
 /** One field of a form, by its key. */
 const fieldOf = (fields: ReturnType<typeof optionFields>, key: string) => {
@@ -17,7 +32,7 @@ describe('the options form of the interface', () => {
 	const fields = optionFields({}, false);
 
 	test('has its options, under their keys and in this order', () => {
-		expect(fields.map((field) => field.field)).toEqual(['min', 'max', 'label', 'indicator', 'indicatorFormat', 'prefix', 'suffix', 'visualization', 'subdivisions', 'dotsLayout', 'grow', 'fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring', 'input', 'step', 'sensitivity']);
+		expect(fields.map((field) => field.field)).toEqual(INTERFACE_KEYS);
 	});
 
 	test('the limits are number inputs which hand over numbers, with the defaults as placeholders', () => {
@@ -77,7 +92,7 @@ describe('the options form of the display', () => {
 	const fields = optionFields(inherited, true);
 
 	test('starts with a notice which stores nothing, and has the same options', () => {
-		expect(fields.map((field) => field.field)).toEqual(['inherited', 'min', 'max', 'label', 'indicator', 'indicatorFormat', 'prefix', 'suffix', 'visualization', 'subdivisions', 'dotsLayout', 'fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring']);
+		expect(fields.map((field) => field.field)).toEqual(DISPLAY_KEYS);
 		expect(fields[0]?.type).toBe('alias');
 		expect(fields[0]?.meta?.interface).toBe('presentation-notice');
 		expect(fields[0]?.meta?.special).toEqual(['alias', 'no-data']);
@@ -113,7 +128,7 @@ describe('the options form of the display', () => {
 
 		expect(text).toContain('taken from the interface of the field');
 		expect(text).toContain('Emptied limits and an emptied label are taken from it again');
-		expect(text).toContain('An emptied colour or list of thresholds means none');
+		expect(text).toContain('An emptied color or list of thresholds means none');
 	});
 
 	test('on a field without interface options, the defaults', () => {
@@ -131,14 +146,16 @@ describe('the options form of the display', () => {
 });
 
 /**
- * Whether the form shows a field for the values it holds, as the app's forms decide it (`applyConditions` in
- * app/src/utils/apply-conditions.ts of Directus 11.17.4): the conditions of the field are gone through from the
+ * Whether the form shows a field for the values it holds, as the app's forms decide it (`applyConditions`,
+ * app/src/utils/apply-conditions.ts:12-28 in Directus 11.17.4): the conditions of the field are gone through from the
  * last to the first, the first whose rule the values meet says whether the field is hidden, and without one the
  * field's own `hidden` holds. The values are the defaults of the form's fields with what was set laid over them;
  * an option which was emptied is `null` there, which meets no rule.
  */
 function shown(fields: ReturnType<typeof optionFields>, key: string, set: Record<string, unknown> = {}): boolean {
-	const defaults = Object.fromEntries(fields.filter((field) => field.schema?.default_value !== undefined).map((field) => [field.field, field.schema?.default_value]));
+	const defaults = Object.fromEntries(
+		fields.filter((field) => field.schema?.default_value !== undefined).map((field) => [field.field, field.schema?.default_value]),
+	);
 	const values: Record<string, unknown> = { ...defaults, ...set };
 	const field = fieldOf(fields, key);
 	const conditions = [...((field.meta?.conditions ?? []) as { rule: Record<string, { _eq?: unknown; _in?: unknown[] }>; hidden?: boolean }[])].reverse();
@@ -156,12 +173,8 @@ function shown(fields: ReturnType<typeof optionFields>, key: string, set: Record
 
 describe('the options of the look', () => {
 	const keys = (fields: ReturnType<typeof optionFields>) => fields.map((field) => field.field);
-	const choices = (fields: ReturnType<typeof optionFields>, key: string) => (fieldOf(fields, key).meta?.options?.['choices'] as { text: string; value: string }[]).map((choice) => choice.value);
-	const BEFORE = ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'prefix', 'suffix', 'visualization', 'subdivisions', 'dotsLayout'];
-	const AFTER = ['fade', 'color', 'thresholds', 'activeColoring', 'inactiveColoring'];
-	// The interface has `grow`, which the display has not.
-	const LOOK = [...BEFORE, 'grow', ...AFTER];
-	const SHOWN = [...BEFORE, ...AFTER];
+	const choices = (fields: ReturnType<typeof optionFields>, key: string) =>
+		(fieldOf(fields, key).meta?.options?.['choices'] as { text: string; value: string }[]).map((choice) => choice.value);
 
 	test('a dropdown with the five visualizations, which shows one bar until another is chosen', () => {
 		const fields = optionFields({}, false);
@@ -181,11 +194,11 @@ describe('the options of the look', () => {
 	test('every option is always in the list, whatever the field and whatever is set: none can be out of reach', () => {
 		// The ordinary field settings hand over the field; the dialog of a stock Repeater's fields hands over a
 		// stand-in without options or a type. The list is the same.
-		expect(keys(optionFields({}, false))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
-		expect(keys(optionFields({}, false, 'unknown'))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
-		expect(keys(optionFields({ visualization: 'dots', input: 'relative' }, false, 'integer'))).toEqual([...LOOK, 'input', 'step', 'sensitivity']);
-		expect(keys(optionFields({}, true))).toEqual(['inherited', ...SHOWN]);
-		expect(keys(optionFields({ visualization: 'dots' }, true))).toEqual(['inherited', ...SHOWN]);
+		expect(keys(optionFields({}, false))).toEqual(INTERFACE_KEYS);
+		expect(keys(optionFields({}, false, 'unknown'))).toEqual(INTERFACE_KEYS);
+		expect(keys(optionFields({ visualization: 'dots', input: 'relative' }, false, 'integer'))).toEqual(INTERFACE_KEYS);
+		expect(keys(optionFields({}, true))).toEqual(DISPLAY_KEYS);
+		expect(keys(optionFields({ visualization: 'dots' }, true))).toEqual(DISPLAY_KEYS);
 	});
 
 	test('the number of subdivisions shows only while the track is cut into pieces, the layout of the dots only for dots', () => {
@@ -207,7 +220,19 @@ describe('the options of the look', () => {
 
 		// Every other option but the prefix and the suffix, the step and the sensitivity shows always: it has no
 		// condition and is not hidden.
-		for (const key of ['min', 'max', 'label', 'indicator', 'indicatorFormat', 'visualization', 'color', 'thresholds', 'activeColoring', 'inactiveColoring', 'input']) {
+		for (const key of [
+			'min',
+			'max',
+			'label',
+			'indicator',
+			'indicatorFormat',
+			'visualization',
+			'color',
+			'thresholds',
+			'activeColoring',
+			'inactiveColoring',
+			'input',
+		]) {
 			expect(fieldOf(fields, key).meta?.hidden, key).toBeUndefined();
 			expect(fieldOf(fields, key).meta?.conditions, key).toBeUndefined();
 		}
@@ -237,8 +262,7 @@ describe('the options of the look', () => {
 		expect(field.meta?.interface).toBe('input');
 		// The app's own word for it, in the language of the user.
 		expect(field.meta?.options).toEqual({ placeholder: '$t:automatic', min: 2 });
-		expect(field.meta?.note).toContain('at least 2');
-		expect(field.meta?.note).toContain('The width is the ceiling');
+		expect(field.meta?.note).toContain('A set number gives round shares, or fewer if it does not fit');
 		expect(field.schema?.default_value).toBeUndefined();
 	});
 
@@ -350,18 +374,17 @@ describe('the options of editing', () => {
 		expect(field.meta?.width).toBe('half');
 		expect(field.meta?.options?.['choices']).toEqual([
 			{ text: 'Automatic', value: 'automatic' },
-			{ text: 'By position', value: 'position' },
-			{ text: 'By piece', value: 'piece' },
+			{ text: 'Position', value: 'position' },
+			{ text: 'Piece', value: 'piece' },
 			{ text: 'Relative', value: 'relative' },
 			{ text: 'None', value: 'none' },
 		]);
 		expect(field.schema?.default_value).toBe('automatic');
 
-		// The note says each of the five, briefly.
+		// The note says what Automatic comes to and what None does, in two lines; Relative has the note of the sensitivity.
 		const note = String(field.meta?.note);
-		for (const word of ['Automatic:', 'By position:', 'By piece:', 'Relative:', 'None:', 'read-only']) expect(note, word).toContain(word);
+		for (const word of ['Automatic:', 'Piece', 'Position', 'None:', 'not edited']) expect(note, word).toContain(word);
 		expect(note).not.toContain('\n');
-		expect(note.length).toBeLessThan(320);
 	});
 
 	test('no option names a method by a word of the visualizations', () => {
@@ -428,7 +451,10 @@ describe('the options of editing', () => {
 		const rest = (fields: ReturnType<typeof optionFields>) => fields.filter((field) => field.field !== 'step');
 
 		expect(rest(blind)).toEqual(rest(told));
-		expect({ ...fieldOf(blind, 'step'), meta: { ...fieldOf(blind, 'step').meta, options: null } }).toEqual({ ...fieldOf(told, 'step'), meta: { ...fieldOf(told, 'step').meta, options: null } });
+		expect({ ...fieldOf(blind, 'step'), meta: { ...fieldOf(blind, 'step').meta, options: null } }).toEqual({
+			...fieldOf(told, 'step'),
+			meta: { ...fieldOf(told, 'step').meta, options: null },
+		});
 	});
 
 	test('the step shows for every method but none', () => {
@@ -493,7 +519,8 @@ describe('the options form of a display which is not told its field', () => {
 			expect(preset(told, key), key).toBeDefined();
 		}
 
-		for (const key of ['visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring']) expect(fieldOf(blind, key).meta?.options?.['allowNone'], key).toBe(true);
+		for (const key of ['visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring'])
+			expect(fieldOf(blind, key).meta?.options?.['allowNone'], key).toBe(true);
 	});
 
 	test('the number of subdivisions and the layout of the dots show until the visualization of the form rules them out', () => {
@@ -556,9 +583,9 @@ describe('the prefix and the suffix of the value text', () => {
 			expect(field.meta?.options, key).toEqual({ trim: false });
 			expect(field.schema, key).toBeUndefined();
 
-			// They are joined on as typed, and the note says so.
-			expect(String(field.meta?.note), key).toContain('as typed');
-			expect(String(field.meta?.note), key).toContain('type a space where one is wanted');
+			// They are joined on as typed, and the note says so, and that the space is the user's to type.
+			expect(String(field.meta?.note), key).toContain('As typed');
+			expect(String(field.meta?.note), key).toMatch(/no space added|needs its space/);
 		}
 	});
 
@@ -571,7 +598,8 @@ describe('the prefix and the suffix of the value text', () => {
 			expect(shown(fields, key, { indicatorFormat: 'fraction' }), key).toBe(true);
 
 			// Each rule has one key, or the app passes it over.
-			for (const condition of fieldOf(fields, key).meta?.conditions as { rule: object }[]) expect(Object.keys(condition.rule)).toEqual(['indicatorFormat']);
+			for (const condition of fieldOf(fields, key).meta?.conditions as { rule: object }[])
+				expect(Object.keys(condition.rule)).toEqual(['indicatorFormat']);
 		}
 	});
 
@@ -635,8 +663,8 @@ describe('the options which grow the pieces and fade the next one in', () => {
 			for (const shape of ['pills', 'segments', 'bars', 'dots']) expect(shown(fields, key, { visualization: shape }), `${key} ${shape}`).toBe(true);
 		}
 
-		// A field which already draws pieces shows them from the start.
-		expect(shown(optionFields({ visualization: 'dots' }, false), 'grow')).toBe(true);
+		// A field which already draws pieces shows them from the start: its stored options are the values of the form.
+		expect(shown(optionFields({}, false), 'grow', { visualization: 'dots' })).toBe(true);
 	});
 
 	test('only the interface grows its pieces: the display has no such option', () => {
@@ -661,5 +689,128 @@ describe('the options which grow the pieces and fade the next one in', () => {
 		const blind = optionFields({}, true, undefined, false);
 		expect(shown(blind, 'fade')).toBe(true);
 		expect(shown(blind, 'fade', { visualization: 'contiguous' })).toBe(false);
+	});
+});
+
+describe('the dropdowns are built from the words the options are read against', () => {
+	const choices = (fields: ReturnType<typeof optionFields>, key: string) =>
+		(fieldOf(fields, key).meta?.options?.['choices'] as { text: string; value: string }[]).map((choice) => choice.value);
+
+	test('every dropdown offers exactly the words of its option, in their order, in both forms', () => {
+		for (const fields of [optionFields({}, false), optionFields({}, true), optionFields({}, true, undefined, false)]) {
+			expect(choices(fields, 'indicatorFormat')).toEqual([...FORMATS]);
+			expect(choices(fields, 'visualization')).toEqual([...VISUALIZATIONS]);
+			expect(choices(fields, 'dotsLayout')).toEqual([...DOTS_LAYOUTS]);
+			expect(choices(fields, 'activeColoring')).toEqual([...COLORINGS]);
+			expect(choices(fields, 'inactiveColoring')).toEqual([...INACTIVE_COLORINGS]);
+		}
+
+		expect(choices(optionFields({}, false), 'input')).toEqual([...INPUTS]);
+	});
+
+	test('every choice has a name of its own', () => {
+		const fields = optionFields({}, false);
+
+		for (const key of ['indicatorFormat', 'visualization', 'dotsLayout', 'activeColoring', 'inactiveColoring', 'input']) {
+			const texts = (fieldOf(fields, key).meta?.options?.['choices'] as { text: string }[]).map((choice) => choice.text);
+
+			expect(
+				texts.every((text) => typeof text === 'string' && text.trim() !== ''),
+				key,
+			).toBe(true);
+			expect(new Set(texts).size, key).toBe(texts.length);
+		}
+	});
+
+	test('the numbers the form shows are the constants the components read by', () => {
+		const fields = optionFields({}, false);
+
+		expect(fieldOf(fields, 'grow').meta?.options?.['max']).toBe(MAX_GROW);
+		expect(preset(fields, 'input')).toBe(DEFAULT_INPUT);
+	});
+});
+
+describe('the placeholder of the step on a decimal field goes by the scale of its column', () => {
+	const stepOf = (type: string, own: object, schema?: unknown) => placeholder(optionFields({}, false, type, true, own, schema), 'step');
+
+	test('a scale of 1 from 0 to 1 shows a tenth, and a scale of 0 shows 1', () => {
+		expect(stepOf('decimal', { max: 1 }, { numeric_scale: 1 })).toBe('0.1');
+		expect(stepOf('decimal', { max: 1 }, { numeric_scale: 0 })).toBe('1');
+		expect(stepOf('decimal', { max: 1 }, { numeric_scale: 5 })).toBe('0.01');
+	});
+
+	test('without a scale, on a float and on a whole type it is what the range and the type give', () => {
+		expect(stepOf('decimal', { max: 1 })).toBe('0.01');
+		expect(stepOf('decimal', { max: 1 }, null)).toBe('0.01');
+		expect(stepOf('float', { max: 1 }, { numeric_scale: 1 })).toBe('0.01');
+		expect(stepOf('integer', { max: 1 }, { numeric_scale: 1 })).toBe('1');
+	});
+
+	test('the step a stock Slider left behind is shown whatever the scale', () => {
+		expect(placeholder(optionFields({ stepInterval: 0.25 }, false, 'decimal', true, { max: 1 }, { numeric_scale: 1 }), 'step')).toBe('0.25');
+	});
+
+	test('a form which is not told its field says that the step is chosen', () => {
+		expect(placeholder(optionFields({}, false, 'decimal', false, undefined, { numeric_scale: 1 }), 'step')).toBe('$t:automatic');
+	});
+});
+
+describe('the texts of the options forms', () => {
+	const forms = { interface: optionFields({}, false), display: optionFields({}, true), blind: optionFields({}, true, undefined, false) };
+
+	/** Every text of a form which the app shows: names, notes, labels, placeholders, the notice and the choices. */
+	const textsOf = (fields: ReturnType<typeof optionFields>) =>
+		fields.flatMap((field) => {
+			const options = (field.meta?.options ?? {}) as Record<string, unknown>;
+			const choices = (Array.isArray(options['choices']) ? options['choices'] : []) as { text: string }[];
+
+			return [field.name, field.meta?.note, options['label'], options['placeholder'], options['text'], ...choices.map((choice) => choice.text)].filter(
+				(text): text is string => typeof text === 'string',
+			);
+		});
+
+	test('are spelled as the app spells them: "color", never "colour"', () => {
+		for (const [name, fields] of Object.entries(forms)) {
+			const texts = textsOf(fields);
+
+			expect(texts.length, name).toBeGreaterThan(30);
+			for (const text of texts) expect(text, `${name}: ${text}`).not.toMatch(/colour/i);
+		}
+
+		expect(String(fieldOf(forms.interface, 'color').meta?.note)).toContain('color');
+		expect(String(fieldOf(forms.interface, 'fade').meta?.note)).toContain('color');
+		expect(String(fieldOf(forms.interface, 'thresholds').meta?.note)).toContain('color');
+	});
+
+	test('the switch of the value text says where the text is: under the bar in the form, beside it in a layout', () => {
+		const label = (fields: ReturnType<typeof optionFields>) => fieldOf(fields, 'indicator').meta?.options?.['label'];
+
+		expect(label(forms.interface)).toBe('Show the value under the bar');
+		expect(label(forms.display)).toBe('Show the value beside the bar');
+		expect(label(forms.blind)).toBe('Show the value beside the bar');
+	});
+
+	test('the note of a half-width option is short enough for two lines, and is one paragraph', () => {
+		for (const [name, fields] of Object.entries(forms)) {
+			for (const field of fields) {
+				const note = field.meta?.note;
+				if (typeof note !== 'string' || field.meta?.width !== 'half') continue;
+
+				expect(note.length, `${name}, ${field.field}: ${note}`).toBeLessThanOrEqual(HALF_NOTE);
+				expect(note, `${name}, ${field.field}`).not.toContain('\n');
+			}
+		}
+	});
+
+	test('the note of the number of subdivisions says that a set number gives round shares', () => {
+		for (const fields of Object.values(forms)) expect(String(fieldOf(fields, 'subdivisions').meta?.note)).toContain('gives round shares');
+	});
+
+	test('the two methods which say how the pointer sets the value are called Position and Piece', () => {
+		const choices = fieldOf(forms.interface, 'input').meta?.options?.['choices'] as { text: string; value: string }[];
+
+		expect(choices.find((choice) => choice.value === 'position')?.text).toBe('Position');
+		expect(choices.find((choice) => choice.value === 'piece')?.text).toBe('Piece');
+		expect(JSON.stringify(textsOf(forms.interface))).not.toMatch(/By position|By piece/);
 	});
 });

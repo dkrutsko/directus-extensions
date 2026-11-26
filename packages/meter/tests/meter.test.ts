@@ -68,8 +68,30 @@ import {
 	valueText,
 	wantedCount,
 	writableRange,
+	COLORINGS,
+	DOTS_LAYOUTS,
+	FORMATS,
+	INACTIVE_COLORINGS,
+	INPUTS,
+	REM,
+	VISUALIZATIONS,
+	fillStyle,
+	handleStart,
+	overStyle,
+	packedLength,
+	paintClass,
+	paintStyle,
+	pieceLength,
+	pieceStyle,
+	positionAlong,
+	roundEnds,
+	rowStyle,
+	saidOf,
+	scaleOf,
+	spreadLength,
+	trackStyle,
 } from '../src/meter';
-import type { Shape } from '../src/meter';
+import type { Paint, PieceDrawing, Prefix, Shape } from '../src/meter';
 
 const EN = 'en-US';
 const RED = '#E35169';
@@ -77,6 +99,18 @@ const AMBER = '#FFA439';
 const GREEN = '#2ECDA7';
 
 const range = (min: number, max: number) => ({ min, max });
+
+/**
+ * What is drawn for a value: `drawingOf`, with the reading of the value in English. `options` and `look` are
+ * taken as they are stored, or as they were read: reading them again changes nothing.
+ */
+function draw(
+	value: unknown,
+	{ options, look, ...rest }: { options?: unknown; look?: unknown; count?: number; reach?: number | undefined; at?: number | null | undefined } = {},
+) {
+	const read = readOptions(options);
+	return drawingOf({ look: readLook(look), options: read, reading: readingOf(value, read, EN), value, ...rest });
+}
 
 describe('the number a value stands for', () => {
 	test('a number is itself', () => {
@@ -118,7 +152,20 @@ describe('the number a value stands for', () => {
 			expect(numberOf(value), String(value)).toBeNull();
 		}
 
-		for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, true, false, [], [5], {}, { value: 5 }, cyclic, () => 5, Symbol('five')]) {
+		for (const value of [
+			Number.NaN,
+			Number.POSITIVE_INFINITY,
+			Number.NEGATIVE_INFINITY,
+			true,
+			false,
+			[],
+			[5],
+			{},
+			{ value: 5 },
+			cyclic,
+			() => 5,
+			Symbol('five'),
+		]) {
 			expect(numberOf(value)).toBeNull();
 		}
 	});
@@ -152,7 +199,16 @@ describe('an empty value, and a value as text', () => {
 
 describe('a colour', () => {
 	test('a hex colour and a theme variable pass', () => {
-		for (const color of ['#abc', '#ABCD', '#aabbcc', '#aabbccdd', '#6644FF', 'var(--theme--danger)', 'var(--theme--primary-background)', 'var(--theme--form--field--input--foreground)']) {
+		for (const color of [
+			'#abc',
+			'#ABCD',
+			'#aabbcc',
+			'#aabbccdd',
+			'#6644FF',
+			'var(--theme--danger)',
+			'var(--theme--primary-background)',
+			'var(--theme--form--field--input--foreground)',
+		]) {
 			expect(isColor(color), color).toBe(true);
 		}
 	});
@@ -238,7 +294,17 @@ describe('the thresholds of a field', () => {
 
 describe('the options', () => {
 	test('without any, the range is 0 to 100, the colour the default, and there is no caption', () => {
-		const defaults = { min: 0, max: 100, label: null, indicator: true, indicatorFormat: 'percent', prefix: '', suffix: '', color: DEFAULT_COLOR, thresholds: [] };
+		const defaults = {
+			min: 0,
+			max: 100,
+			label: null,
+			indicator: true,
+			indicatorFormat: 'percent',
+			prefix: '',
+			suffix: '',
+			color: DEFAULT_COLOR,
+			thresholds: [],
+		};
 
 		expect(readOptions()).toEqual(defaults);
 		expect(readOptions({})).toEqual(defaults);
@@ -290,7 +356,8 @@ describe('the options', () => {
 		expect(readOptions({ indicatorFormat: 'value' }).indicatorFormat).toBe('value');
 		expect(readOptions({ indicatorFormat: 'fraction' }).indicatorFormat).toBe('fraction');
 		expect(readOptions({ indicatorFormat: 'percent' }).indicatorFormat).toBe('percent');
-		for (const indicatorFormat of [null, undefined, true, 'Percent', 'ratio', 0, ['value']]) expect(readOptions({ indicatorFormat }).indicatorFormat).toBe('percent');
+		for (const indicatorFormat of [null, undefined, true, 'Percent', 'ratio', 0, ['value']])
+			expect(readOptions({ indicatorFormat }).indicatorFormat).toBe('percent');
 	});
 
 	test('a colour which is none is the default', () => {
@@ -300,7 +367,15 @@ describe('the options', () => {
 	});
 
 	test('the thresholds are cleaned', () => {
-		expect(readOptions({ thresholds: [{ value: 80, color: GREEN }, { value: 'x', color: GREEN }, { value: 50, color: AMBER }] }).thresholds).toEqual([
+		expect(
+			readOptions({
+				thresholds: [
+					{ value: 80, color: GREEN },
+					{ value: 'x', color: GREEN },
+					{ value: 50, color: AMBER },
+				],
+			}).thresholds,
+		).toEqual([
 			{ value: 50, color: AMBER },
 			{ value: 80, color: GREEN },
 		]);
@@ -311,15 +386,28 @@ describe('the options', () => {
 
 describe('the display falls back to the options of the interface, key by key', () => {
 	test('without options of its own it has those of the interface', () => {
-		const inherited = { min: 0, max: 10, label: 'Tasks', indicator: false, indicatorFormat: 'fraction', prefix: '#', suffix: ' done', color: GREEN, thresholds: [{ value: 5, color: AMBER }] };
+		const inherited = {
+			min: 0,
+			max: 10,
+			label: 'Tasks',
+			indicator: false,
+			indicatorFormat: 'fraction',
+			prefix: '#',
+			suffix: ' done',
+			color: GREEN,
+			thresholds: [{ value: 5, color: AMBER }],
+		};
 
 		expect(readOptions({}, inherited)).toEqual({ ...inherited, thresholds: [{ value: 5, color: AMBER }] });
 		expect(readOptions(undefined, inherited)).toEqual(readOptions(inherited));
 
 		// Options which were never set arrive as `undefined`.
-		expect(readOptions({ min: undefined, max: undefined, label: undefined, indicator: undefined, indicatorFormat: undefined, color: undefined, thresholds: undefined }, inherited)).toEqual(
-			readOptions(inherited),
-		);
+		expect(
+			readOptions(
+				{ min: undefined, max: undefined, label: undefined, indicator: undefined, indicatorFormat: undefined, color: undefined, thresholds: undefined },
+				inherited,
+			),
+		).toEqual(readOptions(inherited));
 	});
 
 	test('emptied limits, an emptied caption, switch and format are taken over again', () => {
@@ -359,7 +447,15 @@ describe('the display falls back to the options of the interface, key by key', (
 	});
 
 	test('an option of its own wins, each on its own', () => {
-		const inherited = { min: 0, max: 10, label: 'Tasks', indicator: true, indicatorFormat: 'fraction', color: GREEN, thresholds: [{ value: 5, color: AMBER }] };
+		const inherited = {
+			min: 0,
+			max: 10,
+			label: 'Tasks',
+			indicator: true,
+			indicatorFormat: 'fraction',
+			color: GREEN,
+			thresholds: [{ value: 5, color: AMBER }],
+		};
 
 		expect(readOptions({ max: 20 }, inherited)).toMatchObject({ min: 0, max: 20, label: 'Tasks' });
 		expect(readOptions({ min: 5 }, inherited)).toMatchObject({ min: 5, max: 10 });
@@ -509,7 +605,7 @@ describe('nothing which is not finite reaches a style', () => {
 			for (const max of [1, 100, 1e10, 1e300, Number.MAX_VALUE]) {
 				const options = readOptions({ ...wide, max, thresholds: [{ value: max / 2, color: '#E35169' }] });
 				const reading = readingOf(value, options, EN);
-				const drawing = drawingOf(gradient, options, reading, 0, value);
+				const drawing = drawingOf({ look: gradient, options, reading, count: 0, value });
 
 				for (const number of [reading.fraction * 100, fillScale(reading.fraction), 1 / fillScale(reading.fraction)]) {
 					if (!Number.isFinite(number)) expect.fail(`${value} of ${max}: ${number}`);
@@ -680,7 +776,7 @@ describe('a prefix and a suffix of the value text', () => {
 		expect(text(5, { indicatorFormat: 'value', suffix: '<b>x</b>' })).toBe('5<b>x</b>');
 	});
 
-	test('without options the text is what it was', () => {
+	test('without a prefix and a suffix the text is the numbers alone', () => {
 		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'fraction' }, EN)).toBe('7 / 12');
 		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'value' }, EN)).toBe('7');
 		expect(valueText(7, { min: 0, max: 12, indicatorFormat: 'value', prefix: '', suffix: '' }, EN)).toBe('7');
@@ -751,12 +847,25 @@ describe('the colour of the fill', () => {
 	});
 
 	test('the order of the list does not matter', () => {
-		const reversed = readOptions({ color: RED, thresholds: [{ value: 80, color: GREEN }, { value: 50, color: AMBER }] });
+		const reversed = readOptions({
+			color: RED,
+			thresholds: [
+				{ value: 80, color: GREEN },
+				{ value: 50, color: AMBER },
+			],
+		});
 		expect([49, 50, 79, 80, 150].map((value) => colorFor(value, reversed))).toEqual([RED, AMBER, AMBER, GREEN, GREEN]);
 	});
 
 	test('an entry which is not usable is ignored', () => {
-		const messy = readOptions({ color: RED, thresholds: [{ value: 'abc', color: GREEN }, { value: 10, color: 'javascript:1' }, { value: 50, color: AMBER }] });
+		const messy = readOptions({
+			color: RED,
+			thresholds: [
+				{ value: 'abc', color: GREEN },
+				{ value: 10, color: 'javascript:1' },
+				{ value: 50, color: AMBER },
+			],
+		});
 		expect([9, 10, 49, 50].map((value) => colorFor(value, messy))).toEqual([RED, RED, RED, AMBER]);
 	});
 
@@ -778,12 +887,24 @@ describe('what is drawn for a value', () => {
 		expect(readingOf(50, readOptions(), EN)).toEqual({ empty: false, fraction: 0.5, now: 50, text: '50%', color: DEFAULT_COLOR });
 		expect(readingOf(150, readOptions(), EN)).toEqual({ empty: false, fraction: 1, now: 100, text: '150%', color: DEFAULT_COLOR });
 		expect(readingOf(-20, readOptions(), EN)).toEqual({ empty: false, fraction: 0, now: 0, text: '-20%', color: DEFAULT_COLOR });
-		expect(readingOf('12.50', readOptions({ min: '0', max: '50', color: GREEN }), EN)).toEqual({ empty: false, fraction: 0.25, now: 12.5, text: '25%', color: GREEN });
+		expect(readingOf('12.50', readOptions({ min: '0', max: '50', color: GREEN }), EN)).toEqual({
+			empty: false,
+			fraction: 0.25,
+			now: 12.5,
+			text: '25%',
+			color: GREEN,
+		});
 		expect(readingOf(0, readOptions({ min: -50, max: 50 }), EN)).toMatchObject({ empty: false, fraction: 0.5, now: 0, text: '50%' });
 	});
 
 	test('the colour is that of the threshold the value has reached', () => {
-		const options = readOptions({ color: RED, thresholds: [{ value: 50, color: AMBER }, { value: 80, color: GREEN }] });
+		const options = readOptions({
+			color: RED,
+			thresholds: [
+				{ value: 50, color: AMBER },
+				{ value: 80, color: GREEN },
+			],
+		});
 
 		expect(readingOf(49, options, EN).color).toBe(RED);
 		expect(readingOf('50', options, EN).color).toBe(AMBER);
@@ -872,7 +993,15 @@ describe('the display as plain text', () => {
 	});
 });
 
-const PLAIN_LOOK = { visualization: 'contiguous', subdivisions: null, dotsLayout: 'packed', activeColoring: 'value', inactiveColoring: 'plain', grow: 0, fade: false };
+const PLAIN_LOOK = {
+	visualization: 'contiguous',
+	subdivisions: null,
+	dotsLayout: 'packed',
+	activeColoring: 'value',
+	inactiveColoring: 'plain',
+	grow: 0,
+	fade: false,
+};
 const SHAPES: Shape[] = ['pills', 'segments', 'bars', 'dots'];
 
 describe('how the meter is drawn', () => {
@@ -951,8 +1080,24 @@ describe('how the meter is drawn', () => {
 
 	test('the display takes every key from the interface which it does not set itself, a stored null among them', () => {
 		// `grow` is the one key which is not taken over: the pieces of a display never grow.
-		const inherited = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: 2, fade: true };
-		const taken = { visualization: 'bars', subdivisions: 40, dotsLayout: 'spread', activeColoring: 'gradient', inactiveColoring: 'automatic', grow: 0, fade: true };
+		const inherited = {
+			visualization: 'bars',
+			subdivisions: 40,
+			dotsLayout: 'spread',
+			activeColoring: 'gradient',
+			inactiveColoring: 'automatic',
+			grow: 2,
+			fade: true,
+		};
+		const taken = {
+			visualization: 'bars',
+			subdivisions: 40,
+			dotsLayout: 'spread',
+			activeColoring: 'gradient',
+			inactiveColoring: 'automatic',
+			grow: 0,
+			fade: true,
+		};
 		const keys = Object.keys(inherited) as (keyof typeof inherited)[];
 
 		// Nothing of its own, in whichever way: absent, undefined, null or unusable.
@@ -960,7 +1105,9 @@ describe('how the meter is drawn', () => {
 		expect(readLook(undefined, inherited)).toEqual(taken);
 		expect(readLook(Object.fromEntries(keys.map((key) => [key, undefined])), inherited)).toEqual(taken);
 		expect(readLook(Object.fromEntries(keys.map((key) => [key, null])), inherited)).toEqual(taken);
-		expect(readLook({ visualization: 'rings', subdivisions: 'abc', dotsLayout: 'even', activeColoring: 'plain', inactiveColoring: 'none' }, inherited)).toEqual(taken);
+		expect(
+			readLook({ visualization: 'rings', subdivisions: 'abc', dotsLayout: 'even', activeColoring: 'plain', inactiveColoring: 'none' }, inherited),
+		).toEqual(taken);
 
 		// Its own wins, key by key.
 		expect(readLook({ visualization: 'dots' }, inherited)).toEqual({ ...taken, visualization: 'dots' });
@@ -1269,10 +1416,7 @@ describe('where the pieces are', () => {
 });
 
 describe('how many pieces are filled', () => {
-	const drawn = (value: unknown, own: object, count: number) => {
-		const options = readOptions(own);
-		return drawingOf(readLook(own), options, readingOf(value, options, EN), count).pieces;
-	};
+	const drawn = (value: unknown, own: object, count: number) => draw(value, { options: own, look: own, count }).pieces;
 
 	const filled = (value: unknown, own: object, count: number) => drawn(value, own, count)?.filter((piece) => piece.filled).length;
 
@@ -1318,8 +1462,7 @@ describe('how many pieces are filled', () => {
 
 	test('no value: every piece, none of them filled, none of them coloured', () => {
 		for (const look of [{}, { activeColoring: 'gradient', inactiveColoring: 'automatic', thresholds: [{ value: 40, color: AMBER }] }]) {
-			const options = readOptions(look);
-			const drawing = drawingOf(readLook(look), options, readingOf(null, options, EN), 3);
+			const drawing = draw(null, { options: look, look, count: 3 });
 
 			expect(drawing.pieces).toEqual([
 				{ filled: false, at: 0, paint: { color: null, scale: null }, size: null, over: null },
@@ -1334,7 +1477,7 @@ describe('how many pieces are filled', () => {
 	test('fewer than two pieces: one bar', () => {
 		expect(drawn(50, {}, 0)).toBeNull();
 		expect(drawn(50, {}, 1)).toBeNull();
-		expect(drawingOf(readLook(), readOptions(), readingOf(50, readOptions(), EN)).pieces).toBeNull();
+		expect(draw(50).pieces).toBeNull();
 	});
 
 	test('never more pieces than the cap of the package', () => {
@@ -1355,7 +1498,13 @@ describe('how many pieces are filled', () => {
 });
 
 describe('the colours along the scale', () => {
-	const scale = { color: RED, thresholds: [{ value: 40, color: AMBER }, { value: 80, color: GREEN }] };
+	const scale = {
+		color: RED,
+		thresholds: [
+			{ value: 40, color: AMBER },
+			{ value: 80, color: GREEN },
+		],
+	};
 	const faded = (color: string) => `color-mix(in srgb, ${color} 30%, var(--theme--form--field--input--border-color))`;
 
 	test('a faded colour is mixed towards the track by one share, in the browser', () => {
@@ -1389,12 +1538,33 @@ describe('the colours along the scale', () => {
 	});
 
 	test('a threshold at or below the minimum is the colour of the minimum', () => {
-		expect(scaleStops(readOptions({ color: RED, thresholds: [{ value: 0, color: AMBER }, { value: 50, color: GREEN }] }))).toEqual([
+		expect(
+			scaleStops(
+				readOptions({
+					color: RED,
+					thresholds: [
+						{ value: 0, color: AMBER },
+						{ value: 50, color: GREEN },
+					],
+				}),
+			),
+		).toEqual([
 			{ at: 0, color: AMBER },
 			{ at: 0.5, color: GREEN },
 		]);
 
-		expect(scaleStops(readOptions({ min: 10, color: RED, thresholds: [{ value: -5, color: GREEN }, { value: 5, color: AMBER }] }))).toEqual([{ at: 0, color: AMBER }]);
+		expect(
+			scaleStops(
+				readOptions({
+					min: 10,
+					color: RED,
+					thresholds: [
+						{ value: -5, color: GREEN },
+						{ value: 5, color: AMBER },
+					],
+				}),
+			),
+		).toEqual([{ at: 0, color: AMBER }]);
 	});
 
 	test('a threshold beyond the maximum is beyond the track', () => {
@@ -1405,7 +1575,13 @@ describe('the colours along the scale', () => {
 	});
 
 	test('of two thresholds at one value the later one counts, as for the colour of a value', () => {
-		const options = readOptions({ color: RED, thresholds: [{ value: 40, color: AMBER }, { value: 40, color: GREEN }] });
+		const options = readOptions({
+			color: RED,
+			thresholds: [
+				{ value: 40, color: AMBER },
+				{ value: 40, color: GREEN },
+			],
+		});
 
 		expect(scaleStops(options)).toEqual([
 			{ at: 0, color: RED },
@@ -1417,7 +1593,17 @@ describe('the colours along the scale', () => {
 	test('a range of one number, and limits too large to subtract: nothing which is not finite', () => {
 		expect(scaleStops(readOptions({ ...scale, min: 50, max: 50 }))).toEqual([{ at: 0, color: AMBER }]);
 
-		for (const stop of scaleStops(readOptions({ min: -1e308, max: 1e308, color: RED, thresholds: [{ value: 0, color: AMBER }, { value: 1e308, color: GREEN }] }))) {
+		for (const stop of scaleStops(
+			readOptions({
+				min: -1e308,
+				max: 1e308,
+				color: RED,
+				thresholds: [
+					{ value: 0, color: AMBER },
+					{ value: 1e308, color: GREEN },
+				],
+			}),
+		)) {
 			expect(Number.isFinite(stop.at)).toBe(true);
 		}
 	});
@@ -1437,19 +1623,31 @@ describe('the colours along the scale', () => {
 	});
 
 	test('a place is written as a plain percentage, however odd', () => {
-		expect(stopsCss([{ at: 0, color: RED }, { at: 1 / 3, color: AMBER }, { at: 1e30, color: GREEN }], 'gradient')).toBe(`${RED} 0%, ${AMBER} 33.333%, ${GREEN} 1000000%`);
+		expect(
+			stopsCss(
+				[
+					{ at: 0, color: RED },
+					{ at: 1 / 3, color: AMBER },
+					{ at: 1e30, color: GREEN },
+				],
+				'gradient',
+			),
+		).toBe(`${RED} 0%, ${AMBER} 33.333%, ${GREEN} 1000000%`);
 	});
 });
 
 describe('the colours of a meter', () => {
-	const scale = { color: RED, thresholds: [{ value: 40, color: AMBER }, { value: 80, color: GREEN }] };
+	const scale = {
+		color: RED,
+		thresholds: [
+			{ value: 40, color: AMBER },
+			{ value: 80, color: GREEN },
+		],
+	};
 	const faded = fadedColor;
 	const none = { color: null, scale: null };
 
-	const drawing = (value: unknown, own: object, count = 0) => {
-		const options = readOptions(own);
-		return drawingOf(readLook(own), options, readingOf(value, options, EN), count);
-	};
+	const drawing = (value: unknown, own: object, count = 0) => draw(value, { options: own, look: own, count });
 
 	const paints = (value: unknown, own: object, count: number) => drawing(value, own, count).pieces!.map((piece) => piece.paint);
 
@@ -1520,7 +1718,13 @@ describe('the colours of a meter', () => {
 			{ color: faded(AMBER), scale: null },
 		]);
 
-		expect(paints(50, { ...scale, activeColoring: 'steps', inactiveColoring: 'automatic' }, 5).map((paint) => paint.color)).toEqual([RED, AMBER, AMBER, faded(GREEN), faded(GREEN)]);
+		expect(paints(50, { ...scale, activeColoring: 'steps', inactiveColoring: 'automatic' }, 5).map((paint) => paint.color)).toEqual([
+			RED,
+			AMBER,
+			AMBER,
+			faded(GREEN),
+			faded(GREEN),
+		]);
 
 		const blended = drawing(50, { ...scale, activeColoring: 'gradient', inactiveColoring: 'automatic' }, 4);
 		expect(blended.pieces!.map((piece) => piece.paint)).toEqual([
@@ -1535,14 +1739,25 @@ describe('the colours of a meter', () => {
 
 	test('what is not filled can have a colouring of its own', () => {
 		// A faded tint of the colour of the current value, under steps.
-		expect(paints(50, { ...scale, activeColoring: 'steps', inactiveColoring: 'value' }, 5).map((paint) => paint.color)).toEqual([RED, AMBER, AMBER, faded(AMBER), faded(AMBER)]);
+		expect(paints(50, { ...scale, activeColoring: 'steps', inactiveColoring: 'value' }, 5).map((paint) => paint.color)).toEqual([
+			RED,
+			AMBER,
+			AMBER,
+			faded(AMBER),
+			faded(AMBER),
+		]);
 
 		// Faded steps under one colour.
 		expect(paints(50, { ...scale, inactiveColoring: 'steps' }, 5).map((paint) => paint.color)).toEqual([AMBER, AMBER, AMBER, faded(GREEN), faded(GREEN)]);
 
 		// A faded gradient under one colour.
 		const mixed = drawing(50, { ...scale, inactiveColoring: 'gradient' }, 4);
-		expect(mixed.pieces!.map((piece) => piece.paint)).toEqual([{ color: AMBER, scale: null }, { color: AMBER, scale: null }, { color: null, scale: 'weak' }, { color: null, scale: 'weak' }]);
+		expect(mixed.pieces!.map((piece) => piece.paint)).toEqual([
+			{ color: AMBER, scale: null },
+			{ color: AMBER, scale: null },
+			{ color: null, scale: 'weak' },
+			{ color: null, scale: 'weak' },
+		]);
 		expect(mixed.stops).toBeNull();
 		expect(mixed.weakStops).toBe(`${faded(RED)} 0%, ${faded(AMBER)} 40%, ${faded(GREEN)} 80%`);
 
@@ -1584,7 +1799,10 @@ describe('the colours of a meter', () => {
 					pieces: null,
 				});
 
-				expect(paints(50, own, 2)).toEqual([{ color: GREEN, scale: null }, { color: faded(GREEN), scale: null }]);
+				expect(paints(50, own, 2)).toEqual([
+					{ color: GREEN, scale: null },
+					{ color: faded(GREEN), scale: null },
+				]);
 			}
 
 			expect(drawing(62, { activeColoring }).track).toEqual(none);
@@ -1593,12 +1811,26 @@ describe('the colours of a meter', () => {
 	});
 
 	test('no value: no colours, whatever the colouring', () => {
-		expect(drawing(null, { ...scale, activeColoring: 'gradient', inactiveColoring: 'automatic' })).toEqual({ stops: null, weakStops: null, track: none, fill: none, pieces: null });
+		expect(drawing(null, { ...scale, activeColoring: 'gradient', inactiveColoring: 'automatic' })).toEqual({
+			stops: null,
+			weakStops: null,
+			track: none,
+			fill: none,
+			pieces: null,
+		});
 		expect(drawing('abc', { ...scale, inactiveColoring: 'value' }).track).toEqual(none);
 	});
 
 	test('every colour which reaches the page is a colour of the options, as it is or inside the one mix', () => {
-		const own = { color: 'red; background: url(x)', thresholds: [{ value: 40, color: 'var(--theme--danger)' }, { value: 60, color: 'url(x)' }], activeColoring: 'gradient', inactiveColoring: 'steps' };
+		const own = {
+			color: 'red; background: url(x)',
+			thresholds: [
+				{ value: 40, color: 'var(--theme--danger)' },
+				{ value: 60, color: 'url(x)' },
+			],
+			activeColoring: 'gradient',
+			inactiveColoring: 'steps',
+		};
 		const result = drawing(50, own);
 
 		expect(result.stops).toBe(`${DEFAULT_COLOR} 0%, var(--theme--danger) 40%`);
@@ -1635,7 +1867,7 @@ describe('how a meter is edited', () => {
 		expect(readEditing({ max: 1 }, 'integer').step).toBe(1);
 		expect(readEditing({ max: 5 }, 'bigInteger').step).toBe(1);
 
-		// A step which is set, its own or a Slider's, is that step, and one which is no step is 1 as before.
+		// A step which is set, its own or a Slider's, is that step, and one which is set and is no step is 1.
 		expect(readEditing({ max: 1, step: 0.25 }, 'float').step).toBe(0.25);
 		expect(readEditing({ max: 1, stepInterval: 0.5 }, 'float').step).toBe(0.5);
 		expect(readEditing({ max: 1, step: 'abc' }, 'float').step).toBe(1);
@@ -1729,7 +1961,16 @@ describe('the step of a field which sets none', () => {
 	const float = (min: number, max: number) => defaultStep(range(min, max), false);
 
 	test('a whole type: 1, whatever the range', () => {
-		for (const [min, max] of [[0, 1], [0, 5], [0, 100], [0, 1e9], [0.5, 5.5], [0, 0], [-1, 1], [0, 1e-9]] as const) {
+		for (const [min, max] of [
+			[0, 1],
+			[0, 5],
+			[0, 100],
+			[0, 1e9],
+			[0.5, 5.5],
+			[0, 0],
+			[-1, 1],
+			[0, 1e-9],
+		] as const) {
 			expect(defaultStep(range(min, max), true), `${min} to ${max}`).toBe(1);
 		}
 	});
@@ -1838,7 +2079,19 @@ describe('the step of a field which sets none', () => {
 	test('what is written on such a grid is the decimal it looks like, at every point, down to a range of 1e-13', () => {
 		// Every point of the grid of a range, written through `snapValue` as a press writes it, is the number its
 		// decimal text stands for: 0.37 and not 0.37000000000000005.
-		for (const [min, max] of [[0, 1], [0, 5], [0, 10], [0, 50], [-1, 1], [0.5, 5.5], [100, 101], [0, 0.1], [0, 1e-9], [0, 1e-13], [2, 2.5]] as const) {
+		for (const [min, max] of [
+			[0, 1],
+			[0, 5],
+			[0, 10],
+			[0, 50],
+			[-1, 1],
+			[0.5, 5.5],
+			[100, 101],
+			[0, 0.1],
+			[0, 1e-9],
+			[0, 1e-13],
+			[2, 2.5],
+		] as const) {
 			const limits = range(min, max);
 			const editing = readEditing({}, 'float', limits);
 			const decimals = Math.round(-Math.log10(editing.step));
@@ -1856,7 +2109,8 @@ describe('the step of a field which sets none', () => {
 				expect(Math.abs(written - (min + index * editing.step)), `${min} to ${max}, point ${index}`).toBeLessThan(editing.step / 2);
 
 				// As JSON, which is how it is sent, it has no more digits than the step has decimals.
-				if (decimals <= 6) expect((JSON.stringify(written).split('.')[1] ?? '').length, `${min} to ${max}, point ${index}: ${written}`).toBeLessThanOrEqual(decimals);
+				if (decimals <= 6)
+					expect((JSON.stringify(written).split('.')[1] ?? '').length, `${min} to ${max}, point ${index}: ${written}`).toBeLessThanOrEqual(decimals);
 			}
 		}
 
@@ -2060,7 +2314,8 @@ describe('where the pointer is', () => {
 	});
 
 	test('by position: the value under the pointer, on the grid', () => {
-		const under = (position: number, length: number, limits = range(0, 100), step = 1) => snapValue(valueAtShare(shareAt(position, length), limits), limits, { step, whole: false });
+		const under = (position: number, length: number, limits = range(0, 100), step = 1) =>
+			snapValue(valueAtShare(shareAt(position, length), limits), limits, { step, whole: false });
 
 		expect(under(100, 400)).toBe(25);
 		expect(under(101, 400)).toBe(25);
@@ -2128,7 +2383,8 @@ describe('the pieces the pointer fills', () => {
 	});
 
 	test('the value is that share of the range', () => {
-		const value = (position: number, limits = range(0, 5), step = 1) => snapValue(valueAtShare(filledAt(position, pills) / pills.length, limits), limits, { step, whole: true });
+		const value = (position: number, limits = range(0, 5), step = 1) =>
+			snapValue(valueAtShare(filledAt(position, pills) / pills.length, limits), limits, { step, whole: true });
 
 		expect(value(-10, range(0, 4))).toBe(0);
 		expect(value(40, range(0, 4))).toBe(1);
@@ -2174,7 +2430,7 @@ describe('the method the pointer works by', () => {
 		expect(method({ step: 0.5 }, 5, range(0, 5), 'integer')).toBe('piece');
 	});
 
-	test('automatic, on a type which holds fractions and sets no step: a piece is no longer one step', () => {
+	test('automatic, on a type which holds fractions and sets no step: a piece is not one step', () => {
 		// Five pieces for 0 to 5 in hundredths: the value under the pointer.
 		for (const type of ['float', 'decimal']) {
 			expect(method({}, 5, range(0, 5), type), type).toBe('position');
@@ -2373,7 +2629,7 @@ describe('pieces which grow', () => {
 
 	test('what is drawn: filled pieces as they are, the others with their size', () => {
 		const options = readOptions({ max: 100 });
-		const sizes = (value: unknown, look: object, count = 5) => drawingOf(readLook(look), options, readingOf(value, options, EN), count, value).pieces!.map((piece) => piece.size);
+		const sizes = (value: unknown, look: object, count = 5) => draw(value, { options, look, count }).pieces!.map((piece) => piece.size);
 
 		expect(sizes(65, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, { along: 0.75, across: 0.75 }, { along: 0.5, across: 0.5 }]);
 		expect(sizes(60, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, { along: 0.5, across: 0.5 }, { along: 0.5, across: 0.5 }]);
@@ -2385,37 +2641,40 @@ describe('pieces which grow', () => {
 		expect(sizes(null, { visualization: 'dots', grow: 1 })).toEqual([null, null, null, null, null]);
 	});
 
-	test('off, a meter is drawn exactly as before there was such an option', () => {
+	test('off, no piece has a size or anything laid over it, whether the keys are missing, false or emptied', () => {
 		const options = readOptions({ max: 100, color: GREEN, thresholds: [{ value: 40, color: AMBER }] });
 
 		for (const shape of SHAPES) {
 			for (const coloring of ['value', 'blend', 'steps', 'gradient']) {
 				for (const value of [0, 33, 65, 100, null]) {
 					const look = { visualization: shape, activeColoring: coloring, inactiveColoring: 'automatic' };
-					const reading = readingOf(value, options, EN);
-					const plain = drawingOf(readLook(look), options, reading, 5, value);
+					const plain = draw(value, { options, look, count: 5 });
 
 					// Neither a size nor an overlay on any piece, and the same drawing whether the keys are missing, false or emptied.
 					expect(plain.pieces!.every((piece) => piece.size === null && piece.over === null)).toBe(true);
-					expect(drawingOf(readLook({ ...look, grow: false, fade: false }), options, reading, 5, value)).toEqual(plain);
-					expect(drawingOf(readLook({ ...look, grow: null, fade: null }), options, reading, 5, value)).toEqual(plain);
-					expect(drawingOf({ activeColoring: readLook(look).activeColoring, inactiveColoring: readLook(look).inactiveColoring }, options, reading, 5, value)).toEqual(plain);
+					expect(draw(value, { options, look: { ...look, grow: false, fade: false }, count: 5 })).toEqual(plain);
+					expect(draw(value, { options, look: { ...look, grow: null, fade: null }, count: 5 })).toEqual(plain);
+					const { activeColoring, inactiveColoring } = readLook(look);
+					expect(drawingOf({ look: { activeColoring, inactiveColoring }, options, reading: readingOf(value, options, EN), count: 5, value })).toEqual(
+						plain,
+					);
 
 					// On, the paint of every piece and what is filled are still the same: only the sizes are new.
-					const grown = drawingOf(readLook({ ...look, grow: 1 }), options, reading, 5, value);
-					expect(grown.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint }))).toEqual(plain.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint })));
+					const grown = draw(value, { options, look: { ...look, grow: 1 }, count: 5 });
+					expect(grown.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint }))).toEqual(
+						plain.pieces!.map(({ filled, at, paint }) => ({ filled, at, paint })),
+					);
 					expect({ ...grown, pieces: null }).toEqual({ ...plain, pieces: null });
 				}
 			}
 		}
 	});
 
-	test('one bar ignores it, and only the entry\'s own option counts: a display never grows', () => {
-		const options = readOptions({ max: 100 });
-		const reading = readingOf(65, options, EN);
+	test("one bar ignores it, and only the entry's own option counts: a display never grows", () => {
+		const options = { max: 100 };
 
-		expect(drawingOf(readLook({ grow: 1 }), options, reading, 0, 65)).toEqual(drawingOf(readLook({}), options, reading, 0, 65));
-		expect(drawingOf(readLook({ visualization: 'contiguous', grow: 1 }), options, reading, 5, 65).pieces!.every((piece) => piece.size === null)).toBe(true);
+		expect(draw(65, { options, look: { grow: 1 } })).toEqual(draw(65, { options }));
+		expect(draw(65, { options, look: { visualization: 'contiguous', grow: 1 }, count: 5 }).pieces!.every((piece) => piece.size === null)).toBe(true);
 
 		expect(readLook({ grow: 2 }).grow).toBe(2);
 		expect(readLook({}, { grow: 2 }).grow).toBe(0);
@@ -2493,7 +2752,8 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 	test('the growth of the next three pieces at a whole number of pieces, for 1, 2 and 3', () => {
 		// Ten pieces, the value at exactly four of them: the pieces 5, 6 and 7 are half a piece, one and a half
 		// and two and a half from being filled.
-		const next = (grow: number, fraction: number) => [4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(4)));
+		const next = (grow: number, fraction: number) =>
+			[4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(4)));
 
 		// 1: nothing is growing.
 		expect(next(1, 0.4)).toEqual([0, 0, 0]);
@@ -2511,7 +2771,8 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 
 	test('and close before a piece is filled', () => {
 		// The value a hair short of four and a half pieces: the fifth piece is about to be filled.
-		const next = (grow: number, fraction: number) => [4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(3)));
+		const next = (grow: number, fraction: number) =>
+			[4, 5, 6].map((index) => Number(growthOf(fraction, 10, index, reachOf('pills', 'form', 10, 342, grow)).toFixed(3)));
 
 		expect(next(1, 0.4499)).toEqual([0.998, 0, 0]);
 		expect(next(2, 0.4499)).toEqual([0.999, 0.333, 0]);
@@ -2575,7 +2836,7 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 		const options = readOptions({ max: 8 });
 		const sizes = (grow: unknown, value: number) => {
 			const look = readLook({ visualization: 'dots', grow });
-			return drawingOf(look, options, readingOf(value, options, EN), 8, value, { reach: reachOf('dots', 'form', 8, 342, look.grow) }).pieces!.map((piece) => piece.size?.along ?? 1);
+			return draw(value, { options, look, count: 8, reach: reachOf('dots', 'form', 8, 342, look.grow) }).pieces!.map((piece) => piece.size?.along ?? 1);
 		};
 
 		// At exactly 3 of 8: with 3 the next two dots are larger than the ones after them, the nearer the larger.
@@ -2589,7 +2850,10 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 		// With 0, with a switch, on or off, and with junk, no piece has a size at all.
 		for (const grow of [0, true, false, 'junk', -2]) {
 			const look = readLook({ visualization: 'dots', grow });
-			expect(drawingOf(look, options, readingOf(3.3, options, EN), 8, 3.3).pieces!.every((piece) => piece.size === null), String(grow)).toBe(true);
+			expect(
+				draw(3.3, { options, look, count: 8 }).pieces!.every((piece) => piece.size === null),
+				String(grow),
+			).toBe(true);
 		}
 	});
 
@@ -2598,7 +2862,7 @@ describe('grow as a number: how many pieces can be growing at once', () => {
 		const overs = (grow: number, value: number) => {
 			const look = readLook({ visualization: 'dots', fade: true, grow });
 			const reach = reachOf('dots', 'form', 8, 342, look.grow > 0 ? look.grow : 1);
-			return drawingOf(look, options, readingOf(value, options, EN), 8, value, { reach }).pieces!.map((piece) => piece.over?.opacity ?? 0);
+			return draw(value, { options, look, count: 8, reach }).pieces!.map((piece) => piece.over?.opacity ?? 0);
 		};
 
 		expect(overs(0, 3)).toEqual([0, 0, 0, 0, 0, 0, 0, 0]);
@@ -2681,7 +2945,7 @@ describe('how far ahead of the fill a piece grows', () => {
 		}
 	});
 
-	test('with the reach of half a piece the growth is what it was', () => {
+	test('half a piece is the reach of a growth which is handed none', () => {
 		for (let value = 0; value <= 100; value += 0.5) {
 			for (let index = 0; index < 5; index++) expect(growthOf(value / 100, 5, index, 0.5), `${value} ${index}`).toBe(growthOf(value / 100, 5, index));
 		}
@@ -2711,7 +2975,11 @@ describe('how far ahead of the fill a piece grows', () => {
 		// has its whole reach.
 		expect(fifty(0).every((growth) => growth === 0)).toBe(true);
 		expect(fifty(1).slice(0, 4)).toEqual([1, 0, 0, 0]);
-		expect(fifty(2).slice(0, 4).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 0.6667, 0, 0]);
+		expect(
+			fifty(2)
+				.slice(0, 4)
+				.map((growth) => Number(growth.toFixed(4))),
+		).toEqual([1, 0.6667, 0, 0]);
 		expect(fifty(3).slice(0, 4)).toEqual([1, 1, 0.5, 0]);
 
 		// From there on the ramp is there at every whole value which leaves a bar to fill (99 fills the last),
@@ -2724,7 +2992,8 @@ describe('how far ahead of the fill a piece grows', () => {
 			const ahead = growth.slice(filled);
 
 			if (!(ahead[0]! > 0 && ahead[0]! < 1)) expect.fail(`${value}: the next bar is at ${ahead[0]}`);
-			for (let index = 1; index < ahead.length; index++) if (ahead[index]! > ahead[index - 1]!) expect.fail(`${value}: bar ${index} is further along than the one before it`);
+			for (let index = 1; index < ahead.length; index++)
+				if (ahead[index]! > ahead[index - 1]!) expect.fail(`${value}: bar ${index} is further along than the one before it`);
 			if (ahead.length > 2 && ahead[2] !== 0) expect.fail(`${value}: the third bar ahead is at ${ahead[2]}`);
 		}
 
@@ -2751,15 +3020,25 @@ describe('how far ahead of the fill a piece grows', () => {
 
 	test('the drawing takes the reach: sizes and what fades in, for bars in the form and in the display', () => {
 		const options = readOptions({ max: 100, color: GREEN });
-		const pieces = (look: object, count: number, reach: number | undefined) => drawingOf(readLook({ visualization: 'bars', ...look }), options, readingOf(40, options, EN), count, 40, { reach }).pieces!;
+		const pieces = (look: object, count: number, reach: number | undefined) =>
+			draw(40, { options, look: { visualization: 'bars', ...look }, count, reach }).pieces!;
 
 		// Fifty bars which grow, at 40, with a reach of two and a half: the heights of the two bars in front of the
 		// fill, between a third and all.
 		const grown = pieces({ grow: 1 }, 50, reachOf('bars', 'form', 50, 342));
-		expect(grown.slice(19, 23).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.8667 }, { along: 1, across: 0.6 }, { along: 1, across: 0.3333 }]);
+		expect(grown.slice(19, 23).map((piece) => piece.size)).toEqual([
+			null,
+			{ along: 1, across: 0.8667 },
+			{ along: 1, across: 0.6 },
+			{ along: 1, across: 0.3333 },
+		]);
 
-		// Without a reach, as before: nothing in front of the fill has started.
-		expect(pieces({ grow: 1 }, 50, undefined).slice(19, 22).map((piece) => piece.size)).toEqual([null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+		// Without a reach it is half a piece: nothing in front of the fill has started.
+		expect(
+			pieces({ grow: 1 }, 50, undefined)
+				.slice(19, 22)
+				.map((piece) => piece.size),
+		).toEqual([null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
 
 		// Twenty bars of a display which fade in, at 40, with a reach of three: eight filled, and over the next three
 		// the green, less and less.
@@ -2773,14 +3052,19 @@ describe('growing and fading by where the pointer is', () => {
 	// Five segments for a hundred, which grow and fade in. The value is 40: two filled.
 	const options = readOptions({ max: 100, color: GREEN });
 	const look = readLook({ visualization: 'segments', grow: 1, fade: true });
-	const reading = readingOf(40, options, EN);
-	const draw = (at?: number | null) => drawingOf(look, options, reading, 5, 40, { at });
+	const pointed = (at?: number | null) => draw(40, { options, look, count: 5, at });
 
 	test('without a place of the pointer, by the value', () => {
-		expect(draw()).toEqual(drawingOf(look, options, reading, 5, 40));
-		expect(draw(null)).toEqual(draw());
-		expect(draw(Number.NaN)).toEqual(draw());
-		expect(draw().pieces!.map((piece) => piece.size)).toEqual([null, null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+		expect(pointed()).toEqual(draw(40, { options, look, count: 5 }));
+		expect(pointed(null)).toEqual(pointed());
+		expect(pointed(Number.NaN)).toEqual(pointed());
+		expect(pointed().pieces!.map((piece) => piece.size)).toEqual([
+			null,
+			null,
+			{ along: 1, across: 0.3333 },
+			{ along: 1, across: 0.3333 },
+			{ along: 1, across: 0.3333 },
+		]);
 	});
 
 	test('with one, the pieces which are not filled are as far along as the pointer is, while the value fills what it fills', () => {
@@ -2790,48 +3074,61 @@ describe('growing and fading by where the pointer is', () => {
 			[0.44, 0.4],
 			[0.48, 0.8],
 		] as const) {
-			const drawing = draw(at);
+			const drawing = pointed(at);
 
-			expect(drawing.pieces!.map((piece) => piece.filled), String(at)).toEqual([true, true, false, false, false]);
+			expect(
+				drawing.pieces!.map((piece) => piece.filled),
+				String(at),
+			).toEqual([true, true, false, false, false]);
 			expect(drawing.pieces![2]!.size, String(at)).toEqual(pieceScale('segments', growth));
 			expect(drawing.pieces![2]!.over, String(at)).toEqual({ paint: { color: GREEN, scale: null }, opacity: growth });
 			expect(drawing.pieces![3]!.size, String(at)).toEqual({ along: 1, across: 0.3333 });
 			expect(drawing.pieces![3]!.over, String(at)).toBeNull();
 
 			// The paint of every piece is that of the value.
-			expect(drawing.pieces!.map((piece) => piece.paint), String(at)).toEqual(draw().pieces!.map((piece) => piece.paint));
+			expect(
+				drawing.pieces!.map((piece) => piece.paint),
+				String(at),
+			).toEqual(pointed().pieces!.map((piece) => piece.paint));
 		}
 	});
 
 	test('a pointer which is ahead of the value leaves a piece full and not filled; one behind it leaves the filled pieces alone', () => {
 		// At 55 the third segment would be filled by the pointer, and is not by the value: full size, all of the look laid over it.
-		const ahead = draw(0.55).pieces!;
+		const ahead = pointed(0.55).pieces!;
 		expect(ahead.map((piece) => piece.filled)).toEqual([true, true, false, false, false]);
 		expect(ahead[2]!.size).toEqual({ along: 1, across: 1 });
 		expect(ahead[2]!.over).toEqual({ paint: { color: GREEN, scale: null }, opacity: 1 });
 		expect(ahead[3]!.size).toEqual({ along: 1, across: 0.3333 });
 
 		// At 10 the pointer is behind: the two filled segments stay as they are, and nothing is under way.
-		const behind = draw(0.1).pieces!;
+		const behind = pointed(0.1).pieces!;
 		expect(behind.map((piece) => piece.filled)).toEqual([true, true, false, false, false]);
-		expect(behind.map((piece) => piece.size)).toEqual([null, null, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }, { along: 1, across: 0.3333 }]);
+		expect(behind.map((piece) => piece.size)).toEqual([
+			null,
+			null,
+			{ along: 1, across: 0.3333 },
+			{ along: 1, across: 0.3333 },
+			{ along: 1, across: 0.3333 },
+		]);
 		expect(behind.every((piece) => piece.over === null)).toBe(true);
 	});
 
 	test('a place outside the track is its nearer end, and a meter which neither grows nor fades takes no notice', () => {
-		expect(draw(-3)).toEqual(draw(0));
-		expect(draw(7)).toEqual(draw(1));
+		expect(pointed(-3)).toEqual(pointed(0));
+		expect(pointed(7)).toEqual(pointed(1));
 
 		const plain = readLook({ visualization: 'segments' });
-		expect(drawingOf(plain, options, reading, 5, 40, { at: 0.48 })).toEqual(drawingOf(plain, options, reading, 5, 40));
+		expect(draw(40, { options, look: plain, count: 5, at: 0.48 })).toEqual(draw(40, { options, look: plain, count: 5 }));
 
 		// Without a value there is nothing to grow, wherever the pointer is.
-		expect(drawingOf(look, options, readingOf(null, options, EN), 5, null, { at: 0.48 }).pieces!.every((piece) => piece.size === null && piece.over === null)).toBe(true);
+		expect(draw(null, { options, look, count: 5, at: 0.48 }).pieces!.every((piece) => piece.size === null && piece.over === null)).toBe(true);
 	});
 });
 
 describe('dots are as many as fit, packed or spread', () => {
-	const count = (own: object, place: 'form' | 'display', width: number) => pieceCount(readLook({ visualization: 'dots', ...own }), readOptions(own), place, width);
+	const count = (own: object, place: 'form' | 'display', width: number) =>
+		pieceCount(readLook({ visualization: 'dots', ...own }), readOptions(own), place, width);
 
 	test('a wanted number which does not fit, and none: as many as fit, and less than one dot and its gap is left', () => {
 		let seen = 0;
@@ -2853,7 +3150,8 @@ describe('dots are as many as fit, packed or spread', () => {
 
 					if (dots !== most) expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: ${dots} dots where ${most} fit`);
 					if (left < -1e-6 || left >= piece + gap) expect.fail(`${place}, ${width}px: ${left}px are left behind ${dots} dots`);
-					if (row[1]!.start - row[0]!.end !== gap || row[0]!.end - row[0]!.start !== piece) expect.fail(`${place}, ${width}px: a dot or a gap of another size`);
+					if (row[1]!.start - row[0]!.end !== gap || row[0]!.end - row[0]!.start !== piece)
+						expect.fail(`${place}, ${width}px: a dot or a gap of another size`);
 				}
 			}
 		}
@@ -2892,14 +3190,27 @@ describe('dots are as many as fit, packed or spread', () => {
 
 				const most = fitCount('dots', place, width);
 
-				for (const own of [{}, { max: 5 }, { max: 12 }, { max: 13 }, { max: 30 }, { max: 97 }, { max: 2.5 }, { subdivisions: 8 }, { subdivisions: 30 }, { subdivisions: 150 }]) {
+				for (const own of [
+					{},
+					{ max: 5 },
+					{ max: 12 },
+					{ max: 13 },
+					{ max: 30 },
+					{ max: 97 },
+					{ max: 2.5 },
+					{ subdivisions: 8 },
+					{ subdivisions: 30 },
+					{ subdivisions: 150 },
+				]) {
 					const wanted = wantedCount(readLook({ visualization: 'dots', ...own }), readOptions(own));
 					const expected = most < 2 ? 0 : wanted === null || wanted > most ? most : wanted;
 					seen++;
 					if (wanted !== null && wanted > most && most >= 2 && wanted % most !== 0) fewer++;
 
-					if (spread(own, place, width) !== expected) expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: ${spread(own, place, width)} spread dots, not ${expected}`);
-					if (spread(own, place, width) !== count(own, place, width)) expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: spread and packed differ`);
+					if (spread(own, place, width) !== expected)
+						expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: ${spread(own, place, width)} spread dots, not ${expected}`);
+					if (spread(own, place, width) !== count(own, place, width))
+						expect.fail(`${place}, ${width}px, ${JSON.stringify(own)}: spread and packed differ`);
 				}
 			}
 		}
@@ -2978,7 +3289,10 @@ describe('bars which are all drawn alike', () => {
 	const WIDTHS = [20, 72, 100, 137.5, 293, 342, 342.4, 512, 615, 713, 784.25, 1100, 2000];
 	const RATIOS = [0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 3];
 	const whole = (number: number) => Math.abs(number - Math.round(number)) < 1e-6;
-	const least = (place: 'form' | 'display', ratio: number) => ({ bar: Math.ceil(PIECE_SIZES[place].bars.piece * ratio - 1e-6), gap: Math.ceil(PIECE_SIZES[place].bars.gap * ratio - 1e-6) });
+	const least = (place: 'form' | 'display', ratio: number) => ({
+		bar: Math.ceil(PIECE_SIZES[place].bars.piece * ratio - 1e-6),
+		gap: Math.ceil(PIECE_SIZES[place].bars.gap * ratio - 1e-6),
+	});
 
 	test('as many as fit: whole device pixels, all alike, the row fits, and less than one bar and its gap is left', () => {
 		let seen = 0;
@@ -3045,7 +3359,7 @@ describe('bars which are all drawn alike', () => {
 		expect(seen).toBeGreaterThan(500);
 	});
 
-	test('on a page which is zoomed (ratios of 0.9, 1.1, 1.25 and 1.75): every bar starts and ends on a whole device pixel, all bars and all gaps are alike, and the row fits', () => {
+	test('on a zoomed page (ratios of 0.9, 1.1, 1.25 and 1.75): every bar is on whole device pixels, all bars and all gaps are alike, and the row fits', () => {
 		let seen = 0;
 
 		for (const ratio of [0.9, 1.1, 1.25, 1.75]) {
@@ -3069,14 +3383,16 @@ describe('bars which are all drawn alike', () => {
 						if (!whole(bar) || !whole(gap) || Math.round(bar) < 1 || Math.round(gap) < 1) expect.fail(`${about}: bar ${bar}, gap ${gap}`);
 
 						for (const [index, [start, end]] of edges.entries()) {
-							if (Math.abs(start - index * (bar + gap)) > 1e-6 || Math.abs(end - start - bar) > 1e-6) expect.fail(`${about}: bar ${index} from ${start} to ${end}`);
+							if (Math.abs(start - index * (bar + gap)) > 1e-6 || Math.abs(end - start - bar) > 1e-6)
+								expect.fail(`${about}: bar ${index} from ${start} to ${end}`);
 						}
 
 						if (edges.at(-1)![1] > Math.floor(width * ratio + 1e-4) + 1e-6) expect.fail(`${about}: the row does not fit`);
 
 						// Never less than the least sizes, which are 4px and 2px in the form and 2px and 1px in the display.
 						const small = least(place, ratio);
-						if (bar < small.bar - 1e-6 || gap < small.gap - 1e-6) expect.fail(`${about}: bar ${bar}, gap ${gap} are less than ${small.bar} and ${small.gap}`);
+						if (bar < small.bar - 1e-6 || gap < small.gap - 1e-6)
+							expect.fail(`${about}: bar ${bar}, gap ${gap} are less than ${small.bar} and ${small.gap}`);
 					}
 				}
 			}
@@ -3096,7 +3412,8 @@ describe('bars which are all drawn alike', () => {
 	});
 
 	test('how many bars: what is wanted where it fits, else as many as fit, counted in whole device pixels', () => {
-		const count = (own: object, place: 'form' | 'display', width: number, ratio?: number) => pieceCount(readLook({ visualization: 'bars', ...own }), readOptions(own), place, width, ratio);
+		const count = (own: object, place: 'form' | 'display', width: number, ratio?: number) =>
+			pieceCount(readLook({ visualization: 'bars', ...own }), readOptions(own), place, width, ratio);
 
 		// A hundred wanted in 342px: 57 fit, at 4px and 2px, and 57 are drawn. Not the fifty which divide a hundred.
 		expect(count({}, 'form', 342)).toBe(57);
@@ -3141,7 +3458,7 @@ describe('bars which are all drawn alike', () => {
 		expect(fitCount('bars', 'form', 342, Number.NaN)).toBe(57);
 	});
 
-	test('the owner\'s case: a hundred in 342px', () => {
+	test("the owner's case: a hundred in 342px", () => {
 		// 57 bars of 4px with 2px between them are 340px: 2px are left, less than the bar and the gap which would be next.
 		expect(barFit('form', 57, 342, 1)).toEqual({ bar: 4, gap: 2, length: 340 });
 		expect(barFit('form', 57, 342, 2)).toEqual({ bar: 4, gap: 2, length: 340 });
@@ -3214,7 +3531,8 @@ describe('bars which are all drawn alike', () => {
 		expect(valueAtShare(shareAt(149, length), range(0, 100))).toBe(50);
 
 		// Pills and segments still share the width, and dots keep their own size, whatever the ratio.
-		for (const shape of ['pills', 'segments', 'dots'] as const) expect(pieceGeometry(shape, 'form', 10, 342, 'packed', 2)).toEqual(pieceGeometry(shape, 'form', 10, 342));
+		for (const shape of ['pills', 'segments', 'dots'] as const)
+			expect(pieceGeometry(shape, 'form', 10, 342, 'packed', 2)).toEqual(pieceGeometry(shape, 'form', 10, 342));
 		expect(pieceGeometry('pills', 'form', 10, 342).at(-1)!.end).toBeCloseTo(342, 9);
 	});
 
@@ -3224,7 +3542,7 @@ describe('bars which are all drawn alike', () => {
 		expect(barFit('form', Number.NaN, 342, 1)).toBeNull();
 		expect(barFit('form', 50, Number.POSITIVE_INFINITY, 1)).toBeNull();
 
-		// More bars than device pixels: no fit, and the bars share the width as before.
+		// More bars than device pixels: no fit, and the bars share the width as pills and segments do.
 		expect(barFit('form', 200, 100, 1)).toBeNull();
 		expect(pieceGeometry('bars', 'form', 200, 100)).toHaveLength(200);
 		expect(pieceGeometry('bars', 'form', 200, 100).at(-1)!.end).toBeCloseTo(100, 9);
@@ -3233,7 +3551,8 @@ describe('bars which are all drawn alike', () => {
 		expect(barFit('form', 50, 120, 1)).toEqual({ bar: 1, gap: 1, length: 99 });
 		expect(barFit('form', 80, 342, 1)).toEqual({ bar: 2, gap: 2, length: 318 });
 
-		for (const ratio of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(barFit('form', 50, 342, ratio), String(ratio)).toEqual(barFit('form', 50, 342, 1));
+		for (const ratio of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+			expect(barFit('form', 50, 342, ratio), String(ratio)).toEqual(barFit('form', 50, 342, 1));
 	});
 });
 
@@ -3243,7 +3562,7 @@ describe('the ramp at the start of the scale', () => {
 	const bars = (grow: number) => reachOf('bars', 'form', 50, 342, grow);
 	const all = (fraction: number, count: number, reach: number) => Array.from({ length: count }, (_, index) => growthOf(fraction, count, index, reach));
 
-	// The growth as it was before the reach grew out of the start, away from the minimum: 1 - d / reach.
+	// The plain rule, which holds wherever the fill is at least as long as the reach: a piece d pieces short of filled has grown 1 - d / reach.
 	const plain = (fraction: number, count: number, index: number, reach: number) => {
 		if (index < filledCount(fraction, count)) return 1;
 		return Math.min(1, Math.max(0, 1 - (index + 0.5 - Number((fraction * count).toFixed(9))) / reach));
@@ -3263,7 +3582,7 @@ describe('the ramp at the start of the scale', () => {
 		// And what is drawn there: no piece is larger than small, and nothing fades in.
 		const options = readOptions({ max: 100, color: GREEN });
 		const look = readLook({ visualization: 'bars', grow: 4, fade: true });
-		const drawing = drawingOf(look, options, readingOf(0, options, EN), 50, 0, { reach: bars(4) });
+		const drawing = draw(0, { options, look, count: 50, reach: bars(4) });
 		expect(drawing.pieces!.every((piece) => piece.size!.across === 0.3333 && piece.over === null)).toBe(true);
 	});
 
@@ -3273,10 +3592,18 @@ describe('the ramp at the start of the scale', () => {
 		expect([0, 1, 2, 3, 4, 5, 6, 7, 8].map(larger)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8]);
 
 		// At 2 one bar is filled and the next two thirds of the way; at 4 two are filled, then 0.8 and 0.4.
-		expect(all(0.02, 50, bars(4)).slice(0, 4).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 0.6667, 0, 0]);
-		expect(all(0.04, 50, bars(4)).slice(0, 5).map((growth) => Number(growth.toFixed(4)))).toEqual([1, 1, 0.8, 0.4, 0]);
+		expect(
+			all(0.02, 50, bars(4))
+				.slice(0, 4)
+				.map((growth) => Number(growth.toFixed(4))),
+		).toEqual([1, 0.6667, 0, 0]);
+		expect(
+			all(0.04, 50, bars(4))
+				.slice(0, 5)
+				.map((growth) => Number(growth.toFixed(4))),
+		).toEqual([1, 1, 0.8, 0.4, 0]);
 
-		// Before there was this rule the value 1 had a filled bar and eight on their way behind an empty meter.
+		// At the first value only the filled bar shows: the plain rule would put eight more on their way behind an empty meter.
 		expect(all(0.01, 50, bars(4)).filter((growth) => growth > 0)).toHaveLength(1);
 	});
 
@@ -3310,7 +3637,7 @@ describe('the ramp at the start of the scale', () => {
 		}
 	});
 
-	test('once the fill is as long as the reach, the values are what they were', () => {
+	test('once the fill is as long as the reach, a piece d pieces short of filled has grown 1 - d / reach', () => {
 		for (const [count, reach] of [
 			[50, bars(4)],
 			[20, dots(4)],
@@ -3322,17 +3649,22 @@ describe('the ramp at the start of the scale', () => {
 				const fraction = position / (count * 100);
 				for (let index = 0; index < count; index++) {
 					const growth = growthOf(fraction, count, index, reach);
-					if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12) expect.fail(`${count} pieces, reach ${reach}, at ${position / 100}: piece ${index} is ${growth}`);
+					if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12)
+						expect.fail(`${count} pieces, reach ${reach}, at ${position / 100}: piece ${index} is ${growth}`);
 				}
 			}
 		}
 
 		// Fifty bars with 4 at 40 of a hundred: twenty filled and a ramp of ten, sixty pixels of the track.
 		expect(all(0.4, 50, bars(4)).filter((growth) => growth > 0 && growth < 1)).toHaveLength(10);
-		expect(all(0.4, 50, bars(4)).slice(20, 23).map((growth) => Number(growth.toFixed(4)))).toEqual([0.95, 0.85, 0.75]);
+		expect(
+			all(0.4, 50, bars(4))
+				.slice(20, 23)
+				.map((growth) => Number(growth.toFixed(4))),
+		).toEqual([0.95, 0.85, 0.75]);
 	});
 
-	test('a grow of 1 and less gives the same values as before everywhere, the start included', () => {
+	test('a grow of 1 and less follows the plain rule everywhere, the start included', () => {
 		for (const grow of [0.5, 1]) {
 			for (const count of [2, 5, 20]) {
 				const reach = reachOf('dots', 'form', count, 342, grow);
@@ -3342,7 +3674,8 @@ describe('the ramp at the start of the scale', () => {
 					const fraction = position / (count * 200);
 					for (let index = 0; index < count; index++) {
 						const growth = growthOf(fraction, count, index, reach);
-						if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12) expect.fail(`grow ${grow}, ${count} pieces at ${position / 200}: piece ${index} is ${growth}`);
+						if (Math.abs(growth - plain(fraction, count, index, reach)) > 1e-12)
+							expect.fail(`grow ${grow}, ${count} pieces at ${position / 200}: piece ${index} is ${growth}`);
 					}
 				}
 			}
@@ -3352,7 +3685,8 @@ describe('the ramp at the start of the scale', () => {
 	test('what fades in and the place of the pointer go by the same rule', () => {
 		const options = readOptions({ max: 100, color: GREEN });
 		const look = readLook({ visualization: 'bars', grow: 4, fade: true });
-		const overs = (value: number, at?: number) => drawingOf(look, options, readingOf(value, options, EN), 50, value, { reach: bars(4), at }).pieces!.map((piece) => piece.over?.opacity ?? 0);
+		const overs = (value: number, at?: number) =>
+			draw(value, { options, look, count: 50, reach: bars(4), at }).pieces!.map((piece) => piece.over?.opacity ?? 0);
 
 		// By the value: nothing at 0, nothing but the filled bar at 1, one bar fading in at 2.
 		expect(overs(0).filter((opacity) => opacity > 0)).toHaveLength(0);
@@ -3366,9 +3700,16 @@ describe('the ramp at the start of the scale', () => {
 });
 
 describe('the piece which fades in', () => {
-	const options = readOptions({ max: 100, color: GREEN, thresholds: [{ value: 40, color: AMBER }, { value: 80, color: RED }] });
-	const draw = (value: unknown, look: object, count = 5) => drawingOf(readLook({ visualization: 'pills', ...look }), options, readingOf(value, options, EN), count, value);
-	const overs = (value: unknown, look: object, count = 5) => draw(value, look, count).pieces!.map((piece) => piece.over);
+	const options = readOptions({
+		max: 100,
+		color: GREEN,
+		thresholds: [
+			{ value: 40, color: AMBER },
+			{ value: 80, color: RED },
+		],
+	});
+	const pills = (value: unknown, look: object, count = 5) => draw(value, { options, look: { visualization: 'pills', ...look }, count });
+	const overs = (value: unknown, look: object, count = 5) => pills(value, look, count).pieces!.map((piece) => piece.over);
 
 	test('the next piece has the look of a filled one laid over it, as much as it has grown; the others have nothing', () => {
 		// 65 of 100 in five pieces: the fourth is half way to being filled.
@@ -3379,7 +3720,8 @@ describe('the piece which fades in', () => {
 	});
 
 	test('at a value which is a whole number of pieces, and once the piece is filled, there is none', () => {
-		for (const value of [0, 20, 60, 70, 75, 79.9, 100, -20, 150]) expect(overs(value, { fade: true }), String(value)).toEqual([null, null, null, null, null]);
+		for (const value of [0, 20, 60, 70, 75, 79.9, 100, -20, 150])
+			expect(overs(value, { fade: true }), String(value)).toEqual([null, null, null, null, null]);
 		expect(overs(null, { fade: true })).toEqual([null, null, null, null, null]);
 	});
 
@@ -3394,30 +3736,30 @@ describe('the piece which fades in', () => {
 		expect(overs(65, { fade: true, activeColoring: 'gradient' })[3]!.paint).toEqual({ color: null, scale: 'full' });
 
 		// By the blend: the one colour everything filled has.
-		const blended = draw(65, { fade: true, activeColoring: 'blend' });
+		const blended = pills(65, { fade: true, activeColoring: 'blend' });
 		expect(blended.pieces![3]!.over!.paint).toEqual(blended.pieces![0]!.paint);
 
 		// The piece under it is what the inactive colouring gives it, with or without the fade.
 		for (const inactiveColoring of ['plain', 'automatic', 'value', 'steps', 'gradient']) {
 			const look = { activeColoring: 'steps', inactiveColoring };
-			expect(draw(65, { ...look, fade: true }).pieces!.map((piece) => piece.paint)).toEqual(draw(65, look).pieces!.map((piece) => piece.paint));
+			expect(pills(65, { ...look, fade: true }).pieces!.map((piece) => piece.paint)).toEqual(pills(65, look).pieces!.map((piece) => piece.paint));
 		}
 	});
 
 	test('a gradient which only the fading piece shows still has its stops', () => {
 		// 5 of 100: nothing is filled yet, and the first piece is fading in.
-		expect(draw(5, { activeColoring: 'gradient' }).stops).toBeNull();
-		expect(draw(5, { activeColoring: 'gradient', fade: true }).stops).not.toBeNull();
-		expect(draw(0, { activeColoring: 'gradient', fade: true }).stops).toBeNull();
+		expect(pills(5, { activeColoring: 'gradient' }).stops).toBeNull();
+		expect(pills(5, { activeColoring: 'gradient', fade: true }).stops).not.toBeNull();
+		expect(pills(0, { activeColoring: 'gradient', fade: true }).stops).toBeNull();
 	});
 
 	test('with both, the piece grows and fades in together, by the same share', () => {
-		const piece = draw(65, { visualization: 'dots', grow: 1, fade: true }).pieces![3]!;
+		const piece = pills(65, { visualization: 'dots', grow: 1, fade: true }).pieces![3]!;
 
 		expect(piece.size).toEqual({ along: 0.75, across: 0.75 });
 		expect(piece.over).toEqual({ paint: { color: AMBER, scale: null }, opacity: 0.5 });
 
-		const after = draw(65, { visualization: 'dots', grow: 1, fade: true }).pieces![4]!;
+		const after = pills(65, { visualization: 'dots', grow: 1, fade: true }).pieces![4]!;
 		expect(after.size).toEqual({ along: 0.5, across: 0.5 });
 		expect(after.over).toBeNull();
 	});
@@ -3431,8 +3773,7 @@ describe('the piece which fades in', () => {
 	});
 
 	test('one bar ignores it', () => {
-		const reading = readingOf(65, options, EN);
-		expect(drawingOf(readLook({ fade: true }), options, reading, 0, 65)).toEqual(drawingOf(readLook({}), options, reading, 0, 65));
+		expect(draw(65, { options, look: { fade: true } })).toEqual(draw(65, { options }));
 	});
 });
 
@@ -3464,7 +3805,8 @@ describe('a finger which drags and a finger which scrolls', () => {
 describe('the keys', () => {
 	const limits = range(0, 100);
 	const one = { step: 1, whole: true };
-	const key = (name: string, current: number | null, editing = one, count = 0, rtl = false, within = limits) => keyValue(name, current, within, editing, count, rtl);
+	const key = (name: string, current: number | null, editing = one, count = 0, rtl = false, within = limits) =>
+		keyValue(name, current, within, editing, count, rtl);
 
 	test('Right and Up are one step up, Left and Down one step down', () => {
 		expect(key('ArrowRight', 40)).toBe(41);
@@ -3548,7 +3890,7 @@ describe('the keys', () => {
 		expect(key('ArrowRight', Number.NaN)).toBe(1);
 	});
 
-	test('any other key is none of the meter\'s', () => {
+	test("any other key is none of the meter's", () => {
 		for (const name of ['a', ' ', 'Enter', 'Tab', 'Escape', 'Delete', 'Backspace', '5', 'Shift']) {
 			expect(key(name, 40), name).toBeUndefined();
 		}
@@ -3637,7 +3979,8 @@ describe('the range which can be written', () => {
 	});
 
 	test('automatic fills by the piece only where the limits themselves can be written', () => {
-		const method = (own: object, count: number, limits: { min: number; max: number }, type: string) => inputMethod(readEditing(own, type, limits), count, limits);
+		const method = (own: object, count: number, limits: { min: number; max: number }, type: string) =>
+			inputMethod(readEditing(own, type, limits), count, limits);
 
 		// Five pieces over 0.5 to 5.5 on a whole type: 1 to 5 can be written, which is four steps and not five.
 		expect(method({}, 5, range(0.5, 5.5), 'integer')).toBe('position');
@@ -3649,7 +3992,7 @@ describe('the range which can be written', () => {
 		expect(method({ step: 1 }, 5, range(0.5, 5.5), 'float')).toBe('piece');
 		expect(method({ step: 1 }, 5, range(0.5, 5.5), 'decimal')).toBe('piece');
 
-		// Whole limits on a whole type, as before.
+		// Whole limits on a whole type: a piece is a step.
 		expect(method({}, 5, range(0, 5), 'integer')).toBe('piece');
 		expect(method({}, 5, range(-2, 3), 'integer')).toBe('piece');
 
@@ -3663,7 +4006,8 @@ describe('the range which can be written', () => {
 
 describe('the value a press on a piece writes', () => {
 	const one = { step: 1, whole: true };
-	const filledBy = (value: number | null, count: number, limits: { min: number; max: number }) => (value === null ? null : filledCount(fractionOf(value, limits), count));
+	const filledBy = (value: number | null, count: number, limits: { min: number; max: number }) =>
+		value === null ? null : filledCount(fractionOf(value, limits), count);
 
 	test('where a piece is a step: that many steps', () => {
 		for (const filled of [0, 1, 2, 3, 4, 5]) expect(pieceValue(filled, 5, range(0, 5), one)).toBe(filled);
@@ -3720,7 +4064,8 @@ describe('the value a press on a piece writes', () => {
 				possible.push(writable.max);
 
 				const drawing = possible.filter((value) => filledBy(value, count, limits) === filled);
-				if (drawing.length) expect(filledBy(written, count, limits), `${JSON.stringify(limits)} ${editing.step} piece ${filled}: ${written}`).toBe(filled);
+				if (drawing.length)
+					expect(filledBy(written, count, limits), `${JSON.stringify(limits)} ${editing.step} piece ${filled}: ${written}`).toBe(filled);
 				expect(possible.some((value) => Math.abs(value - written!) < 1e-9)).toBe(true);
 			}
 		}
@@ -3748,7 +4093,7 @@ describe('the keys in a range of which not all can be written', () => {
 		expect(keyValue('ArrowRight', null, range(0.5, 5.5), one)).toBe(2);
 		expect(keyValue('ArrowLeft', null, range(0.5, 5.5), one)).toBe(1);
 
-		// Whole limits, as before.
+		// Whole limits: the range which can be written is the range.
 		expect(keyValue('ArrowLeft', 150, range(0, 100), one)).toBe(99);
 		expect(keyValue('ArrowRight', -20, range(0, 100), one)).toBe(1);
 	});
@@ -3762,7 +4107,7 @@ describe('the keys in a range of which not all can be written', () => {
 		expect(keyValue('PageDown', 40, range(0.5, 40.5), one, 2)).toBe(21);
 	});
 
-	test('where nothing can be written a key of the meter\'s gives nothing, and another key is still not the meter\'s', () => {
+	test("where nothing can be written a key of the meter's gives nothing, and another key is still not the meter's", () => {
 		for (const key of ['ArrowRight', 'ArrowLeft', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End']) {
 			expect(keyValue(key, 0, range(0.2, 0.8), one), key).toBeNull();
 		}
@@ -3817,10 +4162,14 @@ describe('the keys on a fine grid of many steps', () => {
 				const index = 1 + Math.floor(random() * (points - 2));
 				const current = point(index);
 
-				if (keyValue('ArrowRight', current, within, float(step)) !== point(index + 1)) expect.fail(`Right from ${current} in steps of ${step}: ${keyValue('ArrowRight', current, within, float(step))}`);
-				if (keyValue('ArrowLeft', current, within, float(step)) !== point(index - 1)) expect.fail(`Left from ${current} in steps of ${step}: ${keyValue('ArrowLeft', current, within, float(step))}`);
-				if (keyValue('PageUp', current, within, float(step)) !== point(Math.min(points, index + 10))) expect.fail(`Page Up from ${current} in steps of ${step}`);
-				if (keyValue('PageDown', current, within, float(step)) !== point(Math.max(0, index - 10))) expect.fail(`Page Down from ${current} in steps of ${step}`);
+				if (keyValue('ArrowRight', current, within, float(step)) !== point(index + 1))
+					expect.fail(`Right from ${current} in steps of ${step}: ${keyValue('ArrowRight', current, within, float(step))}`);
+				if (keyValue('ArrowLeft', current, within, float(step)) !== point(index - 1))
+					expect.fail(`Left from ${current} in steps of ${step}: ${keyValue('ArrowLeft', current, within, float(step))}`);
+				if (keyValue('PageUp', current, within, float(step)) !== point(Math.min(points, index + 10)))
+					expect.fail(`Page Up from ${current} in steps of ${step}`);
+				if (keyValue('PageDown', current, within, float(step)) !== point(Math.max(0, index - 10)))
+					expect.fail(`Page Down from ${current} in steps of ${step}`);
 			}
 		}
 	});
@@ -3976,14 +4325,17 @@ describe('steps which make no grid', () => {
 });
 
 describe('the colouring which blends towards the next threshold', () => {
-	const scale = { color: RED, thresholds: [{ value: 40, color: AMBER }, { value: 80, color: GREEN }] };
+	const scale = {
+		color: RED,
+		thresholds: [
+			{ value: 40, color: AMBER },
+			{ value: 80, color: GREEN },
+		],
+	};
 	const stops = scaleStops(readOptions(scale));
 	const mix = (from: string, share: number, to: string) => `color-mix(in srgb, ${from} ${share}%, ${to})`;
 
-	const drawing = (value: unknown, own: object, count = 0) => {
-		const options = readOptions(own);
-		return drawingOf(readLook(own), options, readingOf(value, options, EN), count, value);
-	};
+	const drawing = (value: unknown, own: object, count = 0) => draw(value, { options: own, look: own, count });
 
 	test('the two stops around a place, and the share of the way from the first to the second', () => {
 		// Between two stops.
@@ -4029,7 +4381,9 @@ describe('the colouring which blends towards the next threshold', () => {
 	test('as one colour for CSS, mixed by the browser', () => {
 		expect(blendCss({ from: RED, to: AMBER, share: 0.5 })).toBe(mix(RED, 50, AMBER));
 		expect(blendCss({ from: RED, to: AMBER, share: 0.25 })).toBe(mix(RED, 75, AMBER));
-		expect(blendCss({ from: 'var(--theme--danger)', to: 'var(--theme--warning)', share: 1 / 3 })).toBe(mix('var(--theme--danger)', 66.67, 'var(--theme--warning)'));
+		expect(blendCss({ from: 'var(--theme--danger)', to: 'var(--theme--warning)', share: 1 / 3 })).toBe(
+			mix('var(--theme--danger)', 66.67, 'var(--theme--warning)'),
+		);
 
 		// Nothing to mix.
 		expect(blendCss({ from: RED, to: AMBER, share: 0 })).toBe(RED);
@@ -4041,7 +4395,13 @@ describe('the colouring which blends towards the next threshold', () => {
 	test('the fill of the one bar has that one colour, which shifts as the value nears a threshold', () => {
 		const own = { ...scale, activeColoring: 'blend' };
 
-		expect(drawing(20, own)).toEqual({ stops: null, weakStops: null, track: { color: null, scale: null }, fill: { color: mix(RED, 50, AMBER), scale: null }, pieces: null });
+		expect(drawing(20, own)).toEqual({
+			stops: null,
+			weakStops: null,
+			track: { color: null, scale: null },
+			fill: { color: mix(RED, 50, AMBER), scale: null },
+			pieces: null,
+		});
 		expect(drawing(30, own).fill.color).toBe(mix(RED, 25, AMBER));
 		expect(drawing(39, own).fill.color).toBe(mix(RED, 2.5, AMBER));
 		expect(drawing(40, own).fill.color).toBe(AMBER);
@@ -4065,7 +4425,7 @@ describe('the colouring which blends towards the next threshold', () => {
 
 		// Without the value itself, the place is where the fill ends.
 		const options = readOptions(own);
-		expect(drawingOf(readLook(own), options, readingOf(150, options, EN)).fill.color).toBe(mix(RED, 50, GREEN));
+		expect(drawingOf({ look: readLook(own), options, reading: readingOf(150, options, EN) }).fill.color).toBe(mix(RED, 50, GREEN));
 	});
 
 	test('every filled piece has that same colour', () => {
@@ -4094,8 +4454,362 @@ describe('the colouring which blends towards the next threshold', () => {
 	});
 
 	test('without thresholds it is the colour of the value, and no value has no colour', () => {
-		expect(drawing(60, { color: GREEN, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual(drawing(60, { color: GREEN, activeColoring: 'value', inactiveColoring: 'automatic' }));
+		expect(drawing(60, { color: GREEN, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual(
+			drawing(60, { color: GREEN, activeColoring: 'value', inactiveColoring: 'automatic' }),
+		);
 		expect(drawing(60, { activeColoring: 'blend' }).fill).toEqual({ color: DEFAULT_COLOR, scale: null });
-		expect(drawing(null, { ...scale, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual({ stops: null, weakStops: null, track: { color: null, scale: null }, fill: { color: null, scale: null }, pieces: null });
+		expect(drawing(null, { ...scale, activeColoring: 'blend', inactiveColoring: 'automatic' })).toEqual({
+			stops: null,
+			weakStops: null,
+			track: { color: null, scale: null },
+			fill: { color: null, scale: null },
+			pieces: null,
+		});
+	});
+});
+
+describe('the words of the options which have choices', () => {
+	test('each list is the one its option is read against: every word of it is taken, and nothing else', () => {
+		for (const word of FORMATS) expect(readOptions({ indicatorFormat: word }).indicatorFormat).toBe(word);
+		for (const word of VISUALIZATIONS) expect(readLook({ visualization: word }).visualization).toBe(word);
+		for (const word of DOTS_LAYOUTS) expect(readLook({ dotsLayout: word }).dotsLayout).toBe(word);
+		for (const word of COLORINGS) expect(readLook({ activeColoring: word }).activeColoring).toBe(word);
+		for (const word of INACTIVE_COLORINGS) expect(readLook({ inactiveColoring: word }).inactiveColoring).toBe(word);
+		for (const word of INPUTS) expect(readEditing({ input: word }).input).toBe(word);
+
+		expect(readOptions({ indicatorFormat: 'Percent' }).indicatorFormat).toBe('percent');
+		expect(readLook({ visualization: 'rings', dotsLayout: 'loose', activeColoring: 'plain', inactiveColoring: 'rainbow' })).toEqual(readLook());
+		expect(readEditing({ input: 'segment' }).input).toBe('automatic');
+	});
+
+	test('the words, in the order the forms offer them', () => {
+		expect([...FORMATS]).toEqual(['percent', 'value', 'fraction']);
+		expect([...VISUALIZATIONS]).toEqual(['contiguous', 'pills', 'segments', 'bars', 'dots']);
+		expect([...DOTS_LAYOUTS]).toEqual(['packed', 'spread']);
+		expect([...COLORINGS]).toEqual(['value', 'blend', 'steps', 'gradient']);
+		expect([...INACTIVE_COLORINGS]).toEqual(['plain', 'automatic', 'value', 'blend', 'steps', 'gradient']);
+		expect([...INPUTS]).toEqual(['automatic', 'position', 'piece', 'relative', 'none']);
+	});
+});
+
+describe('the classes and inline styles of the surfaces', () => {
+	const plain: Paint = { color: null, scale: null };
+	const red: Paint = { color: RED, scale: null };
+	const full: Paint = { color: null, scale: 'full' };
+	const weak: Paint = { color: null, scale: 'weak' };
+	const prefixes: Prefix[] = ['mt', 'md'];
+
+	test('a surface which is painted by its own rule has no class and no style at all', () => {
+		for (const prefix of prefixes) {
+			expect(paintClass(plain, prefix)).toBeUndefined();
+			expect(paintStyle(plain, 0.5, prefix)).toBeUndefined();
+			expect(trackStyle(plain)).toBeUndefined();
+			expect(paintClass(red, prefix)).toBeUndefined();
+		}
+	});
+
+	test('one colour is an inline background colour and nothing else', () => {
+		expect(paintStyle(red, 0.5, 'mt')).toEqual({ backgroundColor: RED });
+		expect(paintStyle(red, 0.5, 'md')).toEqual({ backgroundColor: RED });
+		expect(trackStyle(red)).toEqual({ backgroundColor: RED });
+	});
+
+	test('a surface which shows its part of the scale has the classes of its component and its place', () => {
+		expect(paintClass(full, 'mt')).toBe('mt-paint');
+		expect(paintClass(weak, 'mt')).toBe('mt-paint mt-weak');
+		expect(paintClass(full, 'md')).toBe('md-paint');
+		expect(paintClass(weak, 'md')).toBe('md-paint md-weak');
+
+		expect(paintStyle(full, 0.25, 'mt')).toEqual({ '--mt-at': 0.25 });
+		expect(paintStyle(weak, 1, 'md')).toEqual({ '--md-at': 1 });
+
+		// The track of the one bar shows the whole scale: it has the classes and no place.
+		expect(trackStyle(weak)).toBeUndefined();
+	});
+
+	test('the fill of the one bar: its length, and its colour or how many times as long the track is', () => {
+		expect(fillStyle(plain, 0.42, 'mt')).toEqual({ inlineSize: '42%' });
+		expect(fillStyle(red, 0.5, 'md')).toEqual({ inlineSize: '50%', backgroundColor: RED });
+		expect(fillStyle(full, 0.25, 'mt')).toEqual({ inlineSize: '25%', '--mt-n': 4 });
+		expect(fillStyle(full, 0.25, 'md')).toEqual({ inlineSize: '25%', '--md-n': 4 });
+		expect(fillStyle(full, 0, 'mt')).toEqual({ inlineSize: '0%', '--mt-n': 1 });
+	});
+
+	test('a row of pieces says how many they are, and bars which are fitted their two sizes in pixels', () => {
+		expect(rowStyle(7, null, null, 'mt')).toEqual({ '--mt-n': 7 });
+		expect(rowStyle(57, 4, 2, 'mt')).toEqual({ '--mt-n': 57, '--mt-bar': '4px', '--mt-gap': '2px' });
+		expect(rowStyle(24, 2, 1, 'md')).toEqual({ '--md-n': 24, '--md-bar': '2px', '--md-gap': '1px' });
+		expect(rowStyle(22, 1.3333, 0.6667, 'md')).toEqual({ '--md-n': 22, '--md-bar': '1.3333px', '--md-gap': '0.6667px' });
+		expect(rowStyle(5, 4, null, 'mt')).toEqual({ '--mt-n': 5 });
+	});
+
+	test('what is laid over a piece which fades in: its paint and how much of it shows', () => {
+		expect(overStyle({ paint: red, opacity: 0.4 }, 0.5, 'mt')).toEqual({ backgroundColor: RED, opacity: 0.4 });
+		expect(overStyle({ paint: full, opacity: 0.4 }, 0.5, 'md')).toEqual({ '--md-at': 0.5, opacity: 0.4 });
+		expect(overStyle({ paint: plain, opacity: 1 }, 0.5, 'mt')).toEqual({ opacity: 1 });
+	});
+
+	test('the default look has no inline style on any surface but the colour of the fill', () => {
+		const one = draw(42);
+		expect(trackStyle(one.track)).toBeUndefined();
+		expect(paintClass(one.track, 'mt')).toBeUndefined();
+		expect(paintClass(one.fill, 'mt')).toBeUndefined();
+		expect(fillStyle(one.fill, 0.42, 'mt')).toEqual({ inlineSize: '42%', backgroundColor: DEFAULT_COLOR });
+
+		for (const piece of draw(42, { look: { visualization: 'pills' }, count: 5 }).pieces!) {
+			expect(pieceStyle(piece, 'mt', 0, 'pills'), String(piece.at)).toEqual(piece.filled ? { backgroundColor: DEFAULT_COLOR } : undefined);
+		}
+	});
+});
+
+describe('the inline style of a piece: of its two sizes the large one wins', () => {
+	const options = { max: 100 };
+	const piecesOf = (shape: Shape, look: object = {}) => draw(50, { options, look: { visualization: shape, ...look }, count: 5 }).pieces!;
+	const grown: PieceDrawing = { filled: false, at: 0.75, paint: { color: null, scale: null }, size: { along: 0.6, across: 0.6 }, over: null };
+	const filled: PieceDrawing = { filled: true, at: 0, paint: { color: GREEN, scale: null }, size: null, over: null };
+
+	test('a piece at its full size has its paint and no transform', () => {
+		expect(pieceStyle(filled, 'mt')).toEqual({ backgroundColor: GREEN });
+		expect(pieceStyle(filled, 'md')).toEqual({ backgroundColor: GREEN });
+		expect(pieceStyle({ ...grown, size: null }, 'mt')).toBeUndefined();
+		expect(pieceStyle({ ...filled, paint: { color: null, scale: 'weak' } }, 'md')).toEqual({ '--md-at': 0 });
+	});
+
+	test('a piece which grows has the size of its growth as a transform', () => {
+		expect(pieceStyle(grown, 'mt', 3, 'pills')).toEqual({ transform: 'scale(0.6, 0.6)' });
+		expect(pieceStyle(grown, 'mt', 3, 'pills', null)).toEqual({ transform: 'scale(0.6, 0.6)' });
+		expect(pieceStyle({ ...grown, paint: { color: RED, scale: null } }, 'mt', 3, 'dots')).toEqual({ backgroundColor: RED, transform: 'scale(0.6, 0.6)' });
+	});
+
+	test('a piece up to the pointer has the large size, whatever it would have without the pointer', () => {
+		for (const shape of SHAPES) {
+			const large = scaleCss(largeScale(shape, 20));
+
+			for (const piece of [grown, filled]) {
+				const style = pieceStyle(piece, 'mt', 1, shape, { count: 2, length: 20 })!;
+				expect(style['transform'], shape).toBe(large);
+				expect(style['backgroundColor'], shape).toBe(piece.paint.color ?? undefined);
+			}
+		}
+	});
+
+	test('the pieces after the pointer keep what they had', () => {
+		const near = { count: 2, length: 20 };
+
+		expect(pieceStyle(grown, 'mt', 2, 'pills', near)).toEqual(pieceStyle(grown, 'mt', 2, 'pills'));
+		expect(pieceStyle(filled, 'mt', 2, 'pills', near)).toEqual({ backgroundColor: GREEN });
+		expect(pieceStyle(filled, 'mt', 0, 'pills', { count: 0, length: 20 })).toEqual({ backgroundColor: GREEN });
+	});
+
+	test('a large pill gets the radii which keep its ends round, and no other shape does', () => {
+		const near = { count: 5, length: 20 };
+		const size = largeScale('pills', 20);
+
+		expect(pieceStyle(filled, 'mt', 0, 'pills', near)).toEqual({
+			backgroundColor: GREEN,
+			transform: scaleCss(size),
+			borderRadius: roundEnds(size, 'var(--mt-height)'),
+		});
+
+		for (const shape of ['segments', 'bars', 'dots'] as const) {
+			expect(Object.keys(pieceStyle(filled, 'mt', 0, shape, near)!), shape).toEqual(['backgroundColor', 'transform']);
+		}
+
+		// A pill which only grows keeps the radius of its rule: both ways it shrinks alike.
+		expect(pieceStyle(grown, 'mt', 3, 'pills', { count: 2, length: 20 })).toEqual({ transform: 'scale(0.6, 0.6)' });
+	});
+
+	test('the radii: half the height across, and along the track less by as much as the piece is stretched less', () => {
+		expect(roundEnds({ along: 1, across: 1 }, '12px')).toBe('calc(12px * 0.5) / calc(12px / 2)');
+		expect(roundEnds({ along: 1.1, across: 1.3333 }, 'var(--mt-height)')).toBe('calc(var(--mt-height) * 0.606) / calc(var(--mt-height) / 2)');
+		expect(roundEnds(largeScale('pills', 20), 'var(--mt-height)')).toBe('calc(var(--mt-height) * 0.606) / calc(var(--mt-height) / 2)');
+		expect(roundEnds(largeScale('pills', 30.6), 'var(--mt-height)')).toBe('calc(var(--mt-height) * 0.6257) / calc(var(--mt-height) / 2)');
+	});
+
+	test('one bar and a meter without pieces under the pointer never get a large size', () => {
+		expect(pieceStyle(filled, 'mt', 0, 'contiguous', { count: 3, length: 20 })).toEqual({ backgroundColor: GREEN });
+		expect(pieceStyle(filled, 'mt', 0, 'pills', null)).toEqual({ backgroundColor: GREEN });
+	});
+
+	test('with a pointer on it, every drawn piece up to it is large and the rest is as without', () => {
+		for (const shape of SHAPES) {
+			const pieces = piecesOf(shape, { grow: 2, fade: true });
+			const near = { count: 4, length: 30 };
+
+			pieces.forEach((piece, index) => {
+				const style = pieceStyle(piece, 'mt', index, shape, near);
+				if (index < 4) expect(style?.['transform'], `${shape} ${index}`).toBe(scaleCss(largeScale(shape, 30)));
+				else expect(style, `${shape} ${index}`).toEqual(pieceStyle(piece, 'mt', index, shape));
+			});
+		}
+	});
+});
+
+describe('the lengths the components work with', () => {
+	test('how long a piece is, to a hundredth of a pixel', () => {
+		expect(pieceLength({ start: 0, end: 20 })).toBe(20);
+		expect(pieceLength({ start: 10.004, end: 30.337 })).toBe(20.33);
+		expect(pieceLength(pieceGeometry('pills', 'form', 10, 342)[3]!)).toBe(30.6);
+	});
+
+	test('the length the range is spread over: up to the end of the last piece, or the track of one bar', () => {
+		expect(spreadLength([], 342)).toBe(342);
+		expect(spreadLength(pieceGeometry('pills', 'form', 10, 342), 342)).toBeCloseTo(342, 9);
+		expect(spreadLength(pieceGeometry('dots', 'form', 5, 342, 'packed'), 342)).toBe(5 * 12 + 4 * 4);
+		expect(spreadLength(pieceGeometry('dots', 'form', 5, 342, 'spread'), 342)).toBeCloseTo(342, 9);
+		expect(spreadLength(pieceGeometry('bars', 'form', 57, 342), 342)).toBe(340);
+	});
+
+	test('a row of packed dots in the display is as long as its dots and the gaps between them, in rem', () => {
+		const { piece, gap } = PIECE_SIZES.display.dots;
+
+		expect(REM).toBe(16);
+		expect(packedLength('display', 9)).toBe(`${(9 * (piece + gap) - gap) / 16}rem`);
+		expect(packedLength('display', 9)).toBe('4.375rem');
+		expect(packedLength('display', 2)).toBe('0.875rem');
+		expect(packedLength('form', 5)).toBe('4.75rem');
+
+		for (let count = 2; count <= 9; count++) expect(packedLength('display', count), String(count)).toBe(`${(count * (piece + gap) - gap) / 16}rem`);
+	});
+
+	test('where a point of the page is along the track, from its start side', () => {
+		expect(positionAlong(150, 100, 442, false)).toBe(50);
+		expect(positionAlong(150, 100, 442, true)).toBe(292);
+		expect(positionAlong(90, 100, 442, false)).toBe(-10);
+		expect(positionAlong(450, 100, 442, true)).toBe(-8);
+	});
+
+	test('the handle stands at the end of the fill and never past either end of the track', () => {
+		expect(handleStart(0)).toBe('clamp(0.125rem, calc(0% - 0.625rem), calc(100% - 0.625rem))');
+		expect(handleStart(0.5)).toBe('clamp(0.125rem, calc(50% - 0.625rem), calc(100% - 0.625rem))');
+		expect(handleStart(1)).toBe('clamp(0.125rem, calc(100% - 0.625rem), calc(100% - 0.625rem))');
+	});
+});
+
+describe('what a meter says its range and its value are', () => {
+	const stored = range(0.5, 5.5);
+	const writable = range(1, 5);
+
+	test('one which cannot be edited: the range as stored, the value within it, and none without a value', () => {
+		expect(saidOf(stored, writable, 3, false)).toEqual({ min: 0.5, max: 5.5, now: 3 });
+		expect(saidOf(stored, writable, 5.5, false)).toEqual({ min: 0.5, max: 5.5, now: 5.5 });
+		expect(saidOf(stored, writable, null, false)).toEqual({ min: 0.5, max: 5.5, now: undefined });
+		expect(saidOf(stored, null, null, false)).toEqual({ min: 0.5, max: 5.5, now: undefined });
+	});
+
+	test('a slider: the range which can be written, and the value within that', () => {
+		expect(saidOf(stored, writable, 3, true)).toEqual({ min: 1, max: 5, now: 3 });
+		expect(saidOf(stored, writable, 5.5, true)).toEqual({ min: 1, max: 5, now: 5 });
+		expect(saidOf(stored, writable, 0.5, true)).toEqual({ min: 1, max: 5, now: 1 });
+	});
+
+	test('a slider has to say a value: without one, the least it could be set to', () => {
+		expect(saidOf(stored, writable, null, true)).toEqual({ min: 1, max: 5, now: 1 });
+		expect(saidOf(range(0, 100), range(0, 100), null, true)).toEqual({ min: 0, max: 100, now: 0 });
+	});
+
+	test('where nothing can be written, a slider says the range as stored', () => {
+		expect(saidOf(range(0.2, 0.8), null, 0.5, true)).toEqual({ min: 0.2, max: 0.8, now: 0.5 });
+		expect(saidOf(range(0.2, 0.8), writableRange(range(0.2, 0.8), { whole: true }), null, true)).toEqual({ min: 0.2, max: 0.8, now: 0.2 });
+	});
+});
+
+describe('the default step is never finer than the column of a decimal field holds', () => {
+	const step = (own: object, type: string, schema?: unknown) => readEditing(own, type, readOptions(own), scaleOf(type, schema)).step;
+
+	test('the scale is that of a decimal column, and of nothing else', () => {
+		expect(scaleOf('decimal', { numeric_scale: 1 })).toBe(1);
+		expect(scaleOf('decimal', { numeric_scale: 0 })).toBe(0);
+		expect(scaleOf('decimal', { numeric_scale: '2' })).toBe(2);
+
+		// A float has no fixed number of decimals, whatever its column reports, and a whole type needs none.
+		expect(scaleOf('float', { numeric_scale: 1 })).toBeNull();
+		expect(scaleOf('integer', { numeric_scale: 0 })).toBeNull();
+		expect(scaleOf('bigInteger', { numeric_scale: 0 })).toBeNull();
+		expect(scaleOf(undefined, { numeric_scale: 1 })).toBeNull();
+
+		for (const schema of [
+			null,
+			undefined,
+			{},
+			'junk',
+			5,
+			[],
+			{ numeric_scale: null },
+			{ numeric_scale: -1 },
+			{ numeric_scale: 1.5 },
+			{ numeric_scale: 'x' },
+		]) {
+			expect(scaleOf('decimal', schema), JSON.stringify(schema)).toBeNull();
+		}
+	});
+
+	test('a scale of 1: tenths where the range alone would give hundredths', () => {
+		expect(defaultStep(range(0, 1), false)).toBe(0.01);
+		expect(defaultStep(range(0, 1), false, 1)).toBe(0.1);
+		expect(defaultStep(range(0, 5), false, 1)).toBe(0.1);
+		expect(defaultStep(range(0, 0.05), false, 1)).toBe(0.1);
+
+		expect(step({ max: 1 }, 'decimal', { numeric_scale: 1 })).toBe(0.1);
+	});
+
+	test('a scale of 0: whole steps, whatever the range', () => {
+		expect(defaultStep(range(0, 1), false, 0)).toBe(1);
+		expect(defaultStep(range(0, 50), false, 0)).toBe(1);
+		expect(step({ max: 5 }, 'decimal', { numeric_scale: 0 })).toBe(1);
+	});
+
+	test('a scale which is finer than the step of the range changes nothing', () => {
+		expect(defaultStep(range(0, 1), false, 2)).toBe(0.01);
+		expect(defaultStep(range(0, 1), false, 5)).toBe(0.01);
+		expect(defaultStep(range(0, 10), false, 5)).toBe(0.1);
+		expect(defaultStep(range(0, 100), false, 1)).toBe(1);
+		expect(defaultStep(range(0, 1), false, 30)).toBe(0.01);
+		expect(defaultStep(range(0, 1e-13), false, 400)).toBe(1e-15);
+	});
+
+	test('no scale, and what is no scale, leaves the step to the range', () => {
+		for (const scale of [null, undefined, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+			expect(defaultStep(range(0, 1), false, scale as number | null), String(scale)).toBe(0.01);
+		}
+	});
+
+	test('a float is as it is without a scale, and a whole type is 1', () => {
+		expect(step({ max: 1 }, 'float', { numeric_scale: 1 })).toBe(0.01);
+		expect(step({ max: 1 }, 'float')).toBe(0.01);
+		expect(step({ max: 1 }, 'integer', { numeric_scale: 1 })).toBe(1);
+		expect(defaultStep(range(0, 1), true, 1)).toBe(1);
+	});
+
+	test("a step which is set is not changed by the scale, its own or a Slider's", () => {
+		expect(step({ max: 1, step: 0.01 }, 'decimal', { numeric_scale: 1 })).toBe(0.01);
+		expect(step({ max: 1, stepInterval: 0.25 }, 'decimal', { numeric_scale: 1 })).toBe(0.25);
+		expect(step({ max: 1, step: 'junk' }, 'decimal', { numeric_scale: 1 })).toBe(1);
+	});
+
+	test('every point of such a grid is a value the column holds: no more decimals than the scale', () => {
+		for (const [min, max, scale] of [
+			[0, 1, 1],
+			[0, 5, 1],
+			[0.5, 2.5, 1],
+			[0, 1, 0],
+			[-1, 1, 2],
+			[0, 0.3, 3],
+		] as const) {
+			const editing = { step: defaultStep(range(min, max), false, scale), whole: false };
+
+			for (let share = 0; share <= 1; share += 1 / 257) {
+				const written = snapValue(valueAtShare(share, range(min, max)), range(min, max), editing)!;
+				expect(Number(written.toFixed(scale)), `${min} to ${max}, scale ${scale}, at ${share}`).toBe(written);
+			}
+		}
+	});
+
+	test('the value under the pointer at 37% of 0 to 1 is 0.4 with a scale of 1, and 0.37 without', () => {
+		const under = (scale: number | null) =>
+			snapValue(valueAtShare(0.37, range(0, 1)), range(0, 1), { step: defaultStep(range(0, 1), false, scale), whole: false });
+
+		expect(under(1)).toBe(0.4);
+		expect(under(null)).toBe(0.37);
 	});
 });

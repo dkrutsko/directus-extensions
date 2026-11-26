@@ -3,8 +3,28 @@ import { useStores } from '@directus/extensions-sdk';
 import { computed } from 'vue';
 import { useLanguage } from './i18n';
 import { useRatio } from './ratio';
-import { DISPLAY_WIDTH, PIECE_SIZES, barFit, drawingOf, fillScale, isEmpty, numberOf, pieceCount, reachOf, readLook, readOptions, readingOf, textOf, tooltipOf } from './meter';
-import type { Paint } from './meter';
+import {
+	DISPLAY_WIDTH,
+	barFit,
+	drawingOf,
+	fillStyle,
+	isEmpty,
+	numberOf,
+	overStyle,
+	packedLength,
+	paintClass,
+	pieceCount,
+	pieceStyle,
+	reachOf,
+	readLook,
+	readOptions,
+	readingOf,
+	rowStyle,
+	textOf,
+	tooltipOf,
+	trackStyle,
+} from './meter';
+import type { Style } from './meter';
 
 /**
  * The Meter display: a bar of a fixed length, filled as far as the value has
@@ -55,7 +75,8 @@ const language = useLanguage();
 
 // The name of the field is the name of a meter without a caption. A display
 // is only handed the key of its field, so the name comes from the app's store
-// of fields; where that cannot be had, the meter is called a meter.
+// of fields (`getField`, app/src/stores/fields.ts:379 in Directus 11.17.4);
+// where that cannot be had, the meter is called a meter.
 let fields: { getField?: (collection: string, field: string) => { name?: unknown } | null } | null = null;
 
 try {
@@ -74,9 +95,12 @@ const name = computed(() => {
 });
 
 // The app draws its own placeholder for `null` and does not call a display
-// for it. A numeric field holds nothing else which is not a number; on a
-// field of another type the value is shown as the text it is, and blank text
-// gets the app's placeholder.
+// for it (app/src/views/private/components/render-display.vue:25). A numeric
+// field holds nothing else which is not a number; on a field of another type
+// the value is shown as the text it is, and blank text gets the app's
+// placeholder, a component which the app registers for every template
+// (`ValueNull`, app/src/components/register.ts:155), as it does the tooltip
+// directive (app/src/directives/register.ts:17).
 const plain = computed(() => (numberOf(props.value) === null ? textOf(props.value) : null));
 const blank = computed(() => isEmpty(props.value));
 
@@ -93,7 +117,14 @@ const look = computed(() => readLook(props, props.interfaceOptions));
 const ratio = useRatio();
 const count = computed(() => pieceCount(look.value, options.value, 'display', DISPLAY_WIDTH, ratio.value));
 const drawing = computed(() =>
-	drawingOf({ ...look.value, grow: 0 }, options.value, reading.value, count.value, props.value, { reach: reachOf(look.value.visualization, 'display', count.value, DISPLAY_WIDTH, 1, ratio.value) }),
+	drawingOf({
+		look: { ...look.value, grow: 0 },
+		options: options.value,
+		reading: reading.value,
+		count: count.value,
+		value: props.value,
+		reach: reachOf(look.value.visualization, 'display', count.value, DISPLAY_WIDTH, 1, ratio.value),
+	}),
 );
 
 const dots = computed(() => drawing.value.pieces !== null && look.value.visualization === 'dots');
@@ -107,31 +138,13 @@ const packed = computed(() => dots.value && look.value.dotsLayout !== 'spread');
 // dots; the text has to know that length to know its own room.
 const rootStyle = computed(() => {
 	const { stops, weakStops, pieces } = drawing.value;
-	const style: Record<string, string> = {};
+	const style: Style = {};
 
 	if (stops !== null) style['--md-stops'] = stops;
 	if (weakStops !== null) style['--md-weak-stops'] = weakStops;
-
-	if (packed.value && pieces !== null) {
-		const { piece, gap } = PIECE_SIZES.display.dots;
-		style['--md-bar'] = `${(pieces.length * (piece + gap) - gap) / 16}rem`;
-	}
+	if (packed.value && pieces !== null) style['--md-length'] = packedLength('display', pieces.length);
 
 	return Object.keys(style).length ? style : undefined;
-});
-
-const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.scale === 'weak' ? 'md-paint md-weak' : 'md-paint');
-
-// What a surface is painted with, as an inline style: its one colour, or its place on the scale.
-const paintStyle = (paint: Paint, at: number) => (paint.color !== null ? { backgroundColor: paint.color } : paint.scale !== null ? { '--md-at': at } : undefined);
-
-// The fill of the one bar. Painted with the scale, it is the first part of an image as long as the bar.
-const fillStyle = computed(() => {
-	const { fill } = drawing.value;
-	const inlineSize = `${reading.value.fraction * 100}%`;
-
-	if (fill.scale !== null) return { inlineSize, '--md-n': fillScale(reading.value.fraction) };
-	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
 });
 
 // The styles carry no comments, because the build keeps them in the bundle.
@@ -146,7 +159,8 @@ const fillStyle = computed(() => {
 // The text is whole, or it is not shown: a number of which only a part shows
 // reads as another number, whichever part it is, and with or without an
 // ellipsis. Its box is an inline flex container which may wrap, one line high,
-// with the room which the track and the gap leave (`100% - 5rem`). The first
+// with the room which the track and the gap leave (`100% - 4.5rem - 0.5rem`,
+// or less than the 4.5rem beside a short row of packed dots). The first
 // thing in it is a space without a width, which holds the first line; the
 // number comes after it and stays on that line when it fits. When it does not,
 // it goes to a second line, which the box cuts off. The box is a flex
@@ -162,13 +176,13 @@ const fillStyle = computed(() => {
 // segments 0.125rem apart with only the two outer ends of the row round, bars
 // 0.0625rem apart and square. Bars do not share the length in the end: each
 // is a whole number of device pixels wide, and so is each gap (`barFit` in
-// meter.ts, handed to the row as `--md-bar-size` and `--md-gap`, with the
-// class `md-fitted`), so that every bar is drawn as wide as every other; what
-// is left of the 4.5rem is empty at the end side. Dots are 0.375rem across, smaller than the bar
-// is high so that nine of them fit: packed they are 0.125rem apart from the
-// start, and the row is as long as its dots, which the root is told
-// (`--md-bar`) for the room of the text; spread they stand from one end of
-// the bar's length to the other. The gaps and the dot are those of
+// meter.ts, handed to the row as `--md-bar` and `--md-gap`, with the class
+// `md-fitted`), so that every bar is drawn as wide as every other; what is
+// left of the 4.5rem is empty at the end side. Dots are 0.375rem across,
+// smaller than the bar is high so that nine of them fit: packed they are
+// 0.125rem apart from the start, and the row is as long as its dots, which
+// the root is told (`--md-length`) for the room of the text; spread they
+// stand from one end of the bar's length to the other. The gaps and the dot are those of
 // `PIECE_SIZES` in meter.ts, by which the pieces are counted, with 16px to
 // the rem.
 //
@@ -197,8 +211,8 @@ const fillStyle = computed(() => {
 // text and is cut like any other text, with an ellipsis.
 //
 // Under a contrast theme of the system (`forced-colors: active`) backgrounds
-// are the colour of the page and gradients are dropped, which left nothing of
-// the bar. As in the interface, the track and a piece which is not filled are
+// are the colour of the page and gradients are dropped, which leaves nothing
+// of the bar. As in the interface, the track and a piece which is not filled are
 // then an outline of `CanvasText` around `Canvas`, and the fill, a filled piece
 // and what is laid over the piece which fades in are `Highlight`, whatever the
 // options and the thresholds say; they become border boxes for it, so no size
@@ -225,33 +239,28 @@ const fillStyle = computed(() => {
 		:aria-valuenow="reading.now ?? undefined"
 		:aria-valuetext="reading.text"
 	>
-		<span
-			v-if="drawing.pieces === null"
-			class="md-track"
-			:class="paintClass(drawing.track)"
-			:style="drawing.track.color !== null ? { backgroundColor: drawing.track.color } : undefined"
-		>
-			<span v-if="reading.fraction > 0" class="md-fill" :class="paintClass(drawing.fill)" :style="fillStyle" />
+		<span v-if="drawing.pieces === null" class="md-track" :class="paintClass(drawing.track, 'md')" :style="trackStyle(drawing.track)">
+			<span
+				v-if="reading.fraction > 0"
+				class="md-fill"
+				:class="paintClass(drawing.fill, 'md')"
+				:style="fillStyle(drawing.fill, reading.fraction, 'md')"
+			/>
 		</span>
 		<span
 			v-else
 			class="md-strip"
 			:class="[`md-${look.visualization}`, { 'md-packed': packed, 'md-spread': dots && !packed, 'md-fitted': fit !== null }]"
-			:style="fit === null ? { '--md-n': drawing.pieces.length } : { '--md-n': drawing.pieces.length, '--md-bar-size': `${fit.bar}px`, '--md-gap': `${fit.gap}px` }"
+			:style="rowStyle(drawing.pieces.length, fit?.bar ?? null, fit?.gap ?? null, 'md')"
 		>
 			<span
 				v-for="(piece, index) in drawing.pieces"
 				:key="index"
 				class="md-part"
-				:class="[{ 'md-on': piece.filled, 'md-under': piece.over !== null }, paintClass(piece.paint)]"
-				:style="paintStyle(piece.paint, piece.at)"
+				:class="[{ 'md-on': piece.filled, 'md-under': piece.over !== null }, paintClass(piece.paint, 'md')]"
+				:style="pieceStyle(piece, 'md')"
 			>
-				<span
-					v-if="piece.over !== null"
-					class="md-over"
-					:class="paintClass(piece.over.paint)"
-					:style="{ ...paintStyle(piece.over.paint, piece.at), opacity: piece.over.opacity }"
-				/>
+				<span v-if="piece.over !== null" class="md-over" :class="paintClass(piece.over.paint, 'md')" :style="overStyle(piece.over, piece.at, 'md')" />
 			</span>
 		</span>
 		<span v-if="options.indicator" class="md-text">
@@ -311,7 +320,7 @@ const fillStyle = computed(() => {
 
 .md-fitted .md-part {
 	flex: none;
-	inline-size: var(--md-bar-size);
+	inline-size: var(--md-bar);
 }
 
 .md-dots {
@@ -402,7 +411,7 @@ const fillStyle = computed(() => {
 .md-text {
 	display: inline-flex;
 	flex-wrap: wrap;
-	max-inline-size: calc(100% - var(--md-bar, 4.5rem) - 0.5rem);
+	max-inline-size: calc(100% - var(--md-length, 4.5rem) - 0.5rem);
 	block-size: 1.25rem;
 	block-size: 1lh;
 	overflow: hidden;

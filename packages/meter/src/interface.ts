@@ -8,8 +8,8 @@ import preview from './preview';
  *
  * An interface for a numeric field which something else keeps up to date: the
  * value is drawn as a bar which is filled in proportion to where it stands
- * between a minimum and a maximum, with the value as text beside it and a
- * caption under it. In a field which can be edited the bar is a slider, set
+ * between a minimum and a maximum, with the value as text and a caption
+ * under it. In a field which can be edited the bar is a slider, set
  * with the pointer and the keys; in a read-only field it is a reading.
  *
  * It sits in the group of the stock Slider, its counterpart for input
@@ -31,7 +31,9 @@ export default defineInterface({
 	recommendedDisplays: ['meter'],
 	options: ({ field }) => {
 		const stored: Record<string, unknown> = field?.meta?.options ?? {};
-		return optionFields({ minValue: stored['minValue'], maxValue: stored['maxValue'], stepInterval: stored['stepInterval'] }, false, field?.type, field?.meta != null, stored);
+		const left = { minValue: stored['minValue'], maxValue: stored['maxValue'], stepInterval: stored['stepInterval'] };
+
+		return optionFields(left, false, field?.type, field?.meta != null, stored, field?.schema);
 	},
 	preview,
 });

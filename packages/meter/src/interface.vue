@@ -2,8 +2,44 @@
 import { computed, onBeforeUnmount, onMounted, shallowRef, useId, watch } from 'vue';
 import { useAppText, useLanguage } from './i18n';
 import { useRatio } from './ratio';
-import { barFit, canEdit, changes, drawingOf, fillScale, filledAt, fractionOf, inputMethod, keyValue, largeScale, numberOf, pieceCount, pieceGeometry, readEditing, readLook, reachOf, readOptions, readingOf, relativeMove, scaleCss, pieceValue, shareAt, sideways, snapValue, valueAtShare, writableRange } from './meter';
-import type { Paint, Piece, PieceDrawing } from './meter';
+import {
+	barFit,
+	canEdit,
+	changes,
+	drawingOf,
+	fillStyle,
+	filledAt,
+	fractionOf,
+	handleStart,
+	inputMethod,
+	keyValue,
+	numberOf,
+	overStyle,
+	paintClass,
+	pieceCount,
+	pieceGeometry,
+	pieceLength,
+	pieceStyle,
+	pieceValue,
+	positionAlong,
+	reachOf,
+	readEditing,
+	readLook,
+	readOptions,
+	readingOf,
+	relativeMove,
+	rowStyle,
+	saidOf,
+	scaleOf,
+	shareAt,
+	sideways,
+	snapValue,
+	spreadLength,
+	trackStyle,
+	valueAtShare,
+	writableRange,
+} from './meter';
+import type { Piece } from './meter';
 
 /**
  * The Meter interface.
@@ -15,11 +51,10 @@ import type { Paint, Piece, PieceDrawing } from './meter';
  * In a field which can be edited the track is a slider: the pointer and the
  * keys set the value. In a field which cannot (`disabled`, which is what
  * read-only comes to, `nonEditable` or `loading`), and where the input method
- * is `none`, it is the reading it was before there was any editing: the same
- * elements with the role `meter`, no tab stop, no listener, no cursor, and
- * nothing is ever emitted. It is not dimmed either: a field which a flow
- * keeps up to date is normally read-only, and dimming it would dim nearly
- * every meter.
+ * is `none`, it is a reading and nothing else: the same elements with the role
+ * `meter`, no tab stop, no listener, no cursor, and nothing is ever emitted.
+ * It is not dimmed either: a field which a flow keeps up to date is normally
+ * read-only, and dimming it would dim nearly every meter.
  *
  * The form passes `value`, `disabled`, `nonEditable`, `loading` and the
  * `type` of the field to every interface, the field's options as further
@@ -48,7 +83,7 @@ defineOptions({ inheritAttrs: false });
 
 const props = defineProps<{
 	value?: unknown;
-	fieldData?: { name?: unknown } | null;
+	fieldData?: { name?: unknown; schema?: unknown } | null;
 	min?: unknown;
 	max?: unknown;
 	minValue?: unknown;
@@ -93,13 +128,23 @@ const reading = computed(() => readingOf(props.value, options.value, language())
 // frame is painted, and again whenever its size changes. A field which is not
 // shown, as in a tab or a group which is closed, has no width: it draws no
 // pieces and keeps its height, and is measured again when it is shown.
+//
+// One bar is not cut and needs no width, so a meter which draws one bar is
+// neither measured nor observed: `watched` holds only while the visualization
+// has pieces. The element on the line is the same one in both cases.
+const look = computed(() => readLook(props));
 const line = shallowRef<HTMLElement | null>(null);
 const width = shallowRef(0);
+const watched = computed(() => look.value.visualization !== 'contiguous');
 let observer: ResizeObserver | null = null;
 
-onMounted(() => {
+function observe() {
 	const element = line.value;
-	if (!element) return;
+
+	observer?.disconnect();
+	observer = null;
+
+	if (!element || !watched.value) return;
 
 	width.value = element.getBoundingClientRect().width;
 	if (typeof ResizeObserver === 'undefined') return;
@@ -110,35 +155,40 @@ onMounted(() => {
 	});
 
 	observer.observe(element);
-});
+}
+
+onMounted(observe);
+
+// After the page has been patched: a row which was a track until now is measured as the row it has become.
+watch(watched, observe, { flush: 'post' });
 
 onBeforeUnmount(() => {
 	observer?.disconnect();
 	observer = null;
 });
 
-// Bars are drawn in whole device pixels, a bar as wide as every other and a gap as every other, and what the
-// track is wider than that stays empty at its end (`barFit`). The two sizes are numbers which change only when a
-// bar gets a device pixel wider or narrower, so like the count they do not wake the drawing with every pixel of
-// the width.
+// The width is read by three things and by nothing else: the count here, the two sizes of the bars and the
+// reach, both below. Each comes to a number which changes only now and then, and a computed value which comes to
+// the same number does not wake what depends on it, so the meter is drawn again when one of those numbers
+// changes and not with every pixel of the width.
 const ratio = useRatio();
+const count = computed(() => pieceCount(look.value, options.value, 'form', width.value, ratio.value));
+
+// Bars are drawn in whole device pixels, a bar as wide as every other and a gap as every other, and what the
+// track is wider than that stays empty at its end (`barFit`). The two sizes change only when a bar gets a device
+// pixel wider or narrower.
 const fit = computed(() => (look.value.visualization === 'bars' && count.value >= 2 ? barFit('form', count.value, width.value, ratio.value) : null));
 const barSize = computed(() => fit.value?.bar ?? null);
 const barGap = computed(() => fit.value?.gap ?? null);
-
-// The width is read here, for the bars above, and nowhere else. A computed value which comes to
-// the same number does not wake what depends on it, so the meter is drawn
-// again only when the number of pieces changes, not with every pixel.
-const look = computed(() => readLook(props));
-const count = computed(() => pieceCount(look.value, options.value, 'form', width.value, ratio.value));
 
 // Over how many pieces a piece grows or fades in before it is filled: by the number of `grow`, and by that of 1
 // where the pieces only fade in. For thin bars it also depends on how wide a bar is, and so on the width; that part
 // is a number of half pieces, which like the count changes only now and then, and it is asked for only where pieces
 // grow or fade in, so a meter without that is still drawn again for nothing but its count.
-const reach = computed(() =>
-	look.value.grow > 0 || look.value.fade ? reachOf(look.value.visualization, 'form', count.value, width.value, look.value.grow > 0 ? look.value.grow : 1, ratio.value) : undefined,
-);
+const reach = computed(() => {
+	const { visualization, grow, fade } = look.value;
+	return grow > 0 || fade ? reachOf(visualization, 'form', count.value, width.value, grow > 0 ? grow : 1, ratio.value) : undefined;
+});
 
 // Where the pointer is along the track while it drags the value, as a fraction of the range: by its place for the
 // `position` method, and by the value before it goes to the grid for the `relative` one. Pieces which grow or fade
@@ -146,7 +196,17 @@ const reach = computed(() =>
 // one or two sizes on the way to a piece. The fill, the text and what is written stay those of the value. `null`
 // outside such a drag, and where nothing grows or fades in.
 const exact = shallowRef<number | null>(null);
-const drawing = computed(() => drawingOf(look.value, options.value, reading.value, count.value, props.value, { reach: reach.value, at: exact.value }));
+const drawing = computed(() =>
+	drawingOf({
+		look: look.value,
+		options: options.value,
+		reading: reading.value,
+		count: count.value,
+		value: props.value,
+		reach: reach.value,
+		at: exact.value,
+	}),
+);
 
 // The colour stops of the scale are set once, on the root, for whichever
 // surfaces paint with them.
@@ -156,28 +216,6 @@ const scales = computed(() => {
 
 	return { '--mt-stops': stops ?? undefined, '--mt-weak-stops': weakStops ?? undefined };
 });
-
-const paintClass = (paint: Paint) => (paint.scale === null ? undefined : paint.scale === 'weak' ? 'mt-paint mt-weak' : 'mt-paint');
-
-// What a surface is painted with, as an inline style: its one colour, or its place on the scale.
-const paintStyle = (paint: Paint, at: number) => (paint.color !== null ? { backgroundColor: paint.color } : paint.scale !== null ? { '--mt-at': at } : undefined);
-
-// The inline style of a piece: its paint, and its size where the pieces grow. A piece at its full size has no
-// size here, so a meter whose pieces do not grow has the styles it always had. A piece up to the pointer has the
-// large size instead, whatever it would have without the pointer.
-function partStyle(piece: PieceDrawing, index: number) {
-	const paint = paintStyle(piece.paint, piece.at);
-	const near = index < hover.value && large.value !== null;
-	const size = near ? large.value : piece.size;
-
-	if (size === null) return paint;
-
-	// A large pill is higher by more than it is longer, which would flatten its round ends: its corners are
-	// given the radii which the transform turns back into half circles.
-	return near && look.value.visualization === 'pills' ? { ...paint, transform: scaleCss(size), borderRadius: roundEnds(size) } : { ...paint, transform: scaleCss(size) };
-}
-
-const roundEnds = (size: { along: number; across: number }) => `calc(var(--mt-height) * ${Number((size.across / size.along / 2).toFixed(4))}) / calc(var(--mt-height) / 2)`;
 
 // Pieces which grow or fade in change with a short transition when the value changes, by a press, a key or from
 // outside. Not while the pointer drags the value, which they follow at once, and not for the first value a meter
@@ -203,17 +241,7 @@ onBeforeUnmount(() => cancelAnimationFrame(easing));
 const lineStyle = computed(() => {
 	const { pieces, track } = drawing.value;
 
-	if (pieces !== null) return barSize.value === null ? { '--mt-n': pieces.length } : { '--mt-n': pieces.length, '--mt-bar': `${barSize.value}px`, '--mt-gap': `${barGap.value}px` };
-	return track.color !== null ? { backgroundColor: track.color } : undefined;
-});
-
-// The fill of the one bar. Painted with the scale, it is the first part of an image as wide as the track.
-const fillStyle = computed(() => {
-	const { fill } = drawing.value;
-	const inlineSize = `${reading.value.fraction * 100}%`;
-
-	if (fill.scale !== null) return { inlineSize, '--mt-n': fillScale(reading.value.fraction) };
-	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
+	return pieces !== null ? rowStyle(pieces.length, barSize.value, barGap.value, 'mt') : trackStyle(track);
 });
 
 // The meter is named by its caption, which is on the page, or else by the
@@ -226,25 +254,27 @@ const name = computed(() => {
 // `no_value` is what the app says for an empty field elsewhere.
 const spoken = computed(() => (reading.value.empty ? t('no_value', 'No value') : reading.value.text));
 
-// Editing. Everything from here to the styles' notes is for a field which can
-// be edited, and none of it is reached in one which cannot: the template
+// Editing. The pointer, the keys and `write` below are for a field which can
+// be edited, and none of them is reached in one which cannot: the template
 // binds the listeners, the tab stop and the role of a slider only while
-// `editable` holds, and `write` checks it once more. A meter whose input
-// method is `none` is one which cannot, by `canEdit`, and so needs no check of
-// its own anywhere below.
-const editing = computed(() => readEditing(props, props.type, options.value));
+// `editable` holds, every handler returns at once without it, and `write`
+// checks it again. A meter whose input method is `none` is one which cannot,
+// by `canEdit`, and so needs no check of its own anywhere below. `said`,
+// `lined` and `lineClass`, further down, serve both kinds of field.
+const editing = computed(() => readEditing(props, props.type, options.value, scaleOf(props.type, props.fieldData?.schema)));
 const method = computed(() => inputMethod(editing.value, count.value, options.value));
 const editable = computed(() => canEdit(props, method.value));
 
 // How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it. Those are
-// drawn larger than regular (`largeScale`), by a transform like the one of pieces which grow: no box changes.
-// `long` is how long a piece is along the track at that moment, which the size of pills and dots goes by.
+// drawn larger than regular, by a transform like the one of pieces which grow: no box changes. `long` is how long
+// a piece is along the track at that moment, which the size of pills and dots goes by. `pieceStyle` is handed
+// both, as `near`, and decides for each piece.
 const hover = shallowRef(0);
 const long = shallowRef(0);
-const large = computed(() => (drawing.value.pieces === null || look.value.visualization === 'contiguous' ? null : largeScale(look.value.visualization, long.value)));
+const near = computed(() => ({ count: hover.value, length: long.value }));
 
 // While pieces are large, and for a moment after the last one stopped being so, the row lets them reach outside
-// its box and eases their size (`mt-swell`). With no pointer on the meter the row is what it was.
+// its box and eases their size (`mt-swell`). With no pointer on the meter the row has neither.
 const swell = shallowRef(false);
 const SETTLE = 250;
 let settling: ReturnType<typeof setTimeout> | undefined;
@@ -273,27 +303,41 @@ function write(value: number | null | undefined) {
 
 // Where things are at the moment of an event: the track, the direction of the page, the pieces as they are laid
 // out, and the length along which a value is spread, which for packed dots is that of the row of dots.
-function frame(element: HTMLElement) {
+interface Frame {
+	box: DOMRect;
+	rtl: boolean;
+	pieces: Piece[];
+	length: number;
+}
+
+function frame(element: HTMLElement): Frame {
 	const box = element.getBoundingClientRect();
 	const rtl = getComputedStyle(element).direction === 'rtl';
-	const visualization = look.value.visualization;
-	const pieces: Piece[] =
-		drawing.value.pieces !== null && visualization !== 'contiguous' ? pieceGeometry(visualization, 'form', drawing.value.pieces.length, box.width, look.value.dotsLayout, ratio.value) : [];
-	const length = pieces.length ? pieces[pieces.length - 1]!.end : box.width;
+	const { visualization, dotsLayout } = look.value;
+	const cut = drawing.value.pieces?.length ?? 0;
+	const pieces = cut > 0 && visualization !== 'contiguous' ? pieceGeometry(visualization, 'form', cut, box.width, dotsLayout, ratio.value) : [];
 
-	return { box, rtl, pieces, length };
+	return { box, rtl, pieces, length: spreadLength(pieces, box.width) };
+}
+
+// The frame of one event. Working it out asks the browser for a box and a computed style and lays out up to two
+// hundred pieces, so a handler makes one of these and hands it on: the frame is worked out when it is first asked
+// for, at most once, and not at all for an event which needs none (a pointer which rests on one bar).
+function framed(element: HTMLElement): () => Frame {
+	let made: Frame | null = null;
+	return () => (made ??= frame(element));
 }
 
 // A point of the page, given by how far it is across the page, in pixels from the start side of the track.
-const positionOf = (x: number, at: ReturnType<typeof frame>) => (at.rtl ? at.box.right - x : x - at.box.left);
+const positionOf = (x: number, at: Frame) => positionAlong(x, at.box.left, at.box.right, at.rtl);
 
 // Says where the pointer is to the pieces which grow or fade in (`exact`): a fraction of the range, or `null`.
 function follow(place: number | null) {
-	exact.value = place !== null && (look.value.grow > 0 || look.value.fade) && method.value !== 'piece' ? Math.min(1, Math.max(0, place)) : null;
+	exact.value = place !== null && (look.value.grow > 0 || look.value.fade) && method.value !== 'piece' ? place : null;
 }
 
 // The value under a point of the page, given by how far it is across the page, by the method of the meter.
-function valueUnder(x: number, at: ReturnType<typeof frame>) {
+function valueUnder(x: number, at: Frame) {
 	const position = positionOf(x, at);
 
 	// By the piece: the value which leaves the pieces up to the pointer filled.
@@ -310,7 +354,7 @@ interface Drag {
 	raw: number;
 	lastX: number;
 	locked: boolean;
-	/** Where the pointer was last seen on the page, and whether it is a finger: for the marks after the drag. */
+	/** Where the pointer was last seen on the page, and whether it is a finger: for the large pieces after the drag. */
 	x: number;
 	y: number;
 	touch: boolean;
@@ -323,23 +367,21 @@ interface Drag {
 	startY: number;
 }
 
-// Marks the pieces which the pointer at a point of the page fills or would fill: those up to it, where the pieces
-// are filled by the pointer. A pointer which rests has to be on the track for that; one which is `held` down in
-// a drag counts wherever it is, by its place along the track, as the fill does. A finger does not rest anywhere,
-// and leaves no marks.
-function rest(x: number, y: number, touch: boolean, held = false) {
-	const element = line.value;
-
-	if (!editable.value || !element || touch || method.value !== 'piece') {
+// Works out which pieces are drawn large: those which the pointer at a point of the page fills or would fill,
+// up to it, where the pieces are filled by the pointer. A pointer which rests has to be on the track for that; one
+// which is `held` down in a drag counts wherever it is, by its place along the track, as the fill does. A finger
+// rests nowhere, and no piece is large for it.
+function enlargeUpTo(x: number, y: number, touch: boolean, frameOf: () => Frame, held = false) {
+	if (!editable.value || touch || method.value !== 'piece') {
 		hover.value = 0;
 		return;
 	}
 
-	const at = frame(element);
+	const at = frameOf();
 	const inside = held || (x >= at.box.left && x <= at.box.right && y >= at.box.top && y <= at.box.bottom);
-	const first = at.pieces[0];
+	const piece = at.pieces[0];
 
-	if (first !== undefined) long.value = Number((first.end - first.start).toFixed(2));
+	if (piece !== undefined) long.value = pieceLength(piece);
 	hover.value = inside ? filledAt(positionOf(x, at), at.pieces) : 0;
 }
 
@@ -369,8 +411,9 @@ function onPointerDown(event: PointerEvent) {
 	};
 	dragging.value = true;
 
-	// The marks are where the pointer is, from the press on.
-	rest(event.clientX, event.clientY, event.pointerType === 'touch', true);
+	// The pieces up to the pointer are large from the press on.
+	const frameOf = framed(element);
+	enlargeUpTo(event.clientX, event.clientY, event.pointerType === 'touch', frameOf, true);
 
 	// The drag goes on when the pointer leaves the field.
 	try {
@@ -383,7 +426,7 @@ function onPointerDown(event: PointerEvent) {
 	// is that of a sideways drag, or of the finger being lifted where it came down.
 	if (method.value !== 'relative') {
 		if (!drag.pending) {
-			const at = frame(element);
+			const at = frameOf();
 			follow(shareAt(positionOf(event.clientX, at), at.length));
 			write(valueUnder(event.clientX, at));
 		}
@@ -412,10 +455,10 @@ function onPointerMove(event: PointerEvent) {
 	const element = line.value;
 	if (!editable.value || !element) return;
 
-	const at = frame(element);
+	const frameOf = framed(element);
 
 	if (drag === null) {
-		rest(event.clientX, event.clientY, event.pointerType === 'touch');
+		enlargeUpTo(event.clientX, event.clientY, event.pointerType === 'touch', frameOf);
 		return;
 	}
 
@@ -423,7 +466,7 @@ function onPointerMove(event: PointerEvent) {
 
 	drag.x = event.clientX;
 	drag.y = event.clientY;
-	rest(drag.x, drag.y, drag.touch, true);
+	enlargeUpTo(drag.x, drag.y, drag.touch, frameOf, true);
 
 	// A mouse which moves with no button held was released where the meter did not see it.
 	if (event.pointerType === 'mouse' && event.buttons === 0) {
@@ -440,6 +483,7 @@ function onPointerMove(event: PointerEvent) {
 
 	// From here the value follows the pointer, and pieces which grow follow it without a transition.
 	following.value = true;
+	const at = frameOf();
 
 	if (method.value !== 'relative') {
 		follow(shareAt(positionOf(event.clientX, at), at.length));
@@ -482,8 +526,9 @@ function finish(restore: boolean) {
 		if (document.pointerLockElement === element) document.exitPointerLock();
 	}
 
-	// The marks are back at once, for where the pointer rests now, without waiting for it to move.
-	rest(ended.x, ended.y, ended.touch);
+	// The large pieces are worked out again at once, for where the pointer is now, without waiting for it to move.
+	if (element) enlargeUpTo(ended.x, ended.y, ended.touch, framed(element));
+	else hover.value = 0;
 
 	// A finger which never wrote has nothing to put back.
 	if (restore && !ended.pending && editable.value && props.value !== ended.before) emit('input', ended.before);
@@ -558,19 +603,9 @@ watch(editable, (now) => {
 	finish(false);
 });
 
-// What a slider says its range and its value are: the range which can be written, which for a field of a whole
-// type with limits between whole numbers is narrower than the range which is drawn, and the value within it. A
-// meter which cannot be edited says what it always said: the range as it is stored.
-const said = computed(() => {
-	const range = (editable.value ? writableRange(options.value, editing.value) : null) ?? options.value;
-	const now = reading.value.now;
-
-	// A slider has to say a value, so one without a value says the least it could be set to, and "No value" as
-	// the text of it. A meter without a value says none, as it always did.
-	if (!editable.value) return { min: range.min, max: range.max, now: now ?? undefined };
-
-	return { min: range.min, max: range.max, now: now === null ? range.min : Math.min(range.max, Math.max(range.min, now)) };
-});
+// What the element says its range and its value are (`saidOf`): a slider the range which can be written, a meter
+// which cannot be edited the range as it is stored.
+const said = computed(() => saidOf(options.value, writableRange(options.value, editing.value), reading.value.now, editable.value));
 
 // A taller target than the track, which is 0.75rem high. Above the track and under everything else are two
 // elements (`mt-reach`) which take the room the area has free there, up to 0.5rem each: a press on the one above
@@ -623,22 +658,30 @@ const listeners = computed(() =>
 		: {},
 );
 
-// The classes of the element on the line of the track. One which cannot be edited has those it always had.
+// The classes of the element on the line of the track. One which cannot be edited has none of the editing.
 const lineClass = computed(() => {
+	const { visualization, dotsLayout, grow, fade } = look.value;
+	const { pieces, track, fill } = drawing.value;
+
 	const drawn =
-		drawing.value.pieces === null
-			? ['mt-track', paintClass(drawing.value.track), { 'mt-scaled': drawing.value.fill.scale !== null }]
+		pieces === null
+			? ['mt-track', paintClass(track, 'mt'), { 'mt-scaled': fill.scale !== null }]
 			: [
 					'mt-strip',
-					`mt-${look.value.visualization}`,
-					{ 'mt-spread': look.value.visualization === 'dots' && look.value.dotsLayout === 'spread', 'mt-fitted': barSize.value !== null, 'mt-eased': (look.value.grow > 0 || look.value.fade) && eased.value && !following.value, 'mt-swell': swell.value },
+					`mt-${visualization}`,
+					{
+						'mt-spread': visualization === 'dots' && dotsLayout === 'spread',
+						'mt-fitted': barSize.value !== null,
+						'mt-eased': (grow > 0 || fade) && eased.value && !following.value,
+						'mt-swell': swell.value,
+					},
 				];
 
 	return editable.value ? [...drawn, 'mt-live', `mt-by-${method.value}`, { 'mt-busy': dragging.value }] : drawn;
 });
 
 // A handle at the end of the fill of the one bar, inside the track, never past either end of it.
-const handleStyle = computed(() => ({ insetInlineStart: `clamp(0.125rem, calc(${reading.value.fraction * 100}% - 0.625rem), calc(100% - 0.625rem))` }));
+const handleStyle = computed(() => ({ insetInlineStart: handleStart(reading.value.fraction) }));
 
 onBeforeUnmount(() => {
 	if (watching) document.removeEventListener('pointerlockchange', onLockChange);
@@ -695,7 +738,8 @@ onBeforeUnmount(() => {
 //   an outline in the colour of a focused input, which takes no room. The
 //   app has a focus ring of its own for every `div` which takes the focus,
 //   drawn inside the element and with square corners
-//   (`div:not([contenteditable=true]):focus-visible` in its global styles):
+//   (`div:not([contenteditable='true']):focus-visible`,
+//   app/src/styles/_base.scss:52-60 in Directus 11.17.4):
 //   the two rules of the ring are written with one class more than they
 //   would need, to come before that one, and the second gives the track its
 //   round ends back. None of the rules changes a size or a place: the area,
@@ -717,7 +761,7 @@ onBeforeUnmount(() => {
 //   1.5rem in all, and `mt-below`, which then lies under the caption, takes
 //   no press; without that line `mt-below` is right under the track and
 //   takes them. None of it lies over the caption or the text, and the track
-//   keeps its own events: the handle, the marks and the cursor under the
+//   keeps its own events: the handle, the large pieces and the cursor under the
 //   pointer are the track's. A finger gets the whole area above the line of
 //   caption and text, by a listener on the root and not by a box.
 // - The handle of the one bar is a dot inside the track at the end of the
@@ -770,27 +814,32 @@ onBeforeUnmount(() => {
 // - Pieces which grow (`grow`) are drawn at their size by a transform about
 //   their middle, set on the piece itself: no box changes, so the pitch, the
 //   gaps, where the pointer counts a piece and the height of the area are
-//   what they are without it. A filled piece has no transform, and a meter
-//   which does not grow its pieces has none anywhere.
+//   what they are without it. A filled piece has no transform of its growth,
+//   and a meter which does not grow its pieces has none anywhere, but for
+//   the pieces up to the pointer (above).
 // - The piece which fades in (`fade`) has one child (`mt-over`) which covers
 //   it, painted as the piece will be once it is filled, at the opacity of
 //   how far the value has come into it. It takes no press: the piece under
 //   it does. Only that one piece has a child and the class `mt-under`; a
 //   meter which does not fade has neither anywhere.
-// - There are two transitions, of the size of pieces which grow and of the
-//   opacity of the piece which fades in, 150ms each, by the class
-//   `mt-eased` on the row: not for the first value a meter draws, not while
-//   the pointer drags the value, and not for a user who asked for less
-//   motion. While the pointer drags, the sizes and the fading are worked out
-//   from where the pointer is (`exact`), so they change with every movement
-//   and need no transition; at the release they ease to what the value
-//   gives. A transition which is under way when the next change comes is
-//   taken up by the browser from where it is. Nothing else has one. The form hands over `null` until the item
-//   has loaded, so any other transition would play on every page load.
+// - There are three transitions, 150ms each, and none for a user who asked
+//   for less motion. Two are by the class `mt-eased` on the row: of the size
+//   of pieces which grow and of the opacity of the piece which fades in,
+//   not for the first value a meter draws and not while the pointer drags
+//   the value. While the pointer drags, the sizes and the fading are worked
+//   out from where the pointer is (`exact`), so they change with every
+//   movement and need no transition; at the release they ease to what the
+//   value gives. The third is by `mt-swell`: of the size and the corner radii
+//   of the pieces up to the pointer (above). A transition which is under way
+//   when the next change comes is taken up by the browser from where it is.
+//   Nothing else has one: the form hands over `null` until the item has
+//   loaded, so a transition of the fill or of a colour would play on every
+//   page load.
 // - Everything above is painted with backgrounds, which a contrast theme of
 //   the system takes away (`forced-colors: active`): every background colour
-//   becomes that of the page and a gradient is dropped, so that nothing of a
-//   meter was left but its text. There the track and every piece which is not
+//   becomes that of the page and a gradient is dropped, which without rules
+//   of its own leaves nothing of a meter but its text. There the track and
+//   every piece which is not
 //   filled are an outline in the colour of text (`CanvasText`) around the
 //   colour of the page (`Canvas`), and the fill, a filled piece and what is
 //   laid over the piece which fades in are the system's `Highlight`: filled is
@@ -828,7 +877,12 @@ onBeforeUnmount(() => {
 			v-on="listeners"
 		>
 			<template v-if="drawing.pieces === null">
-				<div v-if="reading.fraction > 0" class="mt-fill" :class="paintClass(drawing.fill)" :style="fillStyle" />
+				<div
+					v-if="reading.fraction > 0"
+					class="mt-fill"
+					:class="paintClass(drawing.fill, 'mt')"
+					:style="fillStyle(drawing.fill, reading.fraction, 'mt')"
+				/>
 				<div v-if="editable" class="mt-handle" :style="handleStyle" />
 			</template>
 			<span
@@ -836,15 +890,10 @@ onBeforeUnmount(() => {
 				v-else
 				:key="index"
 				class="mt-part"
-				:class="[{ 'mt-on': piece.filled, 'mt-under': piece.over !== null }, paintClass(piece.paint)]"
-				:style="partStyle(piece, index)"
+				:class="[{ 'mt-on': piece.filled, 'mt-under': piece.over !== null }, paintClass(piece.paint, 'mt')]"
+				:style="pieceStyle(piece, 'mt', index, look.visualization, near)"
 			>
-				<span
-					v-if="piece.over !== null"
-					class="mt-over"
-					:class="paintClass(piece.over.paint)"
-					:style="{ ...paintStyle(piece.over.paint, piece.at), opacity: piece.over.opacity }"
-				/>
+				<span v-if="piece.over !== null" class="mt-over" :class="paintClass(piece.over.paint, 'mt')" :style="overStyle(piece.over, piece.at, 'mt')" />
 			</span>
 		</div>
 

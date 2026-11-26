@@ -2,27 +2,36 @@
 
 ## 2.0.0
 
-- **A meter can now be edited, which changes what existing fields do.** Until now the interface was a reading which never changed its field. From this version on a meter in a form is set with the pointer and the keyboard wherever its field can be edited. A field whose meter should stay a reading, such as a number which a flow keeps up to date, has to be marked **Read-only** in its field settings: a read-only field, and one which is disabled or shown where nothing is edited, is drawn exactly as before and cannot be changed. The display in layouts does not change.
-- New option `input` for the interface, the method by which the pointer sets the value: `automatic` (the default), `position` (the value is where the pointer is), `piece` (the pieces up to the pointer are filled), `relative` (the value moves by as much as the pointer moves, with the pointer locked where the browser allows it) or `none` (the meter is not edited: it is drawn and behaves as in a read-only field, while the field itself stays one which can be edited). `automatic` is `piece` where every piece is exactly one step and `position` otherwise.
-- New option `step` for the interface: the distance between two values which can be set, counted from the minimum. The maximum can always be set. A field which was a stock Slider keeps that Slider's step. Without either, the step is 1 on a field of the type Integer or Big Integer, and on a Float or Decimal field the largest power of ten which gives the range at least a hundred steps, at most 1: a field from 0 to 1 is set in hundredths.
-- New option `sensitivity` for the `relative` method, 1 by default. Shift makes a drag ten times finer.
-- The keys of a meter which can be edited: the arrows for one step, Page Up and Page Down for ten steps or one piece, Home and End for the two ends, Escape to put the value back during a drag. It is one tab stop with the role `slider`. A key counts in steps, so every press moves the value by exactly one step or ten, also for large values in fine steps.
-- What is written is a plain number on the steps, within the range, whole for a field of the type Integer or Big Integer, and only where it differs from what the field holds. On such a field with limits which are not whole, the whole numbers within the range are what can be set.
-- A press a little above or below the track counts as a press on it: up to 24px in all for a mouse and the whole area above the caption for a finger, never outside the meter's own area and never on the caption or the value text. Where the pieces are filled by the pointer, the pieces up to it are drawn larger than the others, at rest and through a drag: bars and segments higher, pills and dots larger on every side.
-- A finger sets the value by a tap or by a sideways drag. One which goes up or down scrolls the page and writes nothing, and two fingers zoom the page as elsewhere. A scroll which starts with a little sideways drift is a drag until the browser takes it over; the value is then put back.
-- New options `prefix` and `suffix` for the interface and the display: text before and after the value text, as the stock Formatted Value display has it, joined on as typed. "$" gives "$4,200", " GB" gives "42 GB". A fraction has the prefix before both numbers and the suffix once ("$4,200 / $10,000", "42 / 100 GB"); a percentage has neither. They are in the text under the bar, in the tooltip, in what assistive technology is told and in the plain text of the display.
-- New option `visualization` for the interface and the display: `contiguous` (the default, the one bar as before), `pills`, `segments`, `bars` or `dots`. All but the first cut the track into pieces which are each filled completely or not at all. The nearest whole number of them is filled, and the value text, the tooltip and what assistive technology is told stay exact.
-- New option `subdivisions`: how many pieces are wanted, 2 or more. Without it, one for every unit of a range which is a whole number of at least 2.
-- New option `dotsLayout`: `packed` (the default, from the start side, 4px apart) or `spread` (from edge to edge).
-- The width decides how many pieces are drawn. The interface measures its track: what is wanted is drawn where it fits, else the largest number which fits and divides it, else as many as fit, and one bar where fewer than two fit. That middle rule is for pills and segments. Bars and dots leave it out: a number of them which does not fit becomes as many as fit, so that a row of bars or of packed dots ends near the end of the field, and spread dots are as many as packed ones. The display applies the same rule to its bar of a fixed length, so every row of a layout has the same number. There are never more than 200 pieces.
-- Bars are all drawn at one width and one distance, whole numbers of the screen's pixels, in the form at least 4px wide and 2px apart, with what is left of the field empty at its end: a few pixels where as many are drawn as fit, and up to a screen pixel for each bar where a number which is set fits.
-- New option `grow` for the interface, a number which is 0, off, by default: how many pieces in front of the fill can be growing at once. Above 0 the pieces which are not filled are drawn small; with 1 the next one grows to its full size as the value comes near it, with more a ramp of several does. Thin bars grow over a short ramp of the next two or three for each 1. The display never grows its pieces.
-- New option `fade` for the interface and the display, off by default: the next piece takes on the colour of a filled one gradually, as the value comes near it. Both have a short transition in the form, none for a user who asked for less motion, and follow the pointer itself while it drags the value.
-- New options `activeColoring` (`value`, `blend`, `steps` or `gradient`) and `inactiveColoring` (`plain`, `automatic`, `value`, `blend`, `steps` or `gradient`): the colours of the `color` and `thresholds` options by the current value as before; as one colour which shifts towards the next threshold as the value comes near it; by the place on the scale in steps; or blended into a gradient across the whole track. What is not filled is the plain track or a faded tint of the same.
-- The display takes each of these but `grow` from the interface of the field where it has none of its own. Its dropdowns for them can be emptied in the options form, which hands the option back to the interface.
-- Every option can be set wherever the options of the interface or of the display are edited, the dialog of a stock Repeater's field among them. The Meter display chosen in that dialog draws the rows of the Repeater.
-- Under a contrast theme of the system (forced colours) the meter is now drawn in the system's colours, in the form and in layouts: the track and what is not filled as an outline, what is filled solid. Before, nothing of the bar could be seen there. A printed form or table keeps its bars.
-- Apart from that a field which sets none of the new options is drawn as before.
+### Breaking
+
+- **A meter on a field which can be edited is now edited.** In 1.x the interface never changed its field. Now the pointer and the keys set the value wherever the field is not read-only. To keep a reading, tick **Readonly** in the field's settings, or set the meter's **Input Method** to "None".
+
+### Added
+
+- **Input Method** (`input`, interface): "Automatic", "Position" (the value is where the pointer is), "Piece" (the pieces up to the pointer are filled), "Relative" (the value moves by as much as the pointer moves) or "None" (the meter is not edited). "Automatic" is "Piece" where every piece is exactly one step, and "Position" otherwise.
+- **Step** (`step`, interface): the distance between two values which can be set, counted from the minimum. Left empty, it is a step which suits the type and the range, and a field which was a stock Slider keeps that Slider's step.
+- **Sensitivity** (`sensitivity`, interface): for "Relative", how much of the range one length of the meter covers. Shift makes a drag ten times finer.
+- **Keys.** A meter which can be edited is one tab stop with the role `slider`: the arrows for one step, Page Up and Page Down for ten steps or one piece, Home and End for the two ends, Escape to put the value back during a drag.
+- **Touch.** A tap or a sideways drag sets the value; a vertical one scrolls the page.
+- **A taller target.** A press a little above or below the track counts as a press on it.
+- **What is written** is a plain number on the steps, within the range, whole on an Integer or Big Integer field, and only where it differs from what the field holds.
+- **Prefix** and **Suffix** (`prefix`, `suffix`): text before and after the value text, joined on as typed. "$" gives "$4,200", " GB" gives "42 GB". A percentage has neither.
+- **Visualization** (`visualization`): "Contiguous" (one bar, the default), "Pills", "Segments", "Bars" or "Dots". All but the first cut the track into pieces which are each filled or not; the value text stays exact.
+- **Subdivisions** (`subdivisions`): how many pieces are wanted. Left empty, one for every unit of a whole range, or as many as fit. Where the number does not fit the width, fewer are drawn.
+- **Dots Layout** (`dotsLayout`): "Packed" from the start, or "Spread" from edge to edge.
+- **Grow** (`grow`, interface): the pieces which are not filled are drawn small, and grow as the value nears them. The number is how many can be growing at once.
+- **Fade In** (`fade`): the next piece takes on the colour of a filled one gradually, as the value nears it.
+- **Active Coloring** (`activeColoring`): "Value" (one colour, by the current value, as before), "Blend" (one colour which shifts towards the next threshold's), "Steps" (each place on the track has the colour of its threshold) or "Gradient" (those colours blended along the track).
+- **Inactive Coloring** (`inactiveColoring`): "Plain" (the track, as before), "Automatic" (as what is filled, faded) or one of the four, faded.
+- **The display** has every new option but Grow and the three of editing, and takes each from the interface of the field where it sets none of its own.
+- **In a stock Repeater** a Meter can be the interface of a field, and the Meter display can draw the rows.
+- **Contrast themes and print.** Under a contrast theme of the system (forced colours) the meter is drawn in the system's colours. A printed form or table keeps its bars.
+
+### Unchanged
+
+- **What 1.x stored.** The field holds a plain number, and the options `min`, `max`, `label`, `indicator`, `indicatorFormat`, `color` and `thresholds` keep their meaning.
+- **The look of a field which sets none of the new options,** where the field is read-only. Where it can be edited it also shows a pointer cursor, a handle while it is used and a focus ring.
+- **The display is never edited.**
 
 ## 1.0.1
 

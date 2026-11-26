@@ -1,29 +1,44 @@
-// The part of the bundle which needs no Vue, DOM or Directus: what a stored
-// value and the options come to, how much of the track is filled, in which
-// colour, and what the text beside it says. The interface and the display
-// both work from it, and the unit tests run it in Node.
+// The part of the bundle which needs no Vue, DOM or Directus. It reads the
+// options, which are untrusted, and turns them and a stored value into plain
+// data: what is filled and what the text says, into how many pieces the track
+// is cut and where they are, every surface with its colour, its size and its
+// inline style, and for a field which can be edited the values the pointer
+// and the keys write. The interface and the display both work from it, and
+// the unit tests run it in Node.
+//
+// The words of an option which has choices are listed once, here: the type is
+// derived from the list, the reading functions check against it, and the
+// options form builds its dropdown from it (`options.ts`).
 
 /** What the text beside the bar says. */
-export type IndicatorFormat = 'percent' | 'value' | 'fraction';
+export const FORMATS = ['percent', 'value', 'fraction'] as const;
+export type IndicatorFormat = (typeof FORMATS)[number];
 
 /** How the track is drawn: as one bar, or cut into pieces which are each filled or not. */
-export type Visualization = 'contiguous' | 'pills' | 'segments' | 'bars' | 'dots';
+export const VISUALIZATIONS = ['contiguous', 'pills', 'segments', 'bars', 'dots'] as const;
+export type Visualization = (typeof VISUALIZATIONS)[number];
 
 /** A visualization which cuts the track into pieces. */
 export type Shape = Exclude<Visualization, 'contiguous'>;
+export const SHAPES = VISUALIZATIONS.filter((word): word is Shape => word !== 'contiguous');
 
 /** Where dots stand: from the start side with a fixed gap, or from edge to edge with equal gaps. */
-export type DotsLayout = 'packed' | 'spread';
+export const DOTS_LAYOUTS = ['packed', 'spread'] as const;
+export type DotsLayout = (typeof DOTS_LAYOUTS)[number];
 
 /**
  * Where a colour comes from. `value`: one colour, that of the current value.
- * `steps`: every place on the scale has the colour a meter standing there
- * would have. `gradient`: the same colours, blended from one to the next.
+ * `blend`: one colour as well, the one the scale has at the place of the
+ * value, between the colours of the thresholds around it. `steps`: every
+ * place on the scale has the colour a meter standing there would have.
+ * `gradient`: the same colours, blended from one to the next.
  */
-export type Coloring = 'value' | 'blend' | 'steps' | 'gradient';
+export const COLORINGS = ['value', 'blend', 'steps', 'gradient'] as const;
+export type Coloring = (typeof COLORINGS)[number];
 
 /** The colouring of what is not filled: the plain track, that of what is filled, or one of its own. */
-export type InactiveColoring = 'plain' | 'automatic' | Coloring;
+export const INACTIVE_COLORINGS = ['plain', 'automatic', ...COLORINGS] as const;
+export type InactiveColoring = (typeof INACTIVE_COLORINGS)[number];
 
 /** Where a meter is drawn: the interface measures its width, the display has one fixed width. */
 export type Place = 'form' | 'display';
@@ -36,7 +51,8 @@ export type Place = 'form' | 'display';
  * suits what is drawn (`inputMethod`). `none`: nothing sets it, and the meter
  * is the reading it is in a field which cannot be edited.
  */
-export type InputMethod = 'automatic' | 'position' | 'piece' | 'relative' | 'none';
+export const INPUTS = ['automatic', 'position', 'piece', 'relative', 'none'] as const;
+export type InputMethod = (typeof INPUTS)[number];
 
 /** How a meter is edited, after `readEditing`. */
 export interface Editing {
@@ -257,6 +273,9 @@ const FILLED_FROM = 0.5;
 /** The most `grow` can be: more pieces growing at once than that is no ramp any more. */
 export const MAX_GROW = 20;
 
+/** `grow` where it is not set: off. */
+export const DEFAULT_GROW = 0;
+
 /**
  * How far ahead of the fill thin bars grow and fade in at the least, in
  * pixels of the track for each 1 of `grow`: two and a half bars at their
@@ -291,14 +310,13 @@ export const FREE_DIGITS = 12;
 export const PAGE_STEPS = 10;
 export const FINE = 0.1;
 
-const INPUTS: readonly unknown[] = ['automatic', 'position', 'piece', 'relative', 'none'];
+/** The types of a field which hold whole numbers only. */
 const WHOLE_TYPES: readonly unknown[] = ['integer', 'bigInteger'];
 
-const FORMATS: readonly unknown[] = ['percent', 'value', 'fraction'];
-const VISUALIZATIONS: readonly unknown[] = ['contiguous', 'pills', 'segments', 'bars', 'dots'];
-const DOTS_LAYOUTS: readonly unknown[] = ['packed', 'spread'];
-const COLORINGS: readonly unknown[] = ['value', 'blend', 'steps', 'gradient'];
-const INACTIVE_COLORINGS: readonly unknown[] = ['plain', 'automatic', 'value', 'blend', 'steps', 'gradient'];
+/** A stored word, where it is one of the choices of its option, or `null`. */
+function oneOf<T extends string>(choices: readonly T[], word: unknown): T | null {
+	return (choices as readonly unknown[]).includes(word) ? (word as T) : null;
+}
 
 // A number as the API writes it: digits with an optional sign, fraction and
 // exponent. Not hexadecimal, not "Infinity", not an empty text, each of which
@@ -392,12 +410,13 @@ export function readThresholds(list: unknown): Threshold[] {
 
 type Source = Record<string, unknown>;
 
-type Range = Pick<Options, 'min' | 'max'>;
+/** The two limits of a range, the smaller first. */
+type Limits = Pick<Options, 'min' | 'max'>;
 
 const sourceOf = (options: unknown): Source => (typeof options === 'object' && options !== null ? (options as Source) : {});
 
 /** What the first source which has something usable has, or `null`. */
-function first<T>(sources: Source[], pick: (source: Source) => T | null): T | null {
+function firstOf<T>(sources: Source[], pick: (source: Source) => T | null): T | null {
 	for (const source of sources) {
 		const found = pick(source);
 		if (found !== null) return found;
@@ -449,26 +468,24 @@ export function readOptions(own?: unknown, inherited?: unknown): Options {
 	const theirs = sourceOf(inherited);
 	const sources = [mine, theirs];
 
-	const min = first(sources, (source) => numberOf(source['min']) ?? numberOf(source['minValue'])) ?? DEFAULT_MIN;
-	const max = first(sources, (source) => numberOf(source['max']) ?? numberOf(source['maxValue'])) ?? DEFAULT_MAX;
+	const min = firstOf(sources, (source) => numberOf(source['min']) ?? numberOf(source['minValue'])) ?? DEFAULT_MIN;
+	const max = firstOf(sources, (source) => numberOf(source['max']) ?? numberOf(source['maxValue'])) ?? DEFAULT_MAX;
 
 	// The source of a key which falls back only while it is missing.
 	const holder = (key: string) => (mine[key] !== undefined ? mine : theirs);
 
 	// Text which is joined to the value text: the first which is not blank, as it was typed.
-	const affix = (key: string) => first(sources, (source) => (typeof source[key] === 'string' && source[key].trim() !== '' ? source[key] : null)) ?? '';
+	const affix = (key: string) => firstOf(sources, (source) => (typeof source[key] === 'string' && source[key].trim() !== '' ? source[key] : null)) ?? '';
 
 	return {
 		min: Math.min(min, max),
 		max: Math.max(min, max),
-		label: first(sources, (source) => {
+		label: firstOf(sources, (source) => {
 			const text = typeof source['label'] === 'string' ? source['label'].trim() : '';
 			return text !== '' ? text : null;
 		}),
-		indicator: first(sources, (source) => (typeof source['indicator'] === 'boolean' ? source['indicator'] : null)) ?? true,
-		indicatorFormat:
-			first(sources, (source) => (FORMATS.includes(source['indicatorFormat']) ? (source['indicatorFormat'] as IndicatorFormat) : null)) ??
-			DEFAULT_FORMAT,
+		indicator: firstOf(sources, (source) => (typeof source['indicator'] === 'boolean' ? source['indicator'] : null)) ?? true,
+		indicatorFormat: firstOf(sources, (source) => oneOf(FORMATS, source['indicatorFormat'])) ?? DEFAULT_FORMAT,
 		prefix: affix('prefix'),
 		suffix: affix('suffix'),
 		color: colorOf(holder('color')['color']) ?? DEFAULT_COLOR,
@@ -492,12 +509,12 @@ function subdivisionsOf(value: unknown): number | null {
 /**
  * Works out how a meter is drawn, from the options `visualization`,
  * `subdivisions`, `dotsLayout`, `activeColoring`, `inactiveColoring`, `grow`
- * and `fade`, with the same two sources as `readOptions`. Every one of these keys falls
- * through when it holds nothing usable, as the format and the limits do: a
- * word which is not one of its choices, a number of subdivisions which is no
- * whole number, and so an option which was emptied (`null`) as well. Without
- * a usable one anywhere the meter is one bar in the colour of its value, on a
- * plain track.
+ * and `fade`, with the same two sources as `readOptions`. Every one of these
+ * keys falls through when it holds nothing usable, as the format and the
+ * limits do: a word which is not one of its choices, a number of subdivisions
+ * which is no whole number, and so an option which was emptied (`null`) as
+ * well. Without a usable one anywhere the meter is one bar in the colour of
+ * its value, on a plain track.
  *
  * `grow` is the exception: it is read from the entry's own options alone,
  * and only the interface draws by it. The pieces of a display are too small
@@ -509,16 +526,16 @@ function subdivisionsOf(value: unknown): number | null {
  */
 export function readLook(own?: unknown, inherited?: unknown): Look {
 	const sources = [sourceOf(own), sourceOf(inherited)];
-	const oneOf = <T>(key: string, choices: readonly unknown[]) => first(sources, (source) => (choices.includes(source[key]) ? (source[key] as T) : null));
+	const word = <T extends string>(key: string, choices: readonly T[]) => firstOf(sources, (source) => oneOf(choices, source[key]));
 
 	return {
-		visualization: oneOf<Visualization>('visualization', VISUALIZATIONS) ?? DEFAULT_VISUALIZATION,
-		subdivisions: first(sources, (source) => subdivisionsOf(source['subdivisions'])),
-		dotsLayout: oneOf<DotsLayout>('dotsLayout', DOTS_LAYOUTS) ?? DEFAULT_DOTS_LAYOUT,
-		activeColoring: oneOf<Coloring>('activeColoring', COLORINGS) ?? DEFAULT_ACTIVE_COLORING,
-		inactiveColoring: oneOf<InactiveColoring>('inactiveColoring', INACTIVE_COLORINGS) ?? DEFAULT_INACTIVE_COLORING,
+		visualization: word('visualization', VISUALIZATIONS) ?? DEFAULT_VISUALIZATION,
+		subdivisions: firstOf(sources, (source) => subdivisionsOf(source['subdivisions'])),
+		dotsLayout: word('dotsLayout', DOTS_LAYOUTS) ?? DEFAULT_DOTS_LAYOUT,
+		activeColoring: word('activeColoring', COLORINGS) ?? DEFAULT_ACTIVE_COLORING,
+		inactiveColoring: word('inactiveColoring', INACTIVE_COLORINGS) ?? DEFAULT_INACTIVE_COLORING,
 		grow: growOf(sources[0]!['grow']),
-		fade: first(sources, (source) => (typeof source['fade'] === 'boolean' ? source['fade'] : null)) ?? false,
+		fade: firstOf(sources, (source) => (typeof source['fade'] === 'boolean' ? source['fade'] : null)) ?? false,
 	};
 }
 
@@ -536,10 +553,19 @@ export function readLook(own?: unknown, inherited?: unknown): Look {
  * a written value is cleaned to; a range too small for a hundred of those gets
  * that step, and fewer of them. A range of one number, and limits which are
  * not finite or too far apart to subtract, get 1.
+ *
+ * `scale` is how many decimals the column of the field holds, where it holds
+ * a fixed number of them (`scaleOf`). The step is then never finer than one
+ * unit of that scale, a tenth for a scale of 1 and 1 for a scale of 0: the
+ * database rounds what it is handed to the scale, so a finer step would write
+ * values which the item does not hold afterwards.
  */
-export function defaultStep(range: Range, whole: boolean): number {
+export function defaultStep(range: Limits, whole: boolean, scale: number | null = null): number {
 	const span = range.max - range.min;
 	if (whole || !Number.isFinite(span) || !(span > 0)) return DEFAULT_STEP;
+
+	// The least step the column can hold, made from its decimal text like the step itself.
+	const unit = scale !== null && Number.isInteger(scale) && scale >= 0 ? Number(`1e-${scale}`) : 0;
 
 	// A hair of slack: limits of 0.6 and 0.7 are a hair less than a tenth apart, and still have their hundred steps.
 	const fits = (exponent: number) => span / Number(`1e${exponent}`) >= STEPS_WANTED * (1 - 1e-9);
@@ -550,7 +576,24 @@ export function defaultStep(range: Range, whole: boolean): number {
 	while (exponent < 0 && fits(exponent + 1)) exponent++;
 	while (exponent > LEAST_EXPONENT && !fits(exponent)) exponent--;
 
-	return Number(`1e${Math.max(LEAST_EXPONENT, exponent)}`);
+	return Math.max(unit, Number(`1e${Math.max(LEAST_EXPONENT, exponent)}`));
+}
+
+/**
+ * How many decimals the column of a field holds, or `null` where it holds no
+ * fixed number of them. Only a `decimal` field has such a scale: it is
+ * `numeric_scale` of the field's `schema`, which the form hands an interface
+ * as part of `fieldData` (app/src/components/v-form/components/form-field-interface.vue:77
+ * in Directus 11.17.4, with `schema` at packages/types/src/fields.ts:65 and
+ * `numeric_scale` at packages/schema/src/types/column.ts:8) and the options
+ * form as part of its `field`. A `float` has none, whatever its column says,
+ * and a whole type needs none. Untrusted, like the options.
+ */
+export function scaleOf(type: unknown, schema: unknown): number | null {
+	if (type !== 'decimal') return null;
+
+	const scale = numberOf(sourceOf(schema)['numeric_scale']);
+	return scale !== null && Number.isInteger(scale) && scale >= 0 ? scale : null;
 }
 
 /**
@@ -559,14 +602,15 @@ export function defaultStep(range: Range, whole: boolean): number {
  *
  * The step is `step`. Where that is not set (missing, emptied or blank), it
  * is `stepInterval`, the key of the stock Slider
- * (app/src/interfaces/slider/index.ts in Directus 11.17.4), which a field
+ * (app/src/interfaces/slider/index.ts:34 in Directus 11.17.4), which a field
  * keeps when its interface changes, as it keeps the Slider's limits. A step
  * which is set and is not a number above zero is 1. A field with neither has
- * the step which suits its type and its `range` (`defaultStep`); the range is
- * that of the same options where none is handed over. A field of a whole type
- * has a whole step of at least 1.
+ * the step which suits its type, its `range` and the `scale` of its column
+ * (`defaultStep`, `scaleOf`); the range is that of the same options where
+ * none is handed over. A step which is set is not changed by the scale: it is
+ * the user's. A field of a whole type has a whole step of at least 1.
  */
-export function readEditing(own?: unknown, type?: unknown, range: Range = readOptions(own)): Editing {
+export function readEditing(own?: unknown, type?: unknown, range: Limits = readOptions(own), scale: number | null = null): Editing {
 	const source = sourceOf(own);
 	const whole = WHOLE_TYPES.includes(type);
 	const positive = (value: unknown) => {
@@ -575,10 +619,10 @@ export function readEditing(own?: unknown, type?: unknown, range: Range = readOp
 	};
 
 	const stepOf = (key: string) => (isEmpty(source[key]) ? null : (positive(source[key]) ?? DEFAULT_STEP));
-	const step = stepOf('step') ?? stepOf('stepInterval') ?? defaultStep(range, whole);
+	const step = stepOf('step') ?? stepOf('stepInterval') ?? defaultStep(range, whole, scale);
 
 	return {
-		input: INPUTS.includes(source['input']) ? (source['input'] as InputMethod) : DEFAULT_INPUT,
+		input: oneOf(INPUTS, source['input']) ?? DEFAULT_INPUT,
 		step: whole ? Math.max(1, Math.round(step)) : step,
 		sensitivity: positive(source['sensitivity']) ?? DEFAULT_SENSITIVITY,
 		whole,
@@ -615,7 +659,7 @@ export function changes(held: unknown, next: number): boolean {
  * 1 at the maximum, less or more outside. The plain difference of two very
  * large numbers is not finite, so those are halved first.
  */
-function shareOf(value: number, range: Range): number {
+function shareOf(value: number, range: Limits): number {
 	let span = range.max - range.min;
 	let offset = value - range.min;
 
@@ -635,7 +679,7 @@ function shareOf(value: number, range: Range): number {
  * over this number (`fillScale`), and nothing which is not finite may reach
  * the page.
  */
-export function fractionOf(value: number, range: Range): number {
+export function fractionOf(value: number, range: Limits): number {
 	if (value >= range.max) return 1;
 	if (value <= range.min) return 0;
 
@@ -659,7 +703,7 @@ export function fillScale(fraction: number): number {
  * A value strictly inside the range is never 0 or 100, so "nothing" and
  * "done" are not claimed too early.
  */
-export function percentOf(value: number, range: Range): number {
+export function percentOf(value: number, range: Limits): number {
 	if (range.max === range.min) return value >= range.max ? 100 : 0;
 
 	const exact = shareOf(value, range) * 100;
@@ -725,7 +769,11 @@ export function formatPercent(percent: number, locale?: string): string {
  * at the end: "$4,200 / $10,000", "42 / 100 GB". A percentage has neither. Both
  * are joined on as they are, without a space.
  */
-export function valueText(value: number, options: Pick<Options, 'min' | 'max' | 'indicatorFormat'> & Partial<Pick<Options, 'prefix' | 'suffix'>>, locale?: string): string {
+export function valueText(
+	value: number,
+	options: Pick<Options, 'min' | 'max' | 'indicatorFormat'> & Partial<Pick<Options, 'prefix' | 'suffix'>>,
+	locale?: string,
+): string {
 	const prefix = options.prefix ?? '';
 	const suffix = options.suffix ?? '';
 
@@ -741,7 +789,7 @@ export function valueText(value: number, options: Pick<Options, 'min' | 'max' | 
  * range (not whole, smaller, or of one number) wants none in particular,
  * which is `null`: as many as fit are drawn then.
  */
-export function wantedCount(look: Pick<Look, 'subdivisions'>, range: Range): number | null {
+export function wantedCount(look: Pick<Look, 'subdivisions'>, range: Limits): number | null {
 	if (look.subdivisions !== null) return look.subdivisions;
 
 	const span = range.max - range.min;
@@ -829,7 +877,7 @@ export function drawnCount(wanted: number | null, fit: number, divide = true): n
  * layout comes to the same number. `ratio` is that of the screen, by which
  * bars are counted.
  */
-export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Range, place: Place, width: number, ratio = 1): number {
+export function pieceCount(look: Pick<Look, 'visualization' | 'subdivisions'>, range: Limits, place: Place, width: number, ratio = 1): number {
 	if (look.visualization === 'contiguous') return 0;
 
 	// Pills and segments share the width, so fewer of them can still stand for round shares: they take a number
@@ -918,7 +966,14 @@ export function barFit(place: Place, count: number, width: number, ratio = 1): B
  * pointer finds the piece under it and the length which stands for the whole
  * range.
  */
-export function pieceGeometry(visualization: Shape, place: Place, count: number, width: number, dotsLayout: DotsLayout = DEFAULT_DOTS_LAYOUT, ratio = 1): Piece[] {
+export function pieceGeometry(
+	visualization: Shape,
+	place: Place,
+	count: number,
+	width: number,
+	dotsLayout: DotsLayout = DEFAULT_DOTS_LAYOUT,
+	ratio = 1,
+): Piece[] {
 	const { piece, gap } = PIECE_SIZES[place][visualization];
 	if (!(count >= 1) || !(width > 0)) return [];
 
@@ -942,7 +997,7 @@ export function pieceGeometry(visualization: Shape, place: Place, count: number,
  * it holds no value at all, as a range from 0.2 to 0.8 holds no whole number.
  * What is drawn keeps to the range as it is stored.
  */
-export function writableRange(range: Range, editing: Pick<Editing, 'whole'>): Range | null {
+export function writableRange(range: Limits, editing: Pick<Editing, 'whole'>): Limits | null {
 	const min = editing.whole ? Math.ceil(range.min) : range.min;
 	const max = editing.whole ? Math.floor(range.max) : range.max;
 
@@ -980,7 +1035,7 @@ interface Grid {
  * where the range holds more steps than can be counted exactly: then there is
  * no grid.
  */
-function gridOf(writable: Range, editing: Pick<Editing, 'step' | 'whole'>): Grid | null {
+function gridOf(writable: Limits, editing: Pick<Editing, 'step' | 'whole'>): Grid | null {
 	const { min, max } = writable;
 	const step = editing.step;
 	const held = (max - min) / step;
@@ -1040,7 +1095,7 @@ function gridOf(writable: Range, editing: Pick<Editing, 'step' | 'whole'>): Grid
  * more than can be counted exactly, has no grid: the value within the range
  * is written, rounded to `FREE_DIGITS` digits which count.
  */
-export function snapValue(value: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>, rounding: Rounding = 'nearest'): number | null {
+export function snapValue(value: number, range: Limits, editing: Pick<Editing, 'step' | 'whole'>, rounding: Rounding = 'nearest'): number | null {
 	const writable = writableRange(range, editing);
 	const step = editing.step;
 
@@ -1070,7 +1125,7 @@ export function snapValue(value: number, range: Range, editing: Pick<Editing, 's
 }
 
 /** The value at a share of the range: the minimum at 0, the maximum at 1, and nothing beyond them. */
-export function valueAtShare(share: number, range: Range): number {
+export function valueAtShare(share: number, range: Limits): number {
 	if (!(share > 0)) return range.min;
 	if (share >= 1) return range.max;
 
@@ -1120,7 +1175,7 @@ export function filledAt(position: number, pieces: Piece[]): number {
  * from 0.5 to 5.5 draws five pieces over a range of which only 1 to 5 can be
  * written, and takes the value under the pointer.
  */
-export function inputMethod(editing: Pick<Editing, 'input' | 'step' | 'whole'>, count: number, range: Range): Exclude<InputMethod, 'automatic'> {
+export function inputMethod(editing: Pick<Editing, 'input' | 'step' | 'whole'>, count: number, range: Limits): Exclude<InputMethod, 'automatic'> {
 	if (editing.input === 'none') return 'none';
 	if (editing.input === 'relative') return 'relative';
 	if (!(count >= MIN_SUBDIVISIONS) || editing.input === 'position') return 'position';
@@ -1143,7 +1198,7 @@ export function inputMethod(editing: Pick<Editing, 'input' | 'step' | 'whole'>, 
  * draws that many, as with more pieces than there are steps, it is the value
  * nearest to the share. `null` where nothing can be written.
  */
-export function pieceValue(filled: number, count: number, range: Range, editing: Pick<Editing, 'step' | 'whole'>): number | null {
+export function pieceValue(filled: number, count: number, range: Limits, editing: Pick<Editing, 'step' | 'whole'>): number | null {
 	if (!(count >= 1)) return null;
 
 	const target = valueAtShare(Math.min(count, Math.max(0, filled)) / count, range);
@@ -1184,7 +1239,7 @@ export function sideways(along: number, across: number): boolean {
  * one movement to the next as it is, not as it was written, so a slow
  * movement of less than a step at a time still adds up.
  */
-export function relativeMove(raw: number, movement: number, length: number, range: Range, sensitivity: number, fine = false): number {
+export function relativeMove(raw: number, movement: number, length: number, range: Limits, sensitivity: number, fine = false): number {
 	const from = Math.min(range.max, Math.max(range.min, raw));
 	if (!(length > 0) || !Number.isFinite(movement) || !Number.isFinite(from)) return Number.isFinite(from) ? from : range.min;
 
@@ -1209,7 +1264,14 @@ export function relativeMove(raw: number, movement: number, length: number, rang
  * takes it to the next point and not past it. A key of the meter's where
  * nothing can be written gives `null`.
  */
-export function keyValue(key: string, current: number | null, range: Range, editing: Pick<Editing, 'step' | 'whole'>, count = 0, rtl = false): number | null | undefined {
+export function keyValue(
+	key: string,
+	current: number | null,
+	range: Limits,
+	editing: Pick<Editing, 'step' | 'whole'>,
+	count = 0,
+	rtl = false,
+): number | null | undefined {
 	const forward = rtl ? 'ArrowLeft' : 'ArrowRight';
 	const writable = writableRange(range, editing);
 	const step = editing.step;
@@ -1256,7 +1318,7 @@ export function keyValue(key: string, current: number | null, range: Range, edit
  */
 export function growOf(value: unknown): number {
 	const number = numberOf(value);
-	return number !== null && number > 0 ? Math.min(MAX_GROW, number) : 0;
+	return number !== null && number > 0 ? Math.min(MAX_GROW, number) : DEFAULT_GROW;
 }
 
 /**
@@ -1285,16 +1347,16 @@ export function growOf(value: unknown): number {
  */
 export function reachOf(visualization: Visualization, place: Place, count: number, width: number, grow = 1, ratio = 1): number {
 	const amount = Number.isFinite(grow) && grow > 0 ? Math.min(MAX_GROW, grow) : 0;
-	const pieces = amount <= 1 ? amount / 2 : amount - FILLED_FROM;
+	const byPieces = amount <= 1 ? amount / 2 : amount - FILLED_FROM;
 
-	if (visualization !== 'bars' || !(count >= 1) || !(width > 0)) return pieces;
+	if (visualization !== 'bars' || !(count >= 1) || !(width > 0)) return byPieces;
 
 	// From one bar to the next, as they are drawn.
 	const fit = barFit(place, count, width, ratio);
 	const pitch = fit !== null ? fit.bar + fit.gap : (width + PIECE_SIZES[place].bars.gap) / count;
-	const track = Math.round((2 * amount * BAR_REACH[place]) / pitch) / 2;
+	const byPixels = Math.round((2 * amount * BAR_REACH[place]) / pitch) / 2;
 
-	return Number.isFinite(track) ? Math.max(pieces, track) : pieces;
+	return Number.isFinite(byPixels) ? Math.max(byPieces, byPixels) : byPieces;
 }
 
 /**
@@ -1314,9 +1376,9 @@ export function reachOf(visualization: Visualization, place: Place, count: numbe
  * it has its whole reach. So it comes out of the start as it runs into the
  * end, where the pieces which are left grow until all are full, and nothing
  * jumps anywhere between the two. A reach of half a piece or less is never
- * more than that, and is as it is everywhere. An earlier rule made the
- * minimum a case of its own, nothing under way there, and a long ramp was
- * there in full at the first value above it.
+ * more than that, and is as it is everywhere. Were the minimum a case of its
+ * own instead, with nothing under way there, a long ramp would stand in full
+ * at the first value above the minimum and be gone at the minimum.
  *
  * `fraction` may be the place of the pointer and not that of the value, and
  * so ahead of what is filled: a piece which is not filled is then 1 as well.
@@ -1326,9 +1388,9 @@ export function growthOf(fraction: number, count: number, index: number, reach =
 	if (index < filledCount(fraction, count)) return 1;
 	if (!(reach > 0)) return 0;
 
-	const pieces = piecesAt(Math.min(1, fraction), count);
-	const within = Math.min(reach, pieces + FILLED_FROM);
-	const away = index + FILLED_FROM - pieces;
+	const position = piecesAt(Math.min(1, fraction), count);
+	const within = Math.min(reach, position + FILLED_FROM);
+	const away = index + FILLED_FROM - position;
 
 	return Math.min(1, Math.max(0, 1 - away / within));
 }
@@ -1372,7 +1434,7 @@ export function largeScale(shape: Shape, length: number): Scale {
 	return { along, across: Number(LARGE_ACROSS[shape].toFixed(4)) };
 }
 
-/** A size as the CSS transform which draws it: about the middle of the piece, so the piece stays on its place and its box as it was. */
+/** A size as the CSS transform which draws it: about the middle of the piece, so the piece stays on its place and its box is untouched. */
 export function scaleCss(size: Scale): string {
 	return `scale(${size.along}, ${size.across})`;
 }
@@ -1468,14 +1530,14 @@ export function scaleStops(options: Pick<Options, 'min' | 'max' | 'color' | 'thr
  * changes at once. `faded` mixes every colour towards the track.
  */
 export function stopsCss(stops: Stop[], coloring: 'steps' | 'gradient', faded = false): string {
-	const colorOf = (stop: Stop) => (faded ? fadedColor(stop.color) : stop.color);
-	const placeOf = (stop: Stop) => `${Number((Math.min(1e4, Math.max(-1e4, stop.at)) * 100).toFixed(3))}%`;
+	const shade = (stop: Stop) => (faded ? fadedColor(stop.color) : stop.color);
+	const percent = (stop: Stop) => `${Number((Math.min(1e4, Math.max(-1e4, stop.at)) * 100).toFixed(3))}%`;
 
-	if (coloring === 'gradient') return stops.map((stop) => `${colorOf(stop)} ${placeOf(stop)}`).join(', ');
+	if (coloring === 'gradient') return stops.map((stop) => `${shade(stop)} ${percent(stop)}`).join(', ');
 
 	return stops
 		.slice(1)
-		.map((stop, index) => `${colorOf(stops[index]!)} ${placeOf(stop)}, ${colorOf(stop)} ${placeOf(stop)}`)
+		.map((stop, index) => `${shade(stops[index]!)} ${percent(stop)}, ${shade(stop)} ${percent(stop)}`)
 		.join(', ');
 }
 
@@ -1494,9 +1556,9 @@ export interface Blend {
  * from the minimum, and may lie outside 0 to 1, as the stops may.
  */
 export function blendAt(stops: Stop[], place: number): Blend {
-	const first = stops[0];
-	if (first === undefined) return { from: DEFAULT_COLOR, to: DEFAULT_COLOR, share: 0 };
-	if (!(place > first.at)) return { from: first.color, to: first.color, share: 0 };
+	const lowest = stops[0];
+	if (lowest === undefined) return { from: DEFAULT_COLOR, to: DEFAULT_COLOR, share: 0 };
+	if (!(place > lowest.at)) return { from: lowest.color, to: lowest.color, share: 0 };
 
 	for (let index = 1; index < stops.length; index++) {
 		const from = stops[index - 1]!;
@@ -1517,7 +1579,7 @@ export function blendCss(blend: Blend): string {
 }
 
 /** The value a piece reaches when it is filled completely: the maximum for the last of them. */
-function valueAtPiece(index: number, count: number, range: Range): number {
+function valueAtPiece(index: number, count: number, range: Limits): number {
 	if (index + 1 >= count) return range.max;
 
 	// Multiplied first, so that the 57th of a hundred pieces on 0 to 100 reaches 57 and not a hair less.
@@ -1530,32 +1592,49 @@ function valueAtPiece(index: number, count: number, range: Range): number {
 
 const NO_PAINT: Paint = { color: null, scale: null };
 
+/** What `drawingOf` draws from. */
+export interface Drawn {
+	look: Pick<Look, 'activeColoring' | 'inactiveColoring'> & Partial<Pick<Look, 'grow' | 'fade' | 'visualization'>>;
+	options: Options;
+	reading: Pick<Reading, 'empty' | 'fraction' | 'color'>;
+	/** Into how many pieces the track is cut (`pieceCount`). Below 2, and without it, the meter is one bar. */
+	count?: number | undefined;
+	/** The stored value, for the place at which `blend` takes its colour: it may be beyond the range, as a stop may. */
+	value?: unknown;
+	/** Over how many pieces a piece grows and fades in before it is filled (`reachOf`). Without it, half a piece. */
+	reach?: number | undefined;
+	/**
+	 * The place from which the growth is counted, as a fraction of the track, where that is not the place of the
+	 * value: the place of the pointer while it drags the value.
+	 */
+	at?: number | null | undefined;
+}
+
 /**
- * The colours and the pieces of a meter. `count` is how many pieces the track
- * is cut into (`pieceCount`); below 2 it is one bar.
+ * The colours and the pieces of a meter.
  *
  * What is filled is coloured by `activeColoring`. `value`: the colour of the
  * current value, everywhere. `blend`: one colour everywhere as well, but the
  * one the gradient has at the place of the current value, so that it shifts
  * towards the colour of a threshold as the value comes near it instead of
- * changing at it; `value` is the stored value, for its place, which may be
- * beyond the range as the stops may. `steps`: a piece has the colour of the value it
- * reaches when it is filled completely, and the one bar changes colour at
- * each threshold. `gradient`: the colours of the scale blended across the
- * whole track, of which a piece or the fill shows its own part; the blend is
- * never squeezed into what is filled.
+ * changing at it. `steps`: a piece has the colour of the value it reaches
+ * when it is filled completely, and the one bar changes colour at each
+ * threshold. `gradient`: the colours of the scale blended across the whole
+ * track, of which a piece or the fill shows its own part; the blend is never
+ * squeezed into what is filled.
  *
  * What is not filled is the plain track, or coloured by `inactiveColoring`
- * in the same three ways and faded; `automatic` is the way of what is filled.
+ * in one of the same four ways and faded; `automatic` is the way of what is
+ * filled.
  *
- * A scale of one colour makes the three ways the same, and is drawn as
+ * A scale of one colour makes the four ways the same, and is drawn as
  * `value`. A meter without a reading has no colours at all: it keeps its
  * dashed look.
  *
  * Where the look says `grow` and names a shape, every piece which is not
- * filled has a `size` (`growthOf`, `pieceScale`). Otherwise, for a filled
- * piece and without a reading, `size` is `null`: the piece is as it always
- * was.
+ * filled has a `size` (`growthOf`, `pieceScale`). A filled piece, and every
+ * piece of a meter which does not grow them or has no reading, has `size:
+ * null`: it is drawn at its full size, without a transform of its own.
  *
  * Where the look says `fade`, a piece which is not filled and has started to
  * grow has an `over`: the look it has once it is filled, by `activeColoring`,
@@ -1564,24 +1643,14 @@ const NO_PAINT: Paint = { color: null, scale: null };
  * the same, so no colour jumps. Every other piece has `over: null`, and so
  * has every piece of a meter which does not fade.
  *
- * `ahead` says how the growth is counted: over which `reach` in pieces
- * (`reachOf`; half a piece without it), and from which place, `at`, a
- * fraction of the track, where that is not the place of the value: the
- * place of the pointer while it drags the value, so that sizes and fading
- * follow the pointer and not the steps the value takes. What is filled, the
- * colours and everything else stay those of the value.
+ * With `at`, sizes and fading follow the pointer and not the steps the value
+ * takes. What is filled, the colours and everything else stay those of the
+ * value.
  */
-export function drawingOf(
-	look: Pick<Look, 'activeColoring' | 'inactiveColoring'> & Partial<Pick<Look, 'grow' | 'fade' | 'visualization'>>,
-	options: Options,
-	reading: Pick<Reading, 'empty' | 'fraction' | 'color'>,
-	count = 0,
-	value: unknown = null,
-	ahead: { reach?: number | undefined; at?: number | null | undefined } = {},
-): Drawing {
-	const pieces = count >= MIN_SUBDIVISIONS ? Math.min(MAX_PIECES, Math.floor(count)) : 0;
-	const filled = filledCount(reading.fraction, pieces);
-	const placeOf = (index: number) => (pieces > 1 ? index / (pieces - 1) : 0);
+export function drawingOf({ look, options, reading, count = 0, value = null, reach, at = null }: Drawn): Drawing {
+	const cut = count >= MIN_SUBDIVISIONS ? Math.min(MAX_PIECES, Math.floor(count)) : 0;
+	const filled = filledCount(reading.fraction, cut);
+	const placeOf = (index: number) => (cut > 1 ? index / (cut - 1) : 0);
 
 	if (reading.empty) {
 		return {
@@ -1589,7 +1658,7 @@ export function drawingOf(
 			weakStops: null,
 			track: NO_PAINT,
 			fill: NO_PAINT,
-			pieces: pieces ? Array.from({ length: pieces }, (_, index) => ({ filled: false, at: placeOf(index), paint: NO_PAINT, size: null, over: null })) : null,
+			pieces: cut ? Array.from({ length: cut }, (_, index) => ({ filled: false, at: placeOf(index), paint: NO_PAINT, size: null, over: null })) : null,
 		};
 	}
 
@@ -1607,22 +1676,23 @@ export function drawingOf(
 
 	// The two colourings which are one colour everywhere, and that colour.
 	const single = (coloring: Coloring | 'plain'): coloring is 'value' | 'blend' => coloring === 'value' || coloring === 'blend';
-	const colorOf = (coloring: 'value' | 'blend') => (coloring === 'value' ? reading.color : blended);
+	const oneColor = (coloring: 'value' | 'blend') => (coloring === 'value' ? reading.color : blended);
 
-	if (!pieces) {
+	if (!cut) {
 		return {
 			stops: single(active) ? null : stopsCss(stops, active),
 			weakStops: inactive === 'plain' || single(inactive) ? null : stopsCss(stops, inactive, true),
-			track: inactive === 'plain' ? NO_PAINT : single(inactive) ? { color: fadedColor(colorOf(inactive)), scale: null } : { color: null, scale: 'weak' },
-			fill: single(active) ? { color: colorOf(active), scale: null } : { color: null, scale: 'full' },
+			track: inactive === 'plain' ? NO_PAINT : single(inactive) ? { color: fadedColor(oneColor(inactive)), scale: null } : { color: null, scale: 'weak' },
+			fill: single(active) ? { color: oneColor(active), scale: null } : { color: null, scale: 'full' },
 			pieces: null,
 		};
 	}
 
 	// Pieces which grow: those which are not filled are small, and the next one is as large as the value has come.
-	const shape = typeof look.grow === 'number' && look.grow > 0 && look.visualization !== undefined && look.visualization !== 'contiguous' ? look.visualization : null;
-	const from = typeof ahead.at === 'number' && Number.isFinite(ahead.at) ? Math.min(1, Math.max(0, ahead.at)) : reading.fraction;
-	const grown = (index: number) => growthOf(from, pieces, index, ahead.reach);
+	const grows = typeof look.grow === 'number' && look.grow > 0;
+	const shape = grows && look.visualization !== undefined && look.visualization !== 'contiguous' ? look.visualization : null;
+	const from = typeof at === 'number' && Number.isFinite(at) ? Math.min(1, Math.max(0, at)) : reading.fraction;
+	const grown = (index: number) => growthOf(from, cut, index, reach);
 	const sizeOf = (index: number): Scale | null => (shape === null || index < filled ? null : pieceScale(shape, grown(index)));
 
 	// A piece as one of the two colourings paints it, at full strength or faded.
@@ -1630,7 +1700,7 @@ export function drawingOf(
 		if (coloring === 'plain') return NO_PAINT;
 		if (coloring === 'gradient') return { color: null, scale: weak ? 'weak' : 'full' };
 
-		const color = single(coloring) ? colorOf(coloring) : colorFor(valueAtPiece(index, pieces, options), options);
+		const color = single(coloring) ? oneColor(coloring) : colorFor(valueAtPiece(index, cut, options), options);
 		return { color: weak ? fadedColor(color) : color, scale: null };
 	};
 
@@ -1644,15 +1714,211 @@ export function drawingOf(
 		return opacity > 0 ? { paint: paintAs(index, active, false), opacity } : null;
 	};
 
-	const fading = filled < pieces && overOf(filled) !== null;
+	const fading = filled < cut && overOf(filled) !== null;
 
 	return {
 		stops: active === 'gradient' && (filled > 0 || fading) ? stopsCss(stops, 'gradient') : null,
-		weakStops: inactive === 'gradient' && filled < pieces ? stopsCss(stops, 'gradient', true) : null,
+		weakStops: inactive === 'gradient' && filled < cut ? stopsCss(stops, 'gradient', true) : null,
 		track: NO_PAINT,
 		fill: NO_PAINT,
-		pieces: Array.from({ length: pieces }, (_, index) => ({ filled: index < filled, at: placeOf(index), paint: paintOf(index), size: sizeOf(index), over: overOf(index) })),
+		pieces: Array.from({ length: cut }, (_, index) => ({
+			filled: index < filled,
+			at: placeOf(index),
+			paint: paintOf(index),
+			size: sizeOf(index),
+			over: overOf(index),
+		})),
 	};
+}
+
+/**
+ * Whose classes and custom properties a style is written with: `mt` for the
+ * interface, `md` for the display. The two components have the same surfaces
+ * under their own names, since each has scoped styles of its own.
+ */
+export type Prefix = 'mt' | 'md';
+
+/** An inline style: properties as Vue takes them, custom properties among them. */
+export type Style = Record<string, string | number>;
+
+/** How many pixels the styles of the two components take a rem to be, where a length of `PIECE_SIZES` is written in rem. */
+export const REM = 16;
+
+/**
+ * The classes of a surface which shows its part of the colours across the
+ * track: `-paint`, and `-weak` beside it where those colours are faded. A
+ * surface of one colour, or of the colour its own rule gives it, has none.
+ */
+export function paintClass(paint: Paint, prefix: Prefix): string | undefined {
+	if (paint.scale === null) return undefined;
+	return paint.scale === 'weak' ? `${prefix}-paint ${prefix}-weak` : `${prefix}-paint`;
+}
+
+/**
+ * What a surface is painted with, as an inline style: its one colour, or its
+ * place on the scale, `at`, from 0 for the first part to 1 for the last. A
+ * surface which is painted by its own rule has no style at all, and so no
+ * `style` attribute: that is the meter of 1.0.1, element for element.
+ */
+export function paintStyle(paint: Paint, at: number, prefix: Prefix): Style | undefined {
+	if (paint.color !== null) return { backgroundColor: paint.color };
+	return paint.scale !== null ? { [`--${prefix}-at`]: at } : undefined;
+}
+
+/** The inline style of the track of the one bar: its one colour. Painted with the scale it shows the whole of it, and needs no place. */
+export function trackStyle(track: Paint): Style | undefined {
+	return track.color !== null ? { backgroundColor: track.color } : undefined;
+}
+
+/**
+ * The inline style of a row of `count` pieces: their number, by which a
+ * piece which is painted with the scale sizes its part of it, and for bars
+ * which are drawn in whole device pixels (`barFit`) the width of a bar and of
+ * a gap, in pixels.
+ */
+export function rowStyle(count: number, bar: number | null, gap: number | null, prefix: Prefix): Style {
+	if (bar === null || gap === null) return { [`--${prefix}-n`]: count };
+	return { [`--${prefix}-n`]: count, [`--${prefix}-bar`]: `${bar}px`, [`--${prefix}-gap`]: `${gap}px` };
+}
+
+/**
+ * The inline style of the fill of the one bar: as long as its share of the
+ * track, in its one colour. Painted with the scale it is the first part of an
+ * image as wide as the track, and is told how many times as long as itself
+ * that is (`fillScale`), for a browser which cannot size the image by the
+ * track.
+ */
+export function fillStyle(fill: Paint, fraction: number, prefix: Prefix): Style {
+	const inlineSize = `${fraction * 100}%`;
+
+	if (fill.scale !== null) return { inlineSize, [`--${prefix}-n`]: fillScale(fraction) };
+	return fill.color !== null ? { inlineSize, backgroundColor: fill.color } : { inlineSize };
+}
+
+/** The inline style of what is laid over a piece which fades in: its paint, at the place of the piece, and how much of it shows. */
+export function overStyle(over: Overlay, at: number, prefix: Prefix): Style {
+	return { ...paintStyle(over.paint, at, prefix), opacity: over.opacity };
+}
+
+/**
+ * The corner radii which keep the ends of a pill half circles while it is
+ * drawn at `size` by a transform. A large pill is higher by more than it is
+ * longer, which would flatten its round ends: the radius along the track is
+ * made smaller by as much as the transform then stretches it less than the
+ * one across. `height` is the CSS length of the height of a piece.
+ */
+export function roundEnds(size: Scale, height: string): string {
+	return `calc(${height} * ${Number((size.across / size.along / 2).toFixed(4))}) / calc(${height} / 2)`;
+}
+
+/** The pieces up to the pointer, on a meter whose pieces are filled by it: how many they are, and how long a piece is along the track, in pixels. */
+export interface Near {
+	count: number;
+	length: number;
+}
+
+/**
+ * The inline style of one piece: its paint, and its size as a transform
+ * where it has one. Of the two sizes a piece can have, the large one wins: a
+ * piece up to the pointer (`near`, with `index` counting the pieces from 0)
+ * is drawn at `largeScale` whatever it would be without the pointer, small
+ * and growing or filled. Any other piece has the size of its growth, and a
+ * piece at its full size has no transform, so a meter whose pieces neither
+ * grow nor lie under the pointer has the styles it has without either.
+ *
+ * A large pill also gets the corner radii which keep its ends round
+ * (`roundEnds`, by the height of a piece, which the styles of the component
+ * hold in `--<prefix>-height`).
+ */
+export function pieceStyle(
+	piece: PieceDrawing,
+	prefix: Prefix,
+	index = 0,
+	shape: Visualization = DEFAULT_VISUALIZATION,
+	near: Near | null = null,
+): Style | undefined {
+	const paint = paintStyle(piece.paint, piece.at, prefix);
+	const large = near !== null && index < near.count && shape !== 'contiguous' ? largeScale(shape, near.length) : null;
+	const size = large ?? piece.size;
+
+	if (size === null) return paint;
+
+	return large !== null && shape === 'pills'
+		? { ...paint, transform: scaleCss(size), borderRadius: roundEnds(size, `var(--${prefix}-height)`) }
+		: { ...paint, transform: scaleCss(size) };
+}
+
+/** How long one piece is along the track, in pixels, to a hundredth: what the large size of a pill or a dot goes by. */
+export function pieceLength(piece: Piece): number {
+	return Number((piece.end - piece.start).toFixed(2));
+}
+
+/**
+ * The length along which the range is spread where the pointer sets the
+ * value by its place: up to the end of the last piece, which for packed dots
+ * and for bars is before the end of the track, and the `width` of the track
+ * for one bar.
+ */
+export function spreadLength(pieces: Piece[], width: number): number {
+	const last = pieces[pieces.length - 1];
+	return last !== undefined ? last.end : width;
+}
+
+/**
+ * How long a row of `count` packed dots is, as a CSS length in rem: as long
+ * as its dots and the gaps between them. The display tells its root, since
+ * the room of the text beside a row is worked out from it.
+ */
+export function packedLength(place: Place, count: number): string {
+	const { piece, gap } = PIECE_SIZES[place].dots;
+	const pieces = pieceGeometry('dots', place, count, count * (piece + gap), 'packed');
+
+	return `${spreadLength(pieces, 0) / REM}rem`;
+}
+
+/**
+ * Where a point of the page is along a track, in pixels from the start side
+ * of the track, which is the right in a right-to-left page. `x` is how far
+ * the point is across the page, `left` and `right` are the two edges of the
+ * track there.
+ */
+export function positionAlong(x: number, left: number, right: number, rtl: boolean): number {
+	return rtl ? right - x : x - left;
+}
+
+/**
+ * Where the handle of the one bar stands, as the CSS length of its start
+ * edge: at the end of the fill, inside the track, and never past either end
+ * of it. The handle is 0.5rem across in a track of 0.75rem, so it is 0.125rem
+ * from the edge at the least and its start is 0.625rem before the end of the
+ * fill.
+ */
+export function handleStart(fraction: number): string {
+	return `clamp(0.125rem, calc(${fraction * 100}% - 0.625rem), calc(100% - 0.625rem))`;
+}
+
+/** What a meter says its range and its value are to assistive technology. */
+export interface Said {
+	min: number;
+	max: number;
+	now: number | undefined;
+}
+
+/**
+ * What the element says its range and its value are. A meter which cannot be
+ * edited says the range as it is stored and the value within it, and no value
+ * where the field has none, as 1.0.1 did. A slider says the range which can
+ * be written (`writable`, or the stored range where nothing can be written),
+ * which for a field of a whole type with limits between whole numbers is
+ * narrower than the range which is drawn, and the value within that; a slider
+ * has to say a value, so one without a value says the least it could be set
+ * to.
+ */
+export function saidOf(range: Limits, writable: Limits | null, now: number | null, editable: boolean): Said {
+	if (!editable) return { min: range.min, max: range.max, now: now ?? undefined };
+
+	const { min, max } = writable ?? range;
+	return { min, max, now: now === null ? min : Math.min(max, Math.max(min, now)) };
 }
 
 /**
