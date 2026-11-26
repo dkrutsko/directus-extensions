@@ -31,6 +31,7 @@ import {
 	growthOf,
 	LARGE_ACROSS,
 	LARGE_ALONG,
+	largeCount,
 	largeScale,
 	pieceScale,
 	reachOf,
@@ -2395,6 +2396,151 @@ describe('the pieces the pointer fills', () => {
 
 		// Four pieces for a hundred: a quarter each.
 		expect(value(120, range(0, 100))).toBe(50);
+	});
+});
+
+describe('the pieces which are drawn large under the pointer', () => {
+	// Ten pills of 36px, 4px apart, in a track of 396px, and five of 76px in the same track.
+	const ten = pieceGeometry('pills', 'form', 10, 396);
+	const five = pieceGeometry('pills', 'form', 5, 396);
+
+	// What a press at a share of the track writes with the `position` method, as the component works it out.
+	const pressed = (share: number, pieces: typeof ten, limits: { min: number; max: number }, step: number, whole = true) =>
+		snapValue(valueAtShare(shareAt(share * spreadLength(pieces, 396), spreadLength(pieces, 396)), limits), limits, { step, whole });
+
+	// How many pieces are large for a pointer at a share of the track, by position.
+	const large = (share: number, pieces = ten, limits = range(0, 100), step = 1, whole = true) =>
+		largeCount('position', share * spreadLength(pieces, 396), pieces, pressed(share, pieces, limits, step, whole), limits);
+
+	test('by the piece: up to and including the piece under the pointer, whatever the press writes', () => {
+		expect(largeCount('piece', -5, five, 0, range(0, 5))).toBe(0);
+		expect(largeCount('piece', 0, five, 1, range(0, 5))).toBe(1);
+		expect(largeCount('piece', 100, five, 2, range(0, 5))).toBe(2);
+		expect(largeCount('piece', 158, five, 2, range(0, 5))).toBe(2);
+		expect(largeCount('piece', 160, five, 3, range(0, 5))).toBe(3);
+		expect(largeCount('piece', 395, five, 5, range(0, 5))).toBe(5);
+		expect(largeCount('piece', 5000, five, 5, range(0, 5))).toBe(5);
+
+		// It goes by the piece and not by the value: ten pieces for a range of five steps cannot all be drawn by
+		// a value, and nothing which can be written at all leaves the pieces up to the pointer large all the same.
+		expect(largeCount('piece', 100, ten, 1, range(0, 5))).toBe(3);
+		expect(largeCount('piece', 100, ten, null, range(0, 5))).toBe(3);
+		expect(largeCount('piece', 100, ten, Number.NaN, range(0, 5))).toBe(3);
+	});
+
+	test('by position: the pieces which the value of the press fills, before and after the middle of a piece', () => {
+		// Ten pills for a hundred: 34 fills three and 36 four, though both points are on the fourth pill.
+		expect(pressed(0.34, ten, range(0, 100), 1)).toBe(34);
+		expect(filledAt(0.34 * 396, ten)).toBe(4);
+		expect(large(0.34)).toBe(3);
+		expect(large(0.36)).toBe(4);
+		expect(large(0.344)).toBe(3);
+		expect(large(0.346)).toBe(4);
+
+		// Five pills for five, set by position: the third is large from its middle on.
+		expect(large(0.45, five, range(0, 5))).toBe(2);
+		expect(large(0.55, five, range(0, 5))).toBe(3);
+	});
+
+	test('by position, at both ends: none at the minimum and before it, all at the maximum and beyond', () => {
+		expect(large(0)).toBe(0);
+		expect(large(-0.5)).toBe(0);
+		expect(large(0.004)).toBe(0);
+		expect(large(0.04)).toBe(0);
+		expect(large(0.05)).toBe(1);
+		expect(large(0.94)).toBe(9);
+		expect(large(0.95)).toBe(10);
+		expect(large(1)).toBe(10);
+		expect(large(1.5)).toBe(10);
+		expect(largeCount('position', 0, ten, 0, range(0, 100))).toBe(0);
+		expect(largeCount('position', 396, ten, 100, range(0, 100))).toBe(10);
+	});
+
+	test('by position, with a step coarser than a piece: the count jumps with the value, past the pointer or short of it', () => {
+		// Steps of 25 on ten pills: 0, 25, 50, 75 and 100 fill none, three, five, eight and all.
+		expect(large(0.12, ten, range(0, 100), 25)).toBe(0);
+		expect(large(0.13, ten, range(0, 100), 25)).toBe(3);
+		expect(large(0.37, ten, range(0, 100), 25)).toBe(3);
+		expect(large(0.38, ten, range(0, 100), 25)).toBe(5);
+		expect(large(0.7, ten, range(0, 100), 25)).toBe(8);
+		expect(large(0.9, ten, range(0, 100), 25)).toBe(10);
+
+		// A step larger than the range leaves its two ends.
+		expect(large(0.49, ten, range(0, 100), 500)).toBe(0);
+		expect(large(0.51, ten, range(0, 100), 500)).toBe(10);
+	});
+
+	test('by position, with a step finer than a piece: the count changes where the value passes the middle of a piece', () => {
+		// Five pills for five in tenths: 2.4 fills two and 2.6 three.
+		expect(pressed(0.48, five, range(0, 5), 0.1, false)).toBe(2.4);
+		expect(large(0.48, five, range(0, 5), 0.1, false)).toBe(2);
+		expect(large(0.52, five, range(0, 5), 0.1, false)).toBe(3);
+		expect(large(0.08, five, range(0, 5), 0.1, false)).toBe(0);
+		expect(large(0.92, five, range(0, 5), 0.1, false)).toBe(5);
+	});
+
+	test('by position, it is the count the drawing fills for that value, everywhere along the track', () => {
+		for (const [pieces, limits, step, whole] of [
+			[ten, range(0, 100), 1, true],
+			[ten, range(0, 100), 25, true],
+			[ten, range(0, 100), 7, true],
+			[five, range(0, 5), 0.1, false],
+			[five, range(0, 5), 1, true],
+			[five, range(0.5, 5.5), 1, true],
+			[ten, range(-50, 50), 0.5, false],
+			[pieceGeometry('dots', 'form', 21, 396), range(0, 100), 1, true],
+			[pieceGeometry('bars', 'form', 57, 396), range(0, 100), 1, true],
+		] as const) {
+			const options = readOptions(limits);
+
+			for (let share = -0.1; share <= 1.1; share += 0.003) {
+				const written = pressed(share, pieces, limits, step, whole);
+				const drawn = drawingOf({
+					look: readLook({ visualization: 'pills' }),
+					options,
+					reading: readingOf(written, options, EN),
+					count: pieces.length,
+					value: written,
+				});
+
+				expect(
+					largeCount('position', share * spreadLength(pieces, 396), pieces, written, limits),
+					`${pieces.length} pieces, ${limits.min} to ${limits.max} by ${step}, at ${share}`,
+				).toBe(drawn.pieces!.filter((piece) => piece.filled).length);
+			}
+		}
+	});
+
+	test('by position, a whole type in a range whose limits are not whole: the least value which can be written fills a piece, and it is large', () => {
+		// 1 to 5 can be written of 0.5 to 5.5. A press at the start writes 1, which the drawing fills one pill for.
+		expect(pressed(0, five, range(0.5, 5.5), 1)).toBe(1);
+		expect(large(0, five, range(0.5, 5.5))).toBe(1);
+		expect(large(1, five, range(0.5, 5.5))).toBe(5);
+	});
+
+	test('by position, where nothing can be written: none', () => {
+		// No whole number lies between 0.2 and 0.8.
+		expect(pressed(0.5, five, range(0.2, 0.8), 1)).toBeNull();
+		expect(large(0.5, five, range(0.2, 0.8))).toBe(0);
+		expect(largeCount('position', 200, ten, null, range(0, 100))).toBe(0);
+		expect(largeCount('position', 200, ten, Number.NaN, range(0, 100))).toBe(0);
+		expect(largeCount('position', 200, ten, Number.POSITIVE_INFINITY, range(0, 100))).toBe(0);
+	});
+
+	test('relative and none: no piece is large, wherever the pointer is and whatever the value', () => {
+		for (const method of ['relative', 'none'] as const) {
+			for (const position of [-10, 0, 100, 200, 396, 1000]) {
+				expect(largeCount(method, position, ten, 50, range(0, 100)), `${method} at ${position}`).toBe(0);
+				expect(largeCount(method, position, five, 3, range(0, 5)), `${method} at ${position}`).toBe(0);
+			}
+		}
+	});
+
+	test('one bar has no pieces: none, by any method', () => {
+		for (const method of ['position', 'piece', 'relative', 'none'] as const) {
+			expect(largeCount(method, 200, [], 50, range(0, 100)), method).toBe(0);
+			expect(largeCount(method, 200, pieceGeometry('pills', 'form', 1, 396), 50, range(0, 100)), method).toBe(0);
+		}
 	});
 });
 

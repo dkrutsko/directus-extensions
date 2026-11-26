@@ -303,12 +303,16 @@ test.describe('a meter which can be edited', () => {
 		await page.mouse.up();
 		await marked(0);
 
-		// A meter which takes the value under the pointer draws no piece large, at rest or in a drag.
+		// A meter in pieces which takes the value under the pointer draws large the pieces which a press there
+		// fills, at rest and in a drag: five of ten at 50, and seven at 74.
 		const plain = await pointAt(page, 'hundred', 0.5);
 		await page.mouse.move(plain.x, plain.y);
+		await expectLarge(page, 'hundred', 5);
 		await page.mouse.down();
-		await page.mouse.move(plain.x + 40, plain.y, { steps: 2 });
-		await expectLarge(page, 'hundred', 0);
+		await expectLarge(page, 'hundred', 5);
+		await page.mouse.move(plain.x + plain.width * 0.24, plain.y, { steps: 2 });
+		await expect(text(page, 'hundred')).toHaveText('74%');
+		await expectLarge(page, 'hundred', 7);
 		await page.mouse.up();
 	});
 
@@ -330,8 +334,8 @@ test.describe('a meter which can be edited', () => {
 		await expect(text(page, 'hundred')).toHaveText('93%');
 		await expectFilledPieces(line(page, 'hundred'), 10, 9);
 
-		// No piece is marked under the pointer there, and none of the two is ever the relative method.
-		await expectLarge(page, 'hundred', 0);
+		// The nine which that press filled are large under the pointer, and none of the two is ever the relative method.
+		await expectLarge(page, 'hundred', 9);
 		for (const name of ['whole', 'five', 'dots', 'hundred']) await expect(line(page, name)).not.toHaveClass(/mt-by-relative/);
 
 		// Only the option makes a meter relative.

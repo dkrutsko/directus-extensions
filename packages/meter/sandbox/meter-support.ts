@@ -638,6 +638,9 @@ export async function seedEdit(api: Api) {
 			// sandbox, SQLite, has no such column: it makes a float of a `decimal` field and reports no scale. So
 			// this is a float, and the test tells the app what another database would report (`asDecimal`).
 			live('tenths', { max: 1, indicatorFormat: 'value' }, {}, 'float'),
+			// Five pills for five steps, which "Automatic" would fill by the piece, set by the place of the pointer
+			// because the option says so: a press before the middle of a pill leaves it empty.
+			live('placed', { visualization: 'pills', max: 5, input: 'position', indicatorFormat: 'fraction' }),
 		],
 	});
 
@@ -1065,8 +1068,8 @@ export function expectColour(actual: number[], expected: number[], tolerance = 4
 export const line = (page: Page, name: string) => meter(page, name).locator('> :first-child');
 
 /**
- * Which pieces of a row are drawn larger than their boxes are laid out: the pieces up to the pointer, on a meter
- * whose pieces are filled by it.
+ * Which pieces of a row are drawn larger than their boxes are laid out: the pieces which a press of the pointer
+ * would fill, on a meter in pieces which a press sets where the pointer is.
  */
 export const largeOf = (page: Page, name: string) =>
 	line(page, name).evaluate((element) =>
@@ -1204,6 +1207,7 @@ export const EDIT_VALUES = {
 	turning: 3,
 	leaving: 3,
 	tenths: 0.5,
+	placed: 3,
 };
 
 /**

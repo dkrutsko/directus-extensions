@@ -54,12 +54,12 @@ npm run validate   # directus-extension validate
 - **A surface with one colour** gets an inline `backgroundColor`. A surface which shows its part of the colours across the track gets the class `-paint` (and `-weak` where faded) and its place in `--<prefix>-at`; the stops are in `--<prefix>-stops` and `--<prefix>-weak-stops` on the root, and `--<prefix>-n` says how many parts there are. A surface painted by its own rule has no inline style at all.
 - **The fill of the one bar** is sized by the track, not by itself: `100cqi` in the form (the track is a container, class `mt-scaled`, only then), `4.5rem` in the display. Sized by the fill, a stop would move by a pixel as the value changes.
 - **A gradient has no logical direction,** so a right-to-left page has rules of its own by `:dir(rtl)`. Everything else is laid out along the inline axis.
-- **Sizes are transforms.** A piece which grows, and a piece up to the pointer, is drawn at its size by a `transform` about its middle. No box changes, so the count, the gaps, the height and where the pointer counts a piece are untouched. `pieceStyle` decides between the two sizes: the large one wins. A large pill also gets corner radii which keep its ends round (`roundEnds`).
+- **Sizes are transforms.** A piece which grows, and a piece which a press of the pointer would fill, is drawn at its size by a `transform` about its middle. No box changes, so the count, the gaps, the height and where the pointer counts a piece are untouched. `pieceStyle` decides between the two sizes: the large one wins. A large pill also gets corner radii which keep its ends round (`roundEnds`).
 - **`fade`:** the one piece which is fading in has one child (`-over`), painted as the piece will be once filled, at the opacity of its growth.
 - **Bars** are sized by `barFit` in whole device pixels and handed to the row as `--<prefix>-bar` and `--<prefix>-gap` (class `-fitted`). `fitCount` counts bars with the same least sizes.
 - **Measuring.** The form measures the element on the line of the track with a `ResizeObserver`, only while the visualization has pieces (`watched`). The width is read by three computed values (the count, the two sizes of the bars, the reach of thin bars), each of which changes only now and then, so a meter is not drawn again with every pixel. A field which is not shown has no width and draws one bar. The display measures nothing: its length is `DISPLAY_WIDTH`.
 - **The text is whole or absent** by layout alone. Its box is a flex container which may wrap, one line high, with `overflow: hidden`, and a zero-width space as `::before` holds the first line: a number which does not fit goes to the second line and is gone. Never put `text-overflow` on a number.
-- **Transitions** are switched by classes on the row: `mt-eased` (two frames after a value was first drawn, and not while the pointer drags the value) and `mt-swell` (while pieces are large, and 250ms after). All sit inside `prefers-reduced-motion: no-preference`.
+- **Transitions** are switched by classes on the row: `mt-eased` (two frames after a value was first drawn, and not while the pointer drags the value) and `mt-swell` (while pieces are large, and 250ms after). While a drag sizes the growing pieces by where the pointer is, the row also has `mt-tracking`, and `mt-swell` then eases only the pieces up to the pointer (`mt-near`), so a growing piece follows every movement. All sit inside `prefers-reduced-motion: no-preference`.
 - **Forced colours and print** are CSS only: a `@media (forced-colors: active)` block in each component, `!important` because the colours of the options are inline, and `print-color-adjust: exact` on both roots.
 - **The styles have no comments.** What they rely on is written at the end of each component's `<script>`, which is not shipped. Read those notes before changing a style.
 
@@ -73,6 +73,7 @@ npm run validate   # directus-extension validate
 - **The grid.** `gridOf` numbers the points which can be written from 0 at the minimum, with the maximum as the last point where the steps miss it. The pointer and the keys count in points and turn a number back into a value; nothing adds a step to a value. A point is cleaned to the decimals of the step and the limits (`toFixed`, up to fifteen). `defaultStep` makes its power of ten from decimal text (`Number('1e-2')`) for the same reason.
 - **`automatic`** is settled by `inputMethod` from the count, the step and the range; the components never look at the word.
 - **While the pointer drags** by position or relatively, `exact` holds where the pointer is, and `drawingOf` takes it as `at`: sizes and fading follow the pointer, the fill and the value stay on the steps.
+- **The large pieces** are counted by `largeCount`, which `enlargeUpTo` hands the method, the place of the pointer, the pieces as laid out and what `valueUnder` says a press there writes. By `piece`: up to and including the piece under the pointer (`filledAt`). By `position`: as many as the drawing fills for that value (`filledCount`), so the press which follows fills exactly those. None with `relative`, on one bar, for a finger or in a field which cannot be edited; for those `enlargeUpTo` asks for no frame.
 - **`saidOf`** says what assistive technology is told: a reading the range as stored, a slider the range which can be written.
 - **The direction** is asked of the element (`getComputedStyle(...).direction`). The `direction` prop of the form is that of typed text, and is not used.
 
@@ -105,7 +106,7 @@ npm run validate   # directus-extension validate
 10. **A field which can be edited writes only what `snapValue`, `pieceValue` or `keyValue` made:** a finite number on the grid, within the range, whole for a whole type.
 11. **`contiguous` with the default colouring, and both `grow` and `fade` off, add nothing to the page:** the elements, classes and inline styles of the plain meter, in a field which cannot be edited exactly those of 1.0.1. A piece is filled or not, never in part, and what is said about the value is never the rounded one. The number of pieces comes from the width of the track's own line and from nothing which the pieces could change.
 12. **A number shows whole, or not at all.**
-13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 48,813 bytes (15,525 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
+13. **Bundle hygiene.** No dependencies to bundle, and none should be added. `dist/app.js` is 49,145 bytes (15,627 gzipped) and `dist/api.js` 72 bytes: report size changes. No comments in the `<style>` blocks, since the build keeps them; `tests/bundle.test.ts` checks it.
 14. **It is an app-only bundle,** so the Marketplace can install it under the default `MARKETPLACE_TRUST`.
 15. **Directus look.** Only `--theme--*` tokens for colours, and system colours only under forced colours (`tests/bundle.test.ts` checks both). The track is `--theme--form--field--input--border-color`, the fill `--theme--primary` unless an option says otherwise. Styles are scoped; class names other than the two roots (`meter`, `meter-display`) start with `mt-` in the interface and `md-` in the display.
 
@@ -121,7 +122,7 @@ The root `AGENTS.md` has the style of the repository. In this package also:
 
 ## Testing in a browser
 
-The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (87 tests).
+The browser tests run against the sandbox Directus of the repository (root `AGENTS.md`, `sandbox/README.md`), in Chromium. **The titles of the tests are the list of what is covered:** `npx playwright test meter/ --list` in `sandbox/` prints them (89 tests).
 
 | File | What it holds |
 |---|---|
@@ -129,7 +130,7 @@ The browser tests run against the sandbox Directus of the repository (root `AGEN
 | `meter-display.spec.ts` | The display: the table, the tooltip, a template of a related item, its own options against the interface's, both pairs of limits, emptied colour and thresholds, right-to-left, prefix and suffix in the table, text which does not fit, Arabic digits, plain text in the calendar. |
 | `meter-pieces.spec.ts` | Pieces and colourings, in the form and in the table: the shapes, the count by the width, dots packed and spread, colours read from pixels, and their options forms. |
 | `meter-editing.spec.ts` | What the pointer, a finger and the keys write, by every input method; what a reading is spared; the step; what is measured and observed; the options forms of editing. One test starts the full Chromium for the pointer lock and is skipped where that cannot be started. |
-| `meter-live-pieces.spec.ts` | The pieces of a meter which can be edited: large up to the pointer, growing and fading. |
+| `meter-live-pieces.spec.ts` | The pieces of a meter which can be edited: large where a press would fill them (by "Piece" and by "Position"), growing and fading. |
 | `meter-ratios.spec.ts` | Bars at real device pixel ratios of 1, 1.5 and 2 (a browser of its own for each), a meter in a stock Repeater, and a field the form does not let the user change (a user who may only read, a batch edit). |
 
 `meter-support.ts` holds the fixtures (`seedMain`, `seedOwners`, `seedWide`, `seedEdit`, `seedRepeater`, `seedUnits`, `removeAll`), the helpers which read a meter in the page (`readPieces`, `shown`, `expectFilled`, `listened`, `optionsDialog`, `pixel` among them), `signedIn`, which opens a signed-in page of its own in any browser and fails on its errors, `makeUser`, for a user of the tests' own (another language, the dark appearance, fewer permissions), and `asDecimal`, which tells the app of a page that a field is a decimal with a scale.

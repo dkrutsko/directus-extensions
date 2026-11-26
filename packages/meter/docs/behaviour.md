@@ -198,7 +198,12 @@ What shows that a meter can be edited: the cursor, a ring around the track while
 
 ## The pieces up to the pointer
 
-Where the pieces are filled by the pointer ("Piece", by choice or by "Automatic"), the pieces the pointer would fill are drawn larger than the others while a mouse or a pen rests on the track, and all through a drag. Not for a finger.
+On a meter in pieces which a press sets where the pointer is ("Piece" or "Position", by choice or by "Automatic"), the pieces which a press would leave filled are drawn larger than the others while a mouse or a pen rests on the track, and all through a drag. Not for a finger, and not with "Relative", where a press does not set the value where the pointer is. One bar has no pieces.
+
+- With "Piece": the pieces up to and including the one under the pointer.
+- With "Position": the pieces which the value under the pointer fills. That value is on the steps, and a piece is filled from half of it on, so of ten pills for 0 to 100 three are large at 34% of the track and four at 36%, and the press which follows fills as many as were large. Where a press would write the minimum, none is large.
+
+Their sizes:
 
 - Bars and segments: half as high again, as wide as they are.
 - Dots: a pixel more on every side.
@@ -243,7 +248,7 @@ Directus keeps the options of a field when its interface changes, so the Meter u
 
 ## Motion, contrast themes and print
 
-- **Three short transitions,** 150ms each: the size of pieces which grow, the opacity of the piece which fades in, and the size of the pieces up to the pointer. None plays for a user who has asked the system for less motion, and none for the first value a form draws. Growing and fading do not play while the pointer drags the value; the size of the pieces up to the pointer is eased during a drag by "Piece" as well. The fill, the colours and the handle change at once. The display has no transition.
+- **Three short transitions,** 150ms each: the size of pieces which grow, the opacity of the piece which fades in, and the size of the pieces up to the pointer. None plays for a user who has asked the system for less motion, and none for the first value a form draws. Growing and fading do not play while the pointer drags the value; the size of the pieces up to the pointer is eased during a drag as well, by "Piece" and by "Position". The fill, the colours and the handle change at once. The display has no transition.
 - **Under a contrast theme of the system** (forced colours) the track and what is not filled are an outline in the system's text colour, and what is filled is the system's highlight colour. The colours of the options and of the thresholds are not shown there, and a gradient is not drawn. No size changes.
 - **In print** the meter asks the browser to keep its backgrounds, so a printed form or table keeps its bars.
 - **Right-to-left:** the track fills from the right, a gradient runs to the left, and the Left and Right keys swap. The meter follows the direction of the page.

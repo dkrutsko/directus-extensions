@@ -13,6 +13,7 @@ import {
 	handleStart,
 	inputMethod,
 	keyValue,
+	largeCount,
 	numberOf,
 	overStyle,
 	paintClass,
@@ -265,10 +266,11 @@ const editing = computed(() => readEditing(props, props.type, options.value, sca
 const method = computed(() => inputMethod(editing.value, count.value, options.value));
 const editable = computed(() => canEdit(props, method.value));
 
-// How many pieces the pointer would fill, while it rests over a meter whose pieces are filled by it. Those are
-// drawn larger than regular, by a transform like the one of pieces which grow: no box changes. `long` is how long
-// a piece is along the track at that moment, which the size of pills and dots goes by. `pieceStyle` is handed
-// both, as `near`, and decides for each piece.
+// How many pieces a press of the pointer would leave filled, while it rests over a meter in pieces which a press
+// sets where the pointer is, by the piece or by the position (`largeCount`). Those are drawn larger than regular,
+// by a transform like the one of pieces which grow: no box changes. `long` is how long a piece is along the track
+// at that moment, which the size of pills and dots goes by. `pieceStyle` is handed both, as `near`, and decides
+// for each piece.
 const hover = shallowRef(0);
 const long = shallowRef(0);
 const near = computed(() => ({ count: hover.value, length: long.value }));
@@ -367,12 +369,13 @@ interface Drag {
 	startY: number;
 }
 
-// Works out which pieces are drawn large: those which the pointer at a point of the page fills or would fill,
-// up to it, where the pieces are filled by the pointer. A pointer which rests has to be on the track for that; one
-// which is `held` down in a drag counts wherever it is, by its place along the track, as the fill does. A finger
-// rests nowhere, and no piece is large for it.
+// Works out which pieces are drawn large: those which a press of the pointer at a point of the page fills or
+// would fill (`largeCount`, by the method and by what `valueUnder` says the press writes). A pointer which rests
+// has to be on the track for that; one which is `held` down in a drag counts wherever it is, by its place along
+// the track, as the fill does. A finger rests nowhere, and no piece is large for it. One bar has no pieces, and a
+// relative press sets no value where the pointer is: for those no frame is asked for, as for a finger.
 function enlargeUpTo(x: number, y: number, touch: boolean, frameOf: () => Frame, held = false) {
-	if (!editable.value || touch || method.value !== 'piece') {
+	if (!editable.value || touch || drawing.value.pieces === null || method.value === 'relative') {
 		hover.value = 0;
 		return;
 	}
@@ -382,7 +385,7 @@ function enlargeUpTo(x: number, y: number, touch: boolean, frameOf: () => Frame,
 	const piece = at.pieces[0];
 
 	if (piece !== undefined) long.value = pieceLength(piece);
-	hover.value = inside ? filledAt(positionOf(x, at), at.pieces) : 0;
+	hover.value = inside ? largeCount(method.value, positionOf(x, at), at.pieces, valueUnder(x, at), options.value) : 0;
 }
 
 let drag: Drag | null = null;
@@ -411,7 +414,7 @@ function onPointerDown(event: PointerEvent) {
 	};
 	dragging.value = true;
 
-	// The pieces up to the pointer are large from the press on.
+	// The pieces which the press fills are large from the press on.
 	const frameOf = framed(element);
 	enlargeUpTo(event.clientX, event.clientY, event.pointerType === 'touch', frameOf, true);
 
@@ -674,6 +677,7 @@ const lineClass = computed(() => {
 						'mt-fitted': barSize.value !== null,
 						'mt-eased': (grow > 0 || fade) && eased.value && !following.value,
 						'mt-swell': swell.value,
+						'mt-tracking': following.value && exact.value !== null,
 					},
 				];
 
@@ -768,12 +772,13 @@ onBeforeUnmount(() => {
 //   fill, never past either end, which shows while the pointer is over the
 //   track, while the track has the keyboard's focus and during a drag. It is
 //   shown and hidden at once, without a transition.
-// - The pieces up to the pointer are drawn larger than regular, by an inline
-//   transform like that of pieces which grow, so no box changes: bars and
-//   segments half as high again, dots a pixel on every side, pills a pixel
-//   at each end and a third higher, with their corners set so that the ends
-//   stay half circles; two pixels of a gap are left between two large dots
-//   or pills. They have no class and no other colour.
+// - The pieces which a press of the pointer would fill, by the piece or by
+//   the position, are drawn larger than regular, by an inline transform like
+//   that of pieces which grow, so no box changes: bars and segments half as
+//   high again, dots a pixel on every side, pills a pixel at each end and a
+//   third higher, with their corners set so that the ends stay half circles;
+//   two pixels of a gap are left between two large dots or pills. They have
+//   no class and no other colour.
 //   The row clips what is outside its box (`overflow: hidden`), so while
 //   pieces are large, and until the last has eased back, it has `mt-swell`:
 //   nothing is clipped, and the size is eased like that of pieces which grow.
@@ -830,7 +835,11 @@ onBeforeUnmount(() => {
 //   out from where the pointer is (`exact`), so they change with every
 //   movement and need no transition; at the release they ease to what the
 //   value gives. The third is by `mt-swell`: of the size and the corner radii
-//   of the pieces up to the pointer (above). A transition which is under way
+//   of the pieces up to the pointer (above). While the sizes go by where the
+//   pointer is (`mt-tracking`), only the pieces up to the pointer (`mt-near`)
+//   are eased, so a piece which grows still follows every movement; a piece
+//   which stops being large is then at its growing size at once, which is
+//   close to full there. A transition which is under way
 //   when the next change comes is taken up by the browser from where it is.
 //   Nothing else has one: the form hands over `null` until the item has
 //   loaded, so a transition of the fill or of a colour would play on every
@@ -890,7 +899,7 @@ onBeforeUnmount(() => {
 				v-else
 				:key="index"
 				class="mt-part"
-				:class="[{ 'mt-on': piece.filled, 'mt-under': piece.over !== null }, paintClass(piece.paint, 'mt')]"
+				:class="[{ 'mt-on': piece.filled, 'mt-under': piece.over !== null, 'mt-near': index < near.count }, paintClass(piece.paint, 'mt')]"
 				:style="pieceStyle(piece, 'mt', index, look.visualization, near)"
 			>
 				<span v-if="piece.over !== null" class="mt-over" :class="paintClass(piece.over.paint, 'mt')" :style="overStyle(piece.over, piece.at, 'mt')" />
@@ -1064,6 +1073,10 @@ onBeforeUnmount(() => {
 		transition:
 			transform 150ms ease-out,
 			border-radius 150ms ease-out;
+	}
+
+	.mt-swell.mt-tracking .mt-part:not(.mt-near) {
+		transition: none;
 	}
 
 	.mt-eased .mt-over {

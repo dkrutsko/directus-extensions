@@ -137,7 +137,7 @@ The **Meter** display draws a short bar of a fixed length and then the text, on 
 
 A meter in a form is edited wherever its field can be: not in a read-only field, not where a condition or the permissions of the user disable it, and not with the input method "None".
 
-- **"Position":** a press sets the value under the pointer, and a drag follows it.
+- **"Position":** a press sets the value under the pointer, and a drag follows it. On a meter in pieces, the pieces which that value fills are drawn larger while the pointer is over the meter.
 - **"Piece":** a press fills the pieces up to the one under the pointer. Those pieces are drawn larger while the pointer is over the meter.
 - **"Relative":** a press changes nothing; the value moves by as much as the pointer moves, ten times finer with Shift. The pointer is locked for the drag where the browser allows it.
 - **"Automatic":** "Piece" where every piece is exactly one step, as five dots on an Integer field from 0 to 5; "Position" otherwise. A Float field from 0 to 5 drawn as five pieces is set by position in hundredths: set **Step** to 1 or the method to "Piece" for whole pieces.

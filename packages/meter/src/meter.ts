@@ -1214,6 +1214,33 @@ export function pieceValue(filled: number, count: number, range: Limits, editing
 }
 
 /**
+ * How many pieces are drawn large for a pointer at `position`, in pixels from
+ * the start side of the track: the first ones, which a press at that point
+ * would leave filled. `pieces` are the pieces as they are laid out, and
+ * `written` is what a press there would write (`null`: nothing).
+ *
+ * With `piece` those are the pieces up to and including the one under the
+ * pointer (`filledAt`), which is what the press asks for even where no value
+ * draws exactly that many. With `position` they are the pieces which the
+ * value of the press fills, counted as the drawing counts them
+ * (`filledCount`): the value is on the grid, so a point before the middle of
+ * a piece can fill it and a point on it can leave it empty, and the count
+ * moves where the fill would. A press which would write nothing, or the
+ * minimum, leaves none filled and none large.
+ *
+ * With `relative` a press does not set the value where the pointer is, and
+ * with `none` nothing sets it: no piece is large. Nor is any of one bar,
+ * which has no pieces.
+ */
+export function largeCount(method: Exclude<InputMethod, 'automatic'>, position: number, pieces: Piece[], written: number | null, range: Limits): number {
+	if (pieces.length < MIN_SUBDIVISIONS) return 0;
+	if (method === 'piece') return filledAt(position, pieces);
+	if (method !== 'position' || written === null || !Number.isFinite(written)) return 0;
+
+	return filledCount(fractionOf(written, range), pieces.length);
+}
+
+/**
  * How far a finger has to move along the track, in pixels, before it is
  * dragging the meter and not about to scroll the page or to be lifted again.
  */
@@ -1405,10 +1432,10 @@ export function pieceScale(shape: Shape, growth: number): Scale {
 }
 
 /**
- * How much higher than its regular size a piece is drawn while the pointer
- * would fill it (the pieces up to the pointer, on a meter whose pieces are
- * filled by the pointer). Bars and segments half as high again, as wide as
- * they are. Dots a pixel on every side, which is what `LARGE_ALONG` leaves
+ * How much higher than its regular size a piece is drawn while a press of the
+ * pointer would fill it (`largeCount`: on a meter in pieces which a press
+ * sets where the pointer is). Bars and segments half as high again, as wide
+ * as they are. Dots a pixel on every side, which is what `LARGE_ALONG` leaves
  * them. Pills a third higher: a pixel on every side is hard to see on a piece
  * that long, and along the track they have no more room than dots.
  */
@@ -1422,8 +1449,9 @@ export const LARGE_ACROSS: Record<Shape, number> = { pills: 4 / 3, segments: 1.5
 export const LARGE_ALONG: Record<Shape, number> = { pills: 2, segments: 0, bars: 0, dots: 2 };
 
 /**
- * The size at which a piece up to the pointer is drawn: larger than regular,
- * whether it is filled or not and whatever it would be without the pointer.
+ * The size at which a piece which the pointer would fill is drawn: larger
+ * than regular, whether it is filled or not and whatever it would be without
+ * the pointer.
  * `length` is how long a piece is along the track, in pixels, since the
  * growth along it is a number of pixels and a scale is a factor. A piece
  * without a length is not made longer.
@@ -1811,7 +1839,7 @@ export function roundEnds(size: Scale, height: string): string {
 	return `calc(${height} * ${Number((size.across / size.along / 2).toFixed(4))}) / calc(${height} / 2)`;
 }
 
-/** The pieces up to the pointer, on a meter whose pieces are filled by it: how many they are, and how long a piece is along the track, in pixels. */
+/** The pieces which a press of the pointer would fill (`largeCount`): how many they are, and how long a piece is along the track, in pixels. */
 export interface Near {
 	count: number;
 	length: number;
@@ -1820,8 +1848,8 @@ export interface Near {
 /**
  * The inline style of one piece: its paint, and its size as a transform
  * where it has one. Of the two sizes a piece can have, the large one wins: a
- * piece up to the pointer (`near`, with `index` counting the pieces from 0)
- * is drawn at `largeScale` whatever it would be without the pointer, small
+ * piece the pointer would fill (`near`, with `index` counting the pieces from
+ * 0) is drawn at `largeScale` whatever it would be without the pointer, small
  * and growing or filled. Any other piece has the size of its growth, and a
  * piece at its full size has no transform, so a meter whose pieces neither
  * grow nor lie under the pointer has the styles it has without either.
